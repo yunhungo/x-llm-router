@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/
+.codegraph/
+playwright-report/
+test-results/

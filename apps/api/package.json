@@ -1,0 +1,40 @@
+{
+  "name": "@x-router/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts src/db/migrate-cli.ts --format esm --clean --sourcemap",
+    "start": "node dist/index.js",
+    "pretypecheck": "pnpm --filter @x-router/contracts build",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "tsx src/db/migrate-cli.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/jwt": "^10.2.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@langfuse/otel": "^5.10.0",
+    "@langfuse/tracing": "^5.10.0",
+    "@opentelemetry/sdk-node": "^0.221.0",
+    "@x-router/contracts": "workspace:*",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.11.3",
+    "pg": "^8.23.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.15.5",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}
