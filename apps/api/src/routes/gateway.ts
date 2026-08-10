@@ -25,7 +25,23 @@ const CHATGPT_RESPONSE_KEYS = new Set([
   'truncation',
 ]);
 
-function buildUpstreamBody(
+function normalizeChatGptModel(model: string): string {
+  if (model.startsWith('chatgpt/')) return model.slice('chatgpt/'.length);
+  if (model.startsWith('chatgpt-gpt-')) return model.slice('chatgpt-'.length);
+  return model;
+}
+
+function normalizeChatGptInput(input: unknown): unknown {
+  if (typeof input !== 'string') return input;
+  return [
+    {
+      role: 'user',
+      content: [{ type: 'input_text', text: input }],
+    },
+  ];
+}
+
+export function buildUpstreamBody(
   body: Record<string, unknown>,
   endpoint: GatewayEndpoint,
   provider: ProviderRuntime,
@@ -44,6 +60,8 @@ function buildUpstreamBody(
   const normalized: Record<string, unknown> = { ...body, model };
 
   if (provider.authType === 'oauth' && endpoint === 'responses') {
+    normalized.model = normalizeChatGptModel(model);
+    normalized.input = normalizeChatGptInput(normalized.input);
     normalized.stream = true;
     normalized.store = false;
     const include = Array.isArray(normalized.include) ? [...normalized.include] : [];
