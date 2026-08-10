@@ -498,13 +498,6 @@ select.input {
   font-weight: 600;
   letter-spacing: -0.85px;
 }
-.page-header p {
-  max-width: 620px;
-  margin: 5px 0 0;
-  color: var(--body);
-  font-size: 13px;
-  line-height: 20px;
-}
 .page-action {
   flex: 0 0 auto;
 }
@@ -1201,42 +1194,6 @@ td code {
   background: transparent;
   color: var(--mute);
   cursor: pointer;
-}
-.capture-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.capture-options label {
-  padding: 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 7px;
-  cursor: pointer;
-}
-.capture-options input {
-  margin-top: 3px;
-  accent-color: var(--ink);
-}
-.capture-options strong {
-  display: block;
-  font-size: 12px;
-}
-.capture-options small {
-  display: block;
-  margin-top: 3px;
-  color: var(--mute);
-  font-size: 10px;
-  line-height: 15px;
-}
-.capture-options.compact label {
-  align-items: center;
-  padding: 10px 12px;
-}
-.capture-options.compact input {
-  margin-top: 0;
 }
 .langfuse-fields {
   display: grid;

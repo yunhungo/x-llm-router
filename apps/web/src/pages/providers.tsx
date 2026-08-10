@@ -137,9 +137,7 @@ export function ProvidersPage() {
   return (
     <div className="page-wrap">
       <PageHeader
-        eyebrow="Upstream connections"
         title="上游连接"
-        description="模型账号与路由顺序"
         action={
           <div className="button-group">
             <Button

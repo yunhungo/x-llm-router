@@ -23,8 +23,6 @@ export interface LangfuseConfig {
   hasSecretKey: boolean;
   baseUrl: string;
   environment: string;
-  captureInput: boolean;
-  captureOutput: boolean;
   restartRequiredAfterSave: boolean;
 }
 

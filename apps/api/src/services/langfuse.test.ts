@@ -29,7 +29,11 @@ describe('per-key Langfuse settings', () => {
     const encrypted = encryptLangfuseSettings(settings);
 
     expect(encrypted).not.toContain(settings.secretKey);
-    expect(decryptLangfuseSettings(encrypted)).toEqual(settings);
+    expect(decryptLangfuseSettings(encrypted)).toEqual({
+      ...settings,
+      captureInput: true,
+      captureOutput: true,
+    });
   });
 
   it('never exposes the secret key to the admin UI', () => {

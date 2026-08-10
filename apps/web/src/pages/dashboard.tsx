@@ -61,9 +61,7 @@ export function DashboardPage() {
   return (
     <div className="page-wrap">
       <PageHeader
-        eyebrow="Gateway overview"
         title="运行概览"
-        description="近 24 小时"
         action={
           <div className="health-pill">
             <i /> Gateway healthy

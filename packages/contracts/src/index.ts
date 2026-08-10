@@ -17,8 +17,6 @@ export const langfuseSettingsSchema = z.object({
   secretKey: z.string().trim().max(512).optional(),
   baseUrl: z.string().url(),
   environment: z.string().trim().min(1).max(40),
-  captureInput: z.boolean().default(false),
-  captureOutput: z.boolean().default(false),
 });
 
 export const createApiKeySchema = z.object({

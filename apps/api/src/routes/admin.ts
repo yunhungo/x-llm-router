@@ -144,6 +144,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               p.name AS "providerName", p.id AS "providerConnectionId"
          FROM virtual_api_keys k
          LEFT JOIN provider_connections p ON p.id = k.provider_connection_id
+        WHERE k.status = 'active'
         ORDER BY k.created_at DESC`,
     );
     return {
@@ -217,8 +218,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       publicKey: parsed.data.publicKey,
       baseUrl: parsed.data.baseUrl,
       environment: parsed.data.environment,
-      captureInput: parsed.data.captureInput,
-      captureOutput: parsed.data.captureOutput,
+      captureInput: true,
+      captureOutput: true,
       ...(parsed.data.secretKey !== undefined ? { secretKey: parsed.data.secretKey } : {}),
     });
     if (!updated)

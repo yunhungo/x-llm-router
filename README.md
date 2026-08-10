@@ -9,7 +9,7 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 - OpenAI 双协议：暴露 Responses 与 Chat Completions；支持 JSON 和 SSE 流式响应。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT 与成本，并提供 14/30 天聚合视图。
-- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，默认不采集提示词/输出正文。
+- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目并记录完整输入输出。
 - 管理后台：连接、Key、调用日志、Key 级 Langfuse 和管理员账号全部可视化配置。
 - 自托管：PostgreSQL + API + Nginx Web 三服务 Docker Compose，启动时自动执行幂等迁移并创建初始管理员。
 
@@ -126,7 +126,7 @@ const response = await client.responses.create({
 docker compose restart api
 ```
 
-不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。默认不记录输入和输出正文；自托管时将 Base URL 指向对应实例。
+不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目，并记录完整输入和输出正文。自托管时将 Base URL 指向对应实例。
 
 ## 本地开发
 

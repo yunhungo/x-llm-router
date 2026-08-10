@@ -37,7 +37,7 @@ export function SettingsPage({
 
   return (
     <div className="page-wrap">
-      <PageHeader eyebrow="Settings" title="平台设置" description="管理员账户" />
+      <PageHeader title="平台设置" />
       <div className="settings-grid single">
         <section className="panel settings-panel">
           <div className="panel-heading">

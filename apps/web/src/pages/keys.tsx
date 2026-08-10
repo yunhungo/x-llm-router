@@ -27,8 +27,6 @@ interface LangfuseDraft {
   secretKey: string;
   baseUrl: string;
   environment: string;
-  captureInput: boolean;
-  captureOutput: boolean;
 }
 
 const emptyLangfuse = (): LangfuseDraft => ({
@@ -37,8 +35,6 @@ const emptyLangfuse = (): LangfuseDraft => ({
   secretKey: '',
   baseUrl: 'https://cloud.langfuse.com',
   environment: 'production',
-  captureInput: false,
-  captureOutput: false,
 });
 
 function langfuseDraft(config: LangfuseConfig): LangfuseDraft {
@@ -48,8 +44,6 @@ function langfuseDraft(config: LangfuseConfig): LangfuseDraft {
     secretKey: '',
     baseUrl: config.baseUrl,
     environment: config.environment,
-    captureInput: config.captureInput,
-    captureOutput: config.captureOutput,
   };
 }
 
@@ -112,28 +106,6 @@ function LangfuseFields({
               required
             />
           </Field>
-          <div className="capture-options compact">
-            <label>
-              <input
-                type="checkbox"
-                checked={value.captureInput}
-                onChange={(event) => onChange({ ...value, captureInput: event.target.checked })}
-              />
-              <span>
-                <strong>记录输入</strong>
-              </span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={value.captureOutput}
-                onChange={(event) => onChange({ ...value, captureOutput: event.target.checked })}
-              />
-              <span>
-                <strong>记录输出</strong>
-              </span>
-            </label>
-          </div>
         </>
       ) : null}
     </div>
@@ -224,9 +196,7 @@ export function KeysPage() {
   return (
     <div className="page-wrap">
       <PageHeader
-        eyebrow="Virtual keys"
         title="API Keys"
-        description="密钥、额度与追踪"
         action={
           <Button
             onClick={() => {

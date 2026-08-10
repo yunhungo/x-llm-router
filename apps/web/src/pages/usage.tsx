@@ -29,9 +29,7 @@ export function UsagePage() {
   return (
     <div className="page-wrap">
       <PageHeader
-        eyebrow="Request log"
         title="调用记录"
-        description="请求、Token 与成本"
         action={
           <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
             <RefreshCcw size={14} /> 刷新

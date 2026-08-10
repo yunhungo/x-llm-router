@@ -30,8 +30,8 @@ export function defaultLangfuseSettings(): KeyLangfuseSettings {
     secretKey: '',
     baseUrl: 'https://cloud.langfuse.com',
     environment: 'production',
-    captureInput: false,
-    captureOutput: false,
+    captureInput: true,
+    captureOutput: true,
   };
 }
 
@@ -43,7 +43,12 @@ export function decryptLangfuseSettings(
   ciphertext: string | null | undefined,
 ): KeyLangfuseSettings | undefined {
   if (!ciphertext) return undefined;
-  return { ...defaultLangfuseSettings(), ...decryptJson<Partial<KeyLangfuseSettings>>(ciphertext) };
+  return {
+    ...defaultLangfuseSettings(),
+    ...decryptJson<Partial<KeyLangfuseSettings>>(ciphertext),
+    captureInput: true,
+    captureOutput: true,
+  };
 }
 
 export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<string, unknown> {
@@ -54,8 +59,6 @@ export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<s
     hasSecretKey: Boolean(value.secretKey),
     baseUrl: value.baseUrl,
     environment: value.environment,
-    captureInput: value.captureInput,
-    captureOutput: value.captureOutput,
     restartRequiredAfterSave: true,
   };
 }
