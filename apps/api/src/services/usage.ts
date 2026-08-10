@@ -47,28 +47,55 @@ export function extractTokenUsage(payload: unknown): TokenUsage {
   return { inputTokens, cachedInputTokens, outputTokens, totalTokens };
 }
 
-export async function calculateCost(model: string, usage: TokenUsage): Promise<number> {
-  const result = await getPool().query<{ input_per_million: string; output_per_million: string }>(
-    `SELECT input_per_million, output_per_million
+export interface ModelPrice {
+  inputPerMillion: number;
+  cachedInputPerMillion: number;
+  outputPerMillion: number;
+}
+
+export function computeCost(usage: TokenUsage, price: ModelPrice): number {
+  const cachedInputTokens = Math.min(usage.inputTokens, usage.cachedInputTokens);
+  const uncachedInputTokens = Math.max(usage.inputTokens - cachedInputTokens, 0);
+  return (
+    (uncachedInputTokens * price.inputPerMillion +
+      cachedInputTokens * price.cachedInputPerMillion +
+      usage.outputTokens * price.outputPerMillion) /
+    1_000_000
+  );
+}
+
+export async function calculateCost(
+  provider: string,
+  model: string,
+  usage: TokenUsage,
+): Promise<number> {
+  const result = await getPool().query<{
+    input_per_million: string;
+    cached_input_per_million: string;
+    output_per_million: string;
+  }>(
+    `SELECT input_per_million, cached_input_per_million, output_per_million
        FROM model_prices
-      WHERE $1 = model_pattern OR $1 LIKE model_pattern || '%'
-      ORDER BY length(model_pattern) DESC
+      WHERE provider IN ($1, '*')
+        AND ($2 = model_pattern OR $2 LIKE model_pattern || '%')
+      ORDER BY CASE WHEN provider = $1 THEN 0 ELSE 1 END, length(model_pattern) DESC
       LIMIT 1`,
-    [model],
+    [provider, model],
   );
   const price = result.rows[0];
   if (!price) return 0;
-  return (
-    (usage.inputTokens * Number(price.input_per_million) +
-      usage.outputTokens * Number(price.output_per_million)) /
-    1_000_000
-  );
+  return computeCost(usage, {
+    inputPerMillion: Number(price.input_per_million),
+    cachedInputPerMillion: Number(price.cached_input_per_million),
+    outputPerMillion: Number(price.output_per_million),
+  });
 }
 
 export async function recordUsage(input: {
   requestId: string;
   virtualApiKeyId: string;
   providerConnectionId?: string;
+  provider?: string;
   endpoint: 'responses' | 'chat.completions';
   model: string;
   statusCode: number;
@@ -78,16 +105,16 @@ export async function recordUsage(input: {
   errorCode?: string;
   metadata?: Record<string, unknown>;
 }): Promise<{ costUsd: number }> {
-  const costUsd = await calculateCost(input.model, input.usage);
+  const costUsd = await calculateCost(input.provider ?? '*', input.model, input.usage);
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO usage_logs(
         id, request_id, virtual_api_key_id, provider_connection_id, endpoint, model,
-        status_code, success, input_tokens, output_tokens, total_tokens, cost_usd,
-        latency_ms, time_to_first_token_ms, error_code, metadata
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
+        status_code, success, input_tokens, cached_input_tokens, output_tokens, total_tokens,
+        cost_usd, latency_ms, time_to_first_token_ms, error_code, metadata
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb)
       ON CONFLICT (request_id) DO NOTHING`,
       [
         randomUUID(),
@@ -99,6 +126,7 @@ export async function recordUsage(input: {
         input.statusCode,
         input.statusCode >= 200 && input.statusCode < 400,
         input.usage.inputTokens,
+        input.usage.cachedInputTokens,
         input.usage.outputTokens,
         input.usage.totalTokens,
         costUsd,

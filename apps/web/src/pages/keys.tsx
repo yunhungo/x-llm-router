@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
+import {
+  BarChart3,
+  Check,
+  Copy,
+  KeyRound,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Waypoints,
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
 import { Button, EmptyState, Field, Input, Modal, PageHeader, Skeleton } from '../components/ui';
@@ -104,6 +114,7 @@ function LangfuseFields({
 }
 
 export function KeysPage() {
+  const navigate = useNavigate();
   const [keys, setKeys] = useState<VirtualKey[]>();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -222,7 +233,18 @@ export function KeysPage() {
               </thead>
               <tbody>
                 {keys.map((key) => (
-                  <tr key={key.id}>
+                  <tr
+                    key={key.id}
+                    className="clickable-row"
+                    tabIndex={0}
+                    onClick={() => navigate(`/keys/${key.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate(`/keys/${key.id}`);
+                      }
+                    }}
+                  >
                     <td>
                       <strong>{key.name}</strong>
                       <small>{key.status === 'active' ? 'Active' : 'Revoked'}</small>
@@ -257,7 +279,18 @@ export function KeysPage() {
                       <div className="key-actions">
                         <button
                           className="icon-button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/keys/${key.id}`);
+                          }}
+                          aria-label={`查看 ${key.name} 的调用情况`}
+                        >
+                          <BarChart3 size={15} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
                             setEditingKey(key);
                             setEditingLangfuse(langfuseDraft(key.langfuse));
                             setError('');
@@ -269,7 +302,10 @@ export function KeysPage() {
                         <button
                           className="icon-button danger-icon"
                           disabled={key.status !== 'active'}
-                          onClick={() => void revoke(key)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void revoke(key);
+                          }}
                           aria-label="撤销"
                         >
                           <Trash2 size={15} />

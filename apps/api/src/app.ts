@@ -9,6 +9,7 @@ import { getPool } from './db/client';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { gatewayRoutes } from './routes/gateway';
+import { keyAnalyticsRoutes } from './routes/key-analytics';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const config = getConfig();
@@ -55,6 +56,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(authRoutes);
   await app.register(adminRoutes);
+  await app.register(keyAnalyticsRoutes);
   await app.register(gatewayRoutes);
 
   app.setNotFoundHandler(async (request, reply) => {

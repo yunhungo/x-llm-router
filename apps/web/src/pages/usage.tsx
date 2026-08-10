@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { api } from '../api';
 import { Badge, Button, PageHeader, Skeleton } from '../components/ui';
@@ -11,6 +12,13 @@ const money = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 4,
   maximumFractionDigits: 8,
 });
+const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
+function tokensPerSecond(log: UsageLog) {
+  const generationMs = log.latencyMs - (log.timeToFirstTokenMs ?? 0);
+  if (log.outputTokens <= 0 || generationMs <= 0) return null;
+  return (log.outputTokens * 1_000) / generationMs;
+}
 
 export function UsagePage() {
   const [logs, setLogs] = useState<UsageLog[]>();
@@ -72,17 +80,31 @@ export function UsagePage() {
                       <td>
                         <code>{log.model}</code>
                       </td>
-                      <td>{log.apiKeyName ?? 'Deleted key'}</td>
+                      <td>
+                        {log.apiKeyId && log.apiKeyName ? (
+                          <Link className="usage-key-link" to={`/keys/${log.apiKeyId}`}>
+                            {log.apiKeyName}
+                          </Link>
+                        ) : (
+                          'Deleted key'
+                        )}
+                      </td>
                       <td>
                         {log.totalTokens.toLocaleString()}
                         <small>
-                          {log.inputTokens} in / {log.outputTokens} out
+                          {log.inputTokens} in · {log.cachedInputTokens} cached · {log.outputTokens}{' '}
+                          out
                         </small>
                       </td>
                       <td>
                         {log.latencyMs.toLocaleString()} ms
                         {log.timeToFirstTokenMs ? (
-                          <small>TTFT {log.timeToFirstTokenMs} ms</small>
+                          <small>
+                            TTFT {log.timeToFirstTokenMs} ms · TPS{' '}
+                            {tokensPerSecond(log) === null
+                              ? '—'
+                              : decimal.format(tokensPerSecond(log) ?? 0)}
+                          </small>
                         ) : null}
                       </td>
                       <td>{money.format(log.costUsd)}</td>

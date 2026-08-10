@@ -1,4 +1,4 @@
-export const schemaVersion = 3;
+export const schemaVersion = 4;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   status_code integer NOT NULL,
   success boolean NOT NULL,
   input_tokens integer NOT NULL DEFAULT 0,
+  cached_input_tokens integer NOT NULL DEFAULT 0,
   output_tokens integer NOT NULL DEFAULT 0,
   total_tokens integer NOT NULL DEFAULT 0,
   cost_usd numeric(14, 8) NOT NULL DEFAULT 0,
@@ -96,6 +97,9 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE usage_logs
+  ADD COLUMN IF NOT EXISTS cached_input_tokens integer NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS usage_logs_created_idx ON usage_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_logs_key_created_idx ON usage_logs(virtual_api_key_id, created_at DESC);
@@ -110,17 +114,52 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 );
 
 CREATE TABLE IF NOT EXISTS model_prices (
-  model_pattern varchar(120) PRIMARY KEY,
+  provider varchar(40) NOT NULL DEFAULT '*',
+  model_pattern varchar(120) NOT NULL,
   input_per_million numeric(14, 6) NOT NULL,
+  cached_input_per_million numeric(14, 6) NOT NULL,
   output_per_million numeric(14, 6) NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(provider, model_pattern)
 );
 
-INSERT INTO model_prices(model_pattern, input_per_million, output_per_million)
+ALTER TABLE model_prices
+  ADD COLUMN IF NOT EXISTS provider varchar(40) NOT NULL DEFAULT '*',
+  ADD COLUMN IF NOT EXISTS cached_input_per_million numeric(14, 6);
+
+UPDATE model_prices
+   SET cached_input_per_million = input_per_million
+ WHERE cached_input_per_million IS NULL;
+
+ALTER TABLE model_prices
+  ALTER COLUMN cached_input_per_million SET NOT NULL;
+
+DO $$
+DECLARE
+  primary_key_columns integer;
+BEGIN
+  SELECT cardinality(conkey)
+    INTO primary_key_columns
+    FROM pg_constraint
+   WHERE conrelid = 'model_prices'::regclass AND contype = 'p';
+
+  IF primary_key_columns = 1 THEN
+    ALTER TABLE model_prices DROP CONSTRAINT model_prices_pkey;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'model_prices'::regclass AND contype = 'p'
+  ) THEN
+    ALTER TABLE model_prices ADD PRIMARY KEY(provider, model_pattern);
+  END IF;
+END $$;
+
+INSERT INTO model_prices(provider, model_pattern, input_per_million, cached_input_per_million, output_per_million)
 VALUES
-  ('gpt-5.6-sol', 5.0, 30.0),
-  ('gpt-5.6', 5.0, 30.0),
-  ('gpt-5.6-terra', 2.0, 12.0),
-  ('gpt-5.6-luna', 0.2, 1.2)
-ON CONFLICT (model_pattern) DO NOTHING;
+  ('*', 'gpt-5.6-sol', 5.0, 0.5, 30.0),
+  ('*', 'gpt-5.6', 5.0, 0.5, 30.0),
+  ('*', 'gpt-5.6-terra', 2.0, 0.2, 12.0),
+  ('*', 'gpt-5.6-luna', 0.2, 0.02, 1.2)
+ON CONFLICT (provider, model_pattern) DO NOTHING;
 `;

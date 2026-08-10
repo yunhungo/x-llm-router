@@ -31,8 +31,10 @@ const providerUpdateSchema = z.object({
   priority: z.number().int().min(0).max(10_000).optional(),
 });
 const priceSchema = z.object({
+  provider: z.string().trim().min(1).max(40).default('*'),
   modelPattern: z.string().trim().min(1).max(120),
   inputPerMillion: z.number().nonnegative(),
+  cachedInputPerMillion: z.number().nonnegative(),
   outputPerMillion: z.number().nonnegative(),
 });
 
@@ -286,11 +288,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       .parse(request.query);
     const result = await getPool().query(
       `SELECT u.id, u.request_id AS "requestId", u.endpoint, u.model, u.status_code AS "statusCode",
-              u.success, u.input_tokens AS "inputTokens", u.output_tokens AS "outputTokens",
+              u.success, u.input_tokens AS "inputTokens",
+              u.cached_input_tokens AS "cachedInputTokens", u.output_tokens AS "outputTokens",
               u.total_tokens AS "totalTokens", u.cost_usd::float8 AS "costUsd",
               u.latency_ms AS "latencyMs", u.time_to_first_token_ms AS "timeToFirstTokenMs",
               u.error_code AS "errorCode", u.created_at AS "createdAt",
-              k.name AS "apiKeyName", p.name AS "providerName"
+              k.id AS "apiKeyId", k.name AS "apiKeyName", p.name AS "providerName"
          FROM usage_logs u
          LEFT JOIN virtual_api_keys k ON k.id = u.virtual_api_key_id
          LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
@@ -302,9 +305,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/settings/model-prices', async () => {
     const result = await getPool().query(
-      `SELECT model_pattern AS "modelPattern", input_per_million::float8 AS "inputPerMillion",
+      `SELECT provider, model_pattern AS "modelPattern",
+              input_per_million::float8 AS "inputPerMillion",
+              cached_input_per_million::float8 AS "cachedInputPerMillion",
               output_per_million::float8 AS "outputPerMillion", updated_at AS "updatedAt"
-         FROM model_prices ORDER BY model_pattern`,
+         FROM model_prices ORDER BY provider, model_pattern`,
     );
     return { prices: result.rows };
   });
@@ -317,13 +322,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
     await getPool().query(
-      `INSERT INTO model_prices(model_pattern, input_per_million, output_per_million, updated_at)
-       VALUES ($1,$2,$3,now())
-       ON CONFLICT (model_pattern) DO UPDATE SET
+      `INSERT INTO model_prices(
+         provider, model_pattern, input_per_million, cached_input_per_million,
+         output_per_million, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,now())
+       ON CONFLICT (provider, model_pattern) DO UPDATE SET
          input_per_million = EXCLUDED.input_per_million,
+         cached_input_per_million = EXCLUDED.cached_input_per_million,
          output_per_million = EXCLUDED.output_per_million,
          updated_at = now()`,
-      [parsed.data.modelPattern, parsed.data.inputPerMillion, parsed.data.outputPerMillion],
+      [
+        parsed.data.provider,
+        parsed.data.modelPattern,
+        parsed.data.inputPerMillion,
+        parsed.data.cachedInputPerMillion,
+        parsed.data.outputPerMillion,
+      ],
     );
     return { ok: true };
   });

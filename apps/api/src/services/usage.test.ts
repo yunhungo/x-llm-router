@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractTokenUsage } from './usage';
+import { computeCost, extractTokenUsage } from './usage';
 
 describe('token usage extraction', () => {
   it('supports Responses API usage', () => {
@@ -25,7 +25,7 @@ describe('token usage extraction', () => {
     });
   });
 
-  it('supports DeepSeek cache-hit usage', () => {
+  it('supports top-level cache-hit usage from compatible APIs', () => {
     expect(
       extractTokenUsage({
         usage: {
@@ -52,5 +52,19 @@ describe('token usage extraction', () => {
       outputTokens: 3,
       totalTokens: 10,
     });
+  });
+
+  it('prices cached input separately from uncached input', () => {
+    expect(
+      computeCost(
+        {
+          inputTokens: 1_000_000,
+          cachedInputTokens: 400_000,
+          outputTokens: 100_000,
+          totalTokens: 1_100_000,
+        },
+        { inputPerMillion: 2, cachedInputPerMillion: 0.2, outputPerMillion: 12 },
+      ),
+    ).toBeCloseTo(2.48);
   });
 });

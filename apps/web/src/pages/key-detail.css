@@ -1,0 +1,322 @@
+.back-link {
+  width: fit-content;
+  margin-bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+  font-size: 12px;
+}
+.back-link:hover {
+  color: var(--ink);
+}
+.key-detail-page .page-header {
+  margin-bottom: 14px;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range-switch {
+  height: 36px;
+  padding: 3px;
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas);
+}
+.range-switch button {
+  min-width: 46px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mute);
+  font-size: 12px;
+  cursor: pointer;
+}
+.range-switch button:hover {
+  color: var(--ink);
+}
+.range-switch button.active {
+  background: var(--ink);
+  color: #fff;
+}
+.key-meta-strip {
+  min-height: 42px;
+  margin-bottom: 18px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas);
+  color: var(--body);
+  font-size: 12px;
+}
+.key-meta-strip > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-meta-strip > span + span {
+  padding-left: 18px;
+  border-left: 1px solid var(--hairline);
+}
+.detail-message {
+  margin: 0 0 18px;
+}
+.key-performance-grid {
+  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.metric-card {
+  min-width: 0;
+  padding: 16px 18px;
+  border-right: 1px solid var(--hairline);
+}
+.metric-card:last-child {
+  border-right: 0;
+}
+.metric-card span,
+.metric-card small {
+  display: block;
+  color: var(--mute);
+  font-size: 11px;
+}
+.metric-card strong {
+  display: block;
+  margin: 13px 0 7px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.key-analytics-grid {
+  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 0.8fr);
+  gap: 18px;
+}
+.panel-note {
+  color: var(--mute);
+  font-size: 11px;
+}
+.key-trend-panel,
+.distribution-panel {
+  min-height: 268px;
+  overflow: hidden;
+}
+.trend-bars {
+  height: 194px;
+  padding: 22px 20px 16px;
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
+.trend-column {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.trend-bar {
+  width: min(100%, 28px);
+  min-height: 4px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--ink);
+  transition: opacity 0.15s;
+}
+.trend-bar:hover {
+  opacity: 0.68;
+}
+.trend-column span {
+  max-width: 46px;
+  overflow: hidden;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 8px;
+  white-space: nowrap;
+}
+.distribution-list {
+  padding: 7px 0;
+}
+.distribution-list > div:not(.analytics-empty) {
+  min-height: 59px;
+  padding: 12px 18px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 3px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.distribution-list > div:last-child {
+  border-bottom: 0;
+}
+.distribution-list span,
+.distribution-list strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.distribution-list small {
+  grid-column: 1 / -1;
+  color: var(--mute);
+  font-size: 10px;
+}
+.analytics-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: var(--mute);
+  font-size: 12px;
+}
+.detail-section {
+  margin-bottom: 18px;
+}
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.error-list code {
+  color: var(--red);
+}
+.key-config-summary dl {
+  margin: 0;
+  padding: 7px 18px;
+}
+.key-config-summary dl > div {
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+.key-config-summary dl > div:last-child {
+  border-bottom: 0;
+}
+.key-config-summary dt {
+  color: var(--mute);
+  font-size: 12px;
+}
+.key-config-summary dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+.pricing-heading > div {
+  display: grid;
+  gap: 5px;
+}
+.price-input {
+  width: 112px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 5px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  outline: none;
+}
+.price-input:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+}
+.pricing-table td {
+  height: 70px;
+}
+.key-detail-table td {
+  height: 72px;
+}
+.clickable-row {
+  cursor: pointer;
+}
+.clickable-row:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.clickable-row:hover td {
+  background: var(--canvas-soft);
+}
+.usage-key-link {
+  color: var(--ink);
+  font-weight: 500;
+}
+.usage-key-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1050px) {
+  .key-performance-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .metric-card:nth-child(3) {
+    border-right: 0;
+  }
+  .metric-card:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--hairline);
+  }
+}
+@media (max-width: 760px) {
+  .key-detail-page .page-header {
+    gap: 14px;
+  }
+  .detail-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .key-detail-page .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .key-detail-page .stat-card {
+    min-height: 124px;
+  }
+  .key-detail-page .stat-card:nth-child(odd) {
+    border-right: 1px solid var(--hairline);
+  }
+  .key-detail-page .stat-card:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--hairline);
+  }
+  .key-detail-page .stat-card > strong {
+    font-size: 22px;
+  }
+  .key-performance-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .metric-card {
+    border-bottom: 1px solid var(--hairline);
+  }
+  .metric-card:nth-child(odd) {
+    border-right: 1px solid var(--hairline);
+  }
+  .metric-card:nth-child(even) {
+    border-right: 0;
+  }
+  .metric-card:last-child {
+    border-bottom: 0;
+  }
+  .key-analytics-grid,
+  .breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+  .key-meta-strip > span + span {
+    padding-left: 0;
+    border-left: 0;
+  }
+}

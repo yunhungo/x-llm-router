@@ -81,11 +81,13 @@ export interface ModelUsage {
 export interface UsageLog {
   id: string;
   requestId: string;
+  apiKeyId: string | null;
   endpoint: string;
   model: string;
   statusCode: number;
   success: boolean;
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
   costUsd: number;
@@ -95,4 +97,92 @@ export interface UsageLog {
   createdAt: string;
   apiKeyName: string | null;
   providerName: string | null;
+}
+
+export type KeyAnalyticsRange = '24h' | '7d' | '30d';
+
+export interface KeyAnalyticsSummary {
+  calls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  averageCostUsd: number;
+  averageLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  averageTtftMs: number;
+  p50TtftMs: number;
+  p95TtftMs: number;
+  averageTps: number;
+  p95Tps: number;
+  peakRpm: number;
+}
+
+export interface KeyUsagePoint {
+  bucket: string;
+  calls: number;
+  successfulCalls: number;
+  tokens: number;
+  cachedTokens: number;
+  costUsd: number;
+  averageTtftMs: number;
+  averageTps: number;
+}
+
+export interface KeyModelUsage {
+  model: string;
+  provider: string;
+  calls: number;
+  successfulCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  averageLatencyMs: number;
+  averageTps: number;
+}
+
+export interface KeyEndpointUsage {
+  endpoint: string;
+  calls: number;
+  successfulCalls: number;
+  tokens: number;
+  costUsd: number;
+}
+
+export interface KeyErrorUsage {
+  code: string;
+  calls: number;
+}
+
+export interface KeyUsageLog extends Omit<UsageLog, 'apiKeyId' | 'apiKeyName'> {
+  tps: number | null;
+}
+
+export interface ModelPriceMatch {
+  provider: string;
+  model: string;
+  matchedProvider: string | null;
+  matchedPattern: string | null;
+  inputPerMillion: number | null;
+  cachedInputPerMillion: number | null;
+  outputPerMillion: number | null;
+  updatedAt: string | null;
+}
+
+export interface KeyAnalyticsResponse {
+  range: KeyAnalyticsRange;
+  key: VirtualKey & { provider: string | null };
+  summary: KeyAnalyticsSummary;
+  series: KeyUsagePoint[];
+  models: KeyModelUsage[];
+  endpoints: KeyEndpointUsage[];
+  errors: KeyErrorUsage[];
+  logs: KeyUsageLog[];
+  prices: ModelPriceMatch[];
 }

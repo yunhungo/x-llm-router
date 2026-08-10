@@ -187,6 +187,7 @@ async function gatewayHandler(
         requestId,
         virtualApiKeyId: key.id,
         ...(provider ? { providerConnectionId: provider.id } : {}),
+        ...(provider ? { provider: provider.provider } : {}),
         endpoint,
         model: model || 'unknown',
         statusCode,
@@ -200,6 +201,7 @@ async function gatewayHandler(
         output: langfuse.captureOutput ? traceOutput : { statusCode, success: statusCode < 400 },
         usageDetails: {
           input: usage.inputTokens,
+          input_cached: usage.cachedInputTokens,
           output: usage.outputTokens,
           total: usage.totalTokens,
         },
