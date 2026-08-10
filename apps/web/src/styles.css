@@ -611,12 +611,30 @@ select.input {
 .trend-panel {
   min-height: 356px;
 }
+.trend-content {
+  padding: 17px 22px 18px;
+}
+.chart-summary {
+  min-height: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--mute);
+  font-size: 11px;
+}
+.chart-summary strong {
+  margin-left: 5px;
+  color: var(--ink);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
 .mini-chart {
-  height: 270px;
-  padding: 30px 22px 18px;
+  height: 225px;
+  padding-top: 18px;
   display: grid;
   grid-template-columns: repeat(14, 1fr);
-  align-items: end;
   gap: 7px;
   background-image: linear-gradient(
     to bottom,
@@ -634,28 +652,111 @@ select.input {
 .bar-column {
   height: 100%;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 9px;
+  outline: none;
+}
+.bar-track {
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 .bar-value {
   width: min(100%, 30px);
   min-height: 3px;
+  max-height: calc(100% - 22px);
+  position: relative;
   border-radius: 3px 3px 0 0;
   background: var(--ink);
-  transition: height 0.4s ease;
+  transition:
+    height 0.4s ease,
+    background-color 0.15s ease;
 }
-.bar-column:hover .bar-value {
+.bar-value.is-empty {
+  background: var(--hairline-strong);
+}
+.bar-column:hover .bar-value,
+.bar-column:focus-visible .bar-value {
   background: var(--blue);
 }
-.bar-column span {
+.bar-count {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--body);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.bar-column:hover .bar-count,
+.bar-column:focus-visible .bar-count {
+  color: var(--blue);
+}
+.bar-label {
+  justify-self: center;
   color: #999;
   font-family: 'Geist Mono Variable', monospace;
   font-size: 8px;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
+}
+.bar-tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  left: 50%;
+  min-width: max-content;
+  padding: 7px 9px;
+  display: grid;
+  gap: 2px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--canvas);
+  font-size: 10px;
+  line-height: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.bar-tooltip span {
+  color: #aaa;
+}
+.bar-column:first-child .bar-tooltip {
+  left: 0;
+  transform: translate(0, -4px);
+}
+.bar-column:last-child .bar-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, -4px);
+}
+.bar-column:hover .bar-tooltip,
+.bar-column:focus-visible .bar-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.bar-column:first-child:hover .bar-tooltip,
+.bar-column:first-child:focus-visible .bar-tooltip,
+.bar-column:last-child:hover .bar-tooltip,
+.bar-column:last-child:focus-visible .bar-tooltip {
+  transform: translate(0, 0);
+}
+.bar-column:focus-visible::after {
+  position: absolute;
+  inset: -4px -2px;
+  border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+  border-radius: 4px;
+  content: '';
+  pointer-events: none;
 }
 .quick-panel {
   padding-bottom: 20px;
@@ -1617,7 +1718,12 @@ td code {
   }
   .mini-chart {
     gap: 4px;
+  }
+  .trend-content {
     padding-inline: 12px;
+  }
+  .chart-summary {
+    gap: 8px;
   }
   .login-page {
     grid-template-rows: 58px auto 48px;

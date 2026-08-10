@@ -2,16 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
 
 import { api, ApiError, jsonBody } from '../api';
-import {
-  Badge,
-  Button,
-  EmptyState,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  Skeleton,
-} from '../components/ui';
+import { Button, EmptyState, Field, Input, Modal, PageHeader, Skeleton } from '../components/ui';
 import type { LangfuseConfig, Provider, VirtualKey } from '../types';
 
 interface CreatedKey {
@@ -241,10 +232,11 @@ export function KeysPage() {
                     </td>
                     <td>{key.providerName ?? '自动路由'}</td>
                     <td>
-                      <Badge tone={key.langfuse.enabled ? 'success' : 'neutral'}>
-                        {key.langfuse.enabled ? 'On' : 'Off'}
-                      </Badge>
-                      {key.langfuse.publicKey ? <small>{key.langfuse.publicKey}</small> : null}
+                      {key.langfuse.enabled && key.langfuse.publicKey ? (
+                        <small>{key.langfuse.publicKey}</small>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td>{key.rpmLimit.toLocaleString()}</td>
                     <td>

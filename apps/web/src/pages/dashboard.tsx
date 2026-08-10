@@ -23,22 +23,45 @@ const money = new Intl.NumberFormat('en-US', {
 });
 
 function MiniChart({ points }: { points: UsagePoint[] }) {
-  const max = Math.max(...points.map((point) => point.calls), 1);
+  const peak = Math.max(...points.map((point) => point.calls), 0);
+  const scaleMax = Math.max(peak, 1);
+  const total = points.reduce((sum, point) => sum + point.calls, 0);
   return (
-    <div className="mini-chart" role="img" aria-label="最近 14 天调用趋势">
-      {points.map((point) => (
-        <div
-          className="bar-column"
-          key={point.bucket}
-          title={`${point.bucket}: ${point.calls} calls`}
-        >
+    <div className="trend-content">
+      <div className="chart-summary">
+        <span>
+          {points.length} 天总调用 <strong>{total.toLocaleString()}</strong>
+        </span>
+        <span>
+          单日峰值 <strong>{peak.toLocaleString()}</strong>
+        </span>
+      </div>
+      <div className="mini-chart" role="group" aria-label={`最近 ${points.length} 天调用趋势`}>
+        {points.map((point) => (
           <div
-            className="bar-value"
-            style={{ height: `${Math.max(3, (point.calls / max) * 100)}%` }}
-          />
-          <span>{point.bucket.slice(5)}</span>
-        </div>
-      ))}
+            className="bar-column"
+            key={point.bucket}
+            tabIndex={0}
+            aria-label={`${point.bucket}，${point.calls.toLocaleString()} 次调用`}
+          >
+            <div className="bar-tooltip" aria-hidden="true">
+              <strong>{point.bucket}</strong>
+              <span>{point.calls.toLocaleString()} 次调用</span>
+            </div>
+            <div className="bar-track">
+              <div
+                className={`bar-value${point.calls === 0 ? ' is-empty' : ''}`}
+                style={{ height: `${(point.calls / scaleMax) * 100}%` }}
+              >
+                <strong className="bar-count">{point.calls.toLocaleString()}</strong>
+              </div>
+            </div>
+            <time className="bar-label" dateTime={point.bucket}>
+              {point.bucket.slice(5)}
+            </time>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
