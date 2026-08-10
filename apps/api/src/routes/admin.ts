@@ -13,6 +13,7 @@ import { getConfig } from '../config';
 import { getPool } from '../db/client';
 import { adminId, requireAdmin } from '../lib/admin-auth';
 import { encryptJson } from '../lib/crypto';
+import { getProviderAdapter, providerCatalog } from '../providers/registry';
 import {
   decryptLangfuseSettings,
   defaultLangfuseSettings,
@@ -49,6 +50,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { providers: result.rows };
   });
 
+  app.get('/api/admin/provider-catalog', async () => ({ providers: providerCatalog() }));
+
   app.post('/api/admin/providers/api-key', async (request, reply) => {
     const parsed = createProviderApiKeySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -56,18 +59,36 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .code(400)
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
+    let adapter;
+    try {
+      adapter = getProviderAdapter(parsed.data.provider);
+    } catch (error) {
+      const typed = error as Error & { code?: string };
+      return reply.code(400).send({
+        error: { code: typed.code ?? 'unsupported_provider', message: typed.message },
+      });
+    }
+    const baseUrl =
+      parsed.data.baseUrl ??
+      (parsed.data.provider === 'openai' ? getConfig().OPENAI_API_BASE : adapter.defaultApiBaseUrl);
+    if (!baseUrl) {
+      return reply.code(400).send({
+        error: { code: 'base_url_required', message: 'This provider requires a Base URL.' },
+      });
+    }
     const id = randomUUID();
     await getPool().query(
       `INSERT INTO provider_connections(
         id, name, provider, auth_type, credentials_ciphertext, base_url,
         default_model, priority, created_by
-      ) VALUES ($1,$2,'openai','api_key',$3,$4,$5,$6,$7)`,
+      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8)`,
       [
         id,
         parsed.data.name,
+        parsed.data.provider,
         encryptJson({ apiKey: parsed.data.apiKey }),
-        parsed.data.baseUrl ?? getConfig().OPENAI_API_BASE,
-        parsed.data.defaultModel ?? null,
+        baseUrl,
+        parsed.data.defaultModel ?? adapter.defaultModel ?? null,
         parsed.data.priority,
         adminId(request),
       ],

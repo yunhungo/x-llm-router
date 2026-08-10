@@ -5,7 +5,7 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 ## 首版能力
 
 - ChatGPT OAuth：采用 Codex 官方设备码授权流程，访问令牌、刷新令牌和账号信息以 AES-256-GCM 加密保存。
-- OpenAI API Key：支持官方或兼容 Base URL，密钥不会以明文写入数据库或日志。
+- API Key 上游：内置 OpenAI、DeepSeek 和自定义 OpenAI-compatible 连接，密钥不会以明文写入数据库或日志。
 - OpenAI 双协议：暴露 Responses 与 Chat Completions；支持 JSON 和 SSE 流式响应。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT 与成本，并提供 14/30 天聚合视图。
@@ -71,9 +71,15 @@ docker compose ps
 
 该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
 
-### OpenAI API Key
+### API Key 上游
 
-进入「上游连接」→「API Key」，填写密钥、Base URL 和可选默认模型。默认 Base URL 是 `https://api.openai.com/v1`。
+进入「上游连接」→「API 上游」，可以选择：
+
+- OpenAI：默认 Base URL 为 `https://api.openai.com/v1`，支持 Responses 与 Chat Completions。
+- DeepSeek：默认 Base URL 为 `https://api.deepseek.com`、默认模型为 `deepseek-v4-flash`，支持 Chat Completions。
+- OpenAI Compatible：填写服务商提供的 Base URL 与默认模型，通过 Chat Completions 直通调用。
+
+所有上游密钥都会加密保存。创建虚拟 API Key 时可以固定一个上游；客户端仍只需连接 xRouter 的 `/v1` 地址。
 
 ## 调用示例
 

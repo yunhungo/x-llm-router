@@ -6,6 +6,7 @@ export interface User {
 export interface Provider {
   id: string;
   name: string;
+  provider: string;
   authType: 'oauth' | 'api_key';
   status: 'active' | 'disabled' | 'error';
   accountId: string | null;
@@ -15,6 +16,18 @@ export interface Provider {
   tokenExpiresAt: string | null;
   lastError: string | null;
   createdAt: string;
+}
+
+export interface ProviderCatalogItem {
+  id: string;
+  name: string;
+  defaultApiBaseUrl: string | null;
+  defaultModel: string | null;
+  capabilities: {
+    upstreamApis: Array<'responses' | 'chat.completions'>;
+    gatewayApis: Array<'responses' | 'chat.completions'>;
+    supportsOAuth: boolean;
+  };
 }
 
 export interface LangfuseConfig {

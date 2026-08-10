@@ -5,6 +5,7 @@ import { type OAuthCredentials, refreshOAuthCredentials } from './openai-oauth';
 interface ProviderRow {
   id: string;
   name: string;
+  provider: string;
   auth_type: 'oauth' | 'api_key';
   credentials_ciphertext: string;
   account_id: string | null;
@@ -20,6 +21,7 @@ interface ApiKeyCredentials {
 export interface ProviderRuntime {
   id: string;
   name: string;
+  provider: string;
   authType: 'oauth' | 'api_key';
   baseUrl: string;
   defaultModel: string | null;
@@ -32,7 +34,7 @@ export async function getProviderRuntime(
   sessionId: string,
 ): Promise<ProviderRuntime> {
   const result = await getPool().query<ProviderRow>(
-    `SELECT id, name, auth_type, credentials_ciphertext, account_id, base_url,
+    `SELECT id, name, provider, auth_type, credentials_ciphertext, account_id, base_url,
             default_model, token_expires_at
        FROM provider_connections
       WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)
@@ -53,6 +55,7 @@ export async function getProviderRuntime(
     return {
       id: row.id,
       name: row.name,
+      provider: row.provider,
       authType: row.auth_type,
       baseUrl: row.base_url.replace(/\/$/, ''),
       defaultModel: row.default_model,
@@ -97,6 +100,7 @@ export async function getProviderRuntime(
   return {
     id: row.id,
     name: row.name,
+    provider: row.provider,
     authType: row.auth_type,
     baseUrl: row.base_url.replace(/\/$/, ''),
     defaultModel: row.default_model,

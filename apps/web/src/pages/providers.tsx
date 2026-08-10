@@ -23,7 +23,7 @@ import {
   PageHeader,
   Skeleton,
 } from '../components/ui';
-import type { Provider } from '../types';
+import type { Provider, ProviderCatalogItem } from '../types';
 
 interface DeviceFlow {
   id: string;
@@ -35,7 +35,9 @@ interface DeviceFlow {
 
 export function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>();
+  const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([]);
   const [modal, setModal] = useState<'oauth' | 'api-key' | null>(null);
+  const [providerType, setProviderType] = useState('openai');
   const [name, setName] = useState('OpenAI');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
@@ -45,8 +47,12 @@ export function ProvidersPage() {
   const [message, setMessage] = useState('');
 
   const load = useCallback(async () => {
-    const response = await api<{ providers: Provider[] }>('/api/admin/providers');
-    setProviders(response.providers);
+    const [providerResult, catalogResult] = await Promise.all([
+      api<{ providers: Provider[] }>('/api/admin/providers'),
+      api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
+    ]);
+    setProviders(providerResult.providers);
+    setCatalog(catalogResult.providers);
   }, []);
   useEffect(() => void load(), [load]);
 
@@ -104,6 +110,7 @@ export function ProvidersPage() {
         method: 'POST',
         ...jsonBody({
           name,
+          provider: providerType,
           apiKey,
           baseUrl,
           defaultModel: defaultModel || undefined,
@@ -120,6 +127,25 @@ export function ProvidersPage() {
       setLoading(false);
     }
   };
+
+  const selectProviderType = (id: string) => {
+    setProviderType(id);
+    const selected = catalog.find((provider) => provider.id === id);
+    if (!selected) return;
+    setName(selected.name);
+    setBaseUrl(selected.defaultApiBaseUrl ?? '');
+    setDefaultModel(selected.defaultModel ?? '');
+  };
+
+  const openApiKeyModal = () => {
+    const selected = catalog.find((provider) => provider.id === providerType) ?? catalog[0];
+    if (selected) selectProviderType(selected.id);
+    setApiKey('');
+    setFlow(undefined);
+    setModal('api-key');
+  };
+
+  const selectedProvider = catalog.find((provider) => provider.id === providerType);
 
   const toggle = async (provider: Provider) => {
     await api(`/api/admin/providers/${provider.id}`, {
@@ -140,14 +166,8 @@ export function ProvidersPage() {
         title="上游连接"
         action={
           <div className="button-group">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setModal('api-key');
-                setFlow(undefined);
-              }}
-            >
-              <KeyRound size={14} /> API Key
+            <Button variant="secondary" onClick={openApiKeyModal}>
+              <KeyRound size={14} /> API 上游
             </Button>
             <Button
               onClick={() => {
@@ -188,7 +208,11 @@ export function ProvidersPage() {
                       {provider.authType === 'oauth' ? 'OAuth' : 'API Key'}
                     </Badge>
                   </div>
-                  <span>OpenAI · 优先级 {provider.priority}</span>
+                  <span>
+                    {catalog.find((item) => item.id === provider.provider)?.name ??
+                      provider.provider}{' '}
+                    · 优先级 {provider.priority}
+                  </span>
                 </div>
                 <button className="icon-button">
                   <MoreHorizontal size={17} />
@@ -249,10 +273,10 @@ export function ProvidersPage() {
       ) : (
         <EmptyState
           title="还没有上游连接"
-          description="添加 OAuth 或 API Key。"
+          description="添加 GPT OAuth、DeepSeek 或其他 OpenAI-compatible API 上游。"
           action={
-            <Button onClick={() => setModal('oauth')}>
-              <Link2 size={14} /> 连接 OpenAI
+            <Button onClick={openApiKeyModal}>
+              <KeyRound size={14} /> 添加 API 上游
             </Button>
           }
         />
@@ -324,17 +348,45 @@ export function ProvidersPage() {
         </Modal>
       ) : null}
       {modal === 'api-key' ? (
-        <Modal title="添加 OpenAI API Key" onClose={() => setModal(null)}>
+        <Modal title="添加 API 上游" onClose={() => setModal(null)}>
           <form className="modal-body" onSubmit={(event) => void createApiKeyProvider(event)}>
+            <Field
+              label="上游类型"
+              hint={
+                selectedProvider
+                  ? `网关支持：${selectedProvider.capabilities.gatewayApis
+                      .map((endpoint) =>
+                        endpoint === 'responses' ? 'Responses' : 'Chat Completions',
+                      )
+                      .join('、')}`
+                  : '正在加载可用的上游类型…'
+              }
+            >
+              <select
+                className="input"
+                value={providerType}
+                onChange={(event) => selectProviderType(event.target.value)}
+                required
+              >
+                {catalog.map((provider) => (
+                  <option value={provider.id} key={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="连接名称">
               <Input value={name} onChange={(event) => setName(event.target.value)} required />
             </Field>
-            <Field label="OpenAI API Key" hint="只会以加密形式存储。">
+            <Field
+              label={`${selectedProvider?.name ?? '上游'} API Key`}
+              hint="只会以加密形式存储。"
+            >
               <Input
                 type="password"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
-                placeholder="sk-…"
+                placeholder="输入上游 API Key"
                 required
               />
             </Field>
@@ -343,6 +395,7 @@ export function ProvidersPage() {
                 type="url"
                 value={baseUrl}
                 onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder="https://api.example.com/v1"
                 required
               />
             </Field>
@@ -350,7 +403,7 @@ export function ProvidersPage() {
               <Input
                 value={defaultModel}
                 onChange={(event) => setDefaultModel(event.target.value)}
-                placeholder="gpt-5.6"
+                placeholder="例如 deepseek-v4-flash"
               />
             </Field>
             <div className="modal-actions">

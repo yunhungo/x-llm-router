@@ -3,6 +3,7 @@ import { emptyUsage, extractTokenUsage, type TokenUsage } from './usage';
 export class SseAccumulator {
   private readonly decoder = new TextDecoder();
   private buffer = '';
+  private readonly outputItems = new Map<number, Record<string, unknown>>();
   usage: TokenUsage = emptyUsage();
   completedResponse: Record<string, unknown> | null = null;
   errorCode: string | undefined;
@@ -28,11 +29,29 @@ export class SseAccumulator {
       const nextUsage = extractTokenUsage(payload);
       if (nextUsage.totalTokens > 0) this.usage = nextUsage;
       if (
+        payload.type === 'response.output_item.done' &&
+        typeof payload.output_index === 'number' &&
+        payload.item &&
+        typeof payload.item === 'object'
+      ) {
+        this.outputItems.set(payload.output_index, payload.item as Record<string, unknown>);
+      }
+      if (
         payload.type === 'response.completed' &&
         payload.response &&
         typeof payload.response === 'object'
       ) {
-        this.completedResponse = payload.response as Record<string, unknown>;
+        const response = payload.response as Record<string, unknown>;
+        this.completedResponse =
+          (!Array.isArray(response.output) || response.output.length === 0) &&
+          this.outputItems.size > 0
+            ? {
+                ...response,
+                output: [...this.outputItems.entries()]
+                  .sort(([left], [right]) => left - right)
+                  .map(([, item]) => item),
+              }
+            : response;
       }
       if (payload.type === 'error') {
         const error = payload.error;

@@ -4,11 +4,17 @@ import { getPool } from '../db/client';
 
 export interface TokenUsage {
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
 }
 
-export const emptyUsage = (): TokenUsage => ({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+export const emptyUsage = (): TokenUsage => ({
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+});
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -26,9 +32,19 @@ export function extractTokenUsage(payload: unknown): TokenUsage {
         : undefined;
   if (!usage) return emptyUsage();
   const inputTokens = numberValue(usage.input_tokens ?? usage.prompt_tokens);
+  const inputDetails = (
+    usage.input_tokens_details && typeof usage.input_tokens_details === 'object'
+      ? usage.input_tokens_details
+      : usage.prompt_tokens_details && typeof usage.prompt_tokens_details === 'object'
+        ? usage.prompt_tokens_details
+        : {}
+  ) as Record<string, unknown>;
+  const cachedInputTokens = numberValue(
+    inputDetails.cached_tokens ?? usage.prompt_cache_hit_tokens,
+  );
   const outputTokens = numberValue(usage.output_tokens ?? usage.completion_tokens);
   const totalTokens = numberValue(usage.total_tokens) || inputTokens + outputTokens;
-  return { inputTokens, outputTokens, totalTokens };
+  return { inputTokens, cachedInputTokens, outputTokens, totalTokens };
 }
 
 export async function calculateCost(model: string, usage: TokenUsage): Promise<number> {

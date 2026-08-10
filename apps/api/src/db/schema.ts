@@ -1,4 +1,4 @@
-export const schemaVersion = 2;
+export const schemaVersion = 3;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS platform_users (
 CREATE TABLE IF NOT EXISTS provider_connections (
   id uuid PRIMARY KEY,
   name varchar(120) NOT NULL,
-  provider varchar(40) NOT NULL CHECK (provider IN ('openai')),
+  provider varchar(40) NOT NULL,
   auth_type varchar(40) NOT NULL CHECK (auth_type IN ('oauth', 'api_key')),
   status varchar(24) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'error')),
   credentials_ciphertext text NOT NULL,
@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS provider_connections (
 
 CREATE INDEX IF NOT EXISTS provider_connections_routing_idx
   ON provider_connections(status, priority, created_at);
+
+ALTER TABLE provider_connections
+  DROP CONSTRAINT IF EXISTS provider_connections_provider_check;
 
 CREATE TABLE IF NOT EXISTS oauth_device_flows (
   id uuid PRIMARY KEY,

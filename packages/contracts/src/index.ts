@@ -30,6 +30,11 @@ export const createApiKeySchema = z.object({
 
 export const createProviderApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
+  provider: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/)
+    .default('openai'),
   apiKey: z.string().min(12),
   baseUrl: z.string().url().optional(),
   defaultModel: z.string().trim().min(1).max(120).optional(),
