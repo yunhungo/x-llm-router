@@ -1,11 +1,10 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 
-import { getConfig } from '../config';
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
 
-export interface LangfuseRuntimeSettings {
+export interface KeyLangfuseSettings {
   enabled: boolean;
   publicKey: string;
   secretKey: string;
@@ -15,114 +14,119 @@ export interface LangfuseRuntimeSettings {
   captureOutput: boolean;
 }
 
-interface LangfuseSettingsRow {
-  value_json: {
-    enabled?: boolean;
-    publicKey?: string;
-    baseUrl?: string;
-    environment?: string;
-    captureInput?: boolean;
-    captureOutput?: boolean;
-  };
-  secret_ciphertext: string | null;
+interface LangfuseKeyRow {
+  id: string;
+  langfuse_config_ciphertext: string | null;
 }
 
-let runtimeSettings: LangfuseRuntimeSettings | undefined;
+const API_KEY_ATTRIBUTE = 'langfuse.trace.metadata.apiKeyId';
+
 let telemetrySdk: NodeSDK | undefined;
 
-export async function loadLangfuseSettings(): Promise<LangfuseRuntimeSettings> {
-  const config = getConfig();
-  const result = await getPool().query<LangfuseSettingsRow>(
-    `SELECT value_json, secret_ciphertext FROM platform_settings WHERE key = 'langfuse'`,
-  );
-  const row = result.rows[0];
-  const saved = row?.value_json ?? {};
-  let secretKey = config.LANGFUSE_SECRET_KEY ?? '';
-  if (row?.secret_ciphertext) {
-    secretKey = decryptJson<{ secretKey: string }>(row.secret_ciphertext).secretKey;
-  }
-  runtimeSettings = {
-    enabled: saved.enabled ?? config.LANGFUSE_ENABLED,
-    publicKey: saved.publicKey ?? config.LANGFUSE_PUBLIC_KEY ?? '',
-    secretKey,
-    baseUrl: saved.baseUrl ?? config.LANGFUSE_BASE_URL,
-    environment: saved.environment ?? config.LANGFUSE_TRACING_ENVIRONMENT,
-    captureInput: saved.captureInput ?? false,
-    captureOutput: saved.captureOutput ?? false,
+export function defaultLangfuseSettings(): KeyLangfuseSettings {
+  return {
+    enabled: false,
+    publicKey: '',
+    secretKey: '',
+    baseUrl: 'https://cloud.langfuse.com',
+    environment: 'production',
+    captureInput: false,
+    captureOutput: false,
   };
-  return runtimeSettings;
 }
 
-export function currentLangfuseSettings(): LangfuseRuntimeSettings {
-  if (!runtimeSettings) {
-    throw new Error('Langfuse settings have not been loaded.');
+export function encryptLangfuseSettings(settings: KeyLangfuseSettings): string {
+  return encryptJson(settings);
+}
+
+export function decryptLangfuseSettings(
+  ciphertext: string | null | undefined,
+): KeyLangfuseSettings | undefined {
+  if (!ciphertext) return undefined;
+  return { ...defaultLangfuseSettings(), ...decryptJson<Partial<KeyLangfuseSettings>>(ciphertext) };
+}
+
+export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<string, unknown> {
+  const value = settings ?? defaultLangfuseSettings();
+  return {
+    enabled: value.enabled,
+    publicKey: value.publicKey,
+    hasSecretKey: Boolean(value.secretKey),
+    baseUrl: value.baseUrl,
+    environment: value.environment,
+    captureInput: value.captureInput,
+    captureOutput: value.captureOutput,
+    restartRequiredAfterSave: true,
+  };
+}
+
+export async function saveApiKeyLangfuseSettings(
+  apiKeyId: string,
+  input: Omit<KeyLangfuseSettings, 'secretKey'> & { secretKey?: string },
+): Promise<boolean> {
+  const existingResult = await getPool().query<LangfuseKeyRow>(
+    'SELECT id, langfuse_config_ciphertext FROM virtual_api_keys WHERE id = $1',
+    [apiKeyId],
+  );
+  const row = existingResult.rows[0];
+  if (!row) return false;
+
+  const existing = decryptLangfuseSettings(row.langfuse_config_ciphertext);
+  const settings: KeyLangfuseSettings = {
+    ...input,
+    secretKey: input.secretKey || existing?.secretKey || '',
+  };
+  if (settings.enabled && (!settings.publicKey || !settings.secretKey)) {
+    throw Object.assign(new Error('启用 Langfuse 需要 Public Key 和 Secret Key。'), {
+      statusCode: 400,
+      code: 'langfuse_credentials_required',
+    });
   }
-  return runtimeSettings;
+
+  await getPool().query(
+    'UPDATE virtual_api_keys SET langfuse_config_ciphertext = $2 WHERE id = $1',
+    [apiKeyId, encryptLangfuseSettings(settings)],
+  );
+  return true;
 }
 
-export async function initializeLangfuse(): Promise<boolean> {
-  const settings = await loadLangfuseSettings();
-  if (!settings.enabled || !settings.publicKey || !settings.secretKey) return false;
+export async function initializeLangfuse(): Promise<number> {
+  const result = await getPool().query<LangfuseKeyRow>(
+    `SELECT id, langfuse_config_ciphertext
+       FROM virtual_api_keys
+      WHERE status = 'active' AND langfuse_config_ciphertext IS NOT NULL`,
+  );
+  const configured: Array<{ id: string; settings: KeyLangfuseSettings }> = [];
 
-  process.env.LANGFUSE_TRACING_ENVIRONMENT = settings.environment;
+  for (const row of result.rows) {
+    try {
+      const settings = decryptLangfuseSettings(row.langfuse_config_ciphertext);
+      if (settings?.enabled && settings.publicKey && settings.secretKey) {
+        configured.push({ id: row.id, settings });
+      }
+    } catch {
+      console.warn(`Skipping invalid Langfuse configuration for API key ${row.id}.`);
+    }
+  }
+  if (!configured.length) return 0;
+
   telemetrySdk = new NodeSDK({
-    spanProcessors: [
-      new LangfuseSpanProcessor({
-        publicKey: settings.publicKey,
-        secretKey: settings.secretKey,
-        baseUrl: settings.baseUrl,
-      }),
-    ],
+    spanProcessors: configured.map(
+      ({ id, settings }) =>
+        new LangfuseSpanProcessor({
+          publicKey: settings.publicKey,
+          secretKey: settings.secretKey,
+          baseUrl: settings.baseUrl,
+          environment: settings.environment,
+          shouldExportSpan: ({ otelSpan }) => otelSpan.attributes[API_KEY_ATTRIBUTE] === id,
+        }),
+    ),
   });
   telemetrySdk.start();
-  return true;
+  return configured.length;
 }
 
 export async function shutdownLangfuse(): Promise<void> {
   if (telemetrySdk) await telemetrySdk.shutdown();
-}
-
-export async function saveLangfuseSettings(
-  input: Omit<LangfuseRuntimeSettings, 'secretKey'> & { secretKey?: string },
-  updatedBy: string,
-): Promise<void> {
-  const existing = await loadLangfuseSettings();
-  const secretKey = input.secretKey || existing.secretKey;
-  await getPool().query(
-    `INSERT INTO platform_settings(key, value_json, secret_ciphertext, updated_by, updated_at)
-     VALUES ('langfuse', $1::jsonb, $2, $3, now())
-     ON CONFLICT (key) DO UPDATE SET
-       value_json = EXCLUDED.value_json,
-       secret_ciphertext = EXCLUDED.secret_ciphertext,
-       updated_by = EXCLUDED.updated_by,
-       updated_at = now()`,
-    [
-      JSON.stringify({
-        enabled: input.enabled,
-        publicKey: input.publicKey,
-        baseUrl: input.baseUrl,
-        environment: input.environment,
-        captureInput: input.captureInput,
-        captureOutput: input.captureOutput,
-      }),
-      secretKey ? encryptJson({ secretKey }) : null,
-      updatedBy,
-    ],
-  );
-  runtimeSettings = { ...input, secretKey };
-}
-
-export function publicLangfuseSettings(
-  settings = currentLangfuseSettings(),
-): Record<string, unknown> {
-  return {
-    enabled: settings.enabled,
-    publicKey: settings.publicKey,
-    hasSecretKey: Boolean(settings.secretKey),
-    baseUrl: settings.baseUrl,
-    environment: settings.environment,
-    captureInput: settings.captureInput,
-    captureOutput: settings.captureOutput,
-    restartRequiredAfterSave: true,
-  };
+  telemetrySdk = undefined;
 }

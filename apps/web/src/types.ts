@@ -17,6 +17,17 @@ export interface Provider {
   createdAt: string;
 }
 
+export interface LangfuseConfig {
+  enabled: boolean;
+  publicKey: string;
+  hasSecretKey: boolean;
+  baseUrl: string;
+  environment: string;
+  captureInput: boolean;
+  captureOutput: boolean;
+  restartRequiredAfterSave: boolean;
+}
+
 export interface VirtualKey {
   id: string;
   name: string;
@@ -30,6 +41,7 @@ export interface VirtualKey {
   createdAt: string;
   providerName: string | null;
   providerConnectionId: string | null;
+  langfuse: LangfuseConfig;
 }
 
 export interface UsageSummary {

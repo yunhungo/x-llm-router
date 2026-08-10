@@ -30,8 +30,8 @@ export function UsagePage() {
     <div className="page-wrap">
       <PageHeader
         eyebrow="Request log"
-        title="调用记录。"
-        description="逐请求查看协议、模型、Token、延迟、成本与错误。"
+        title="调用记录"
+        description="请求、Token 与成本"
         action={
           <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
             <RefreshCcw size={14} /> 刷新

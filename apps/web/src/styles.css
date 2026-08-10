@@ -482,28 +482,28 @@ select.input {
 .page-wrap {
   width: min(1260px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 58px 0 80px;
+  padding: 42px 0 72px;
 }
 .page-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 32px;
-  margin-bottom: 34px;
+  margin-bottom: 24px;
 }
 .page-header h1 {
   margin: 0;
-  font-size: clamp(28px, 3vw, 36px);
-  line-height: 1.1;
+  font-size: clamp(24px, 2.2vw, 28px);
+  line-height: 1.2;
   font-weight: 600;
-  letter-spacing: -1.45px;
+  letter-spacing: -0.85px;
 }
 .page-header p {
   max-width: 620px;
-  margin: 10px 0 0;
+  margin: 5px 0 0;
   color: var(--body);
-  font-size: 15px;
-  line-height: 23px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .page-action {
   flex: 0 0 auto;
@@ -1098,6 +1098,9 @@ td code {
   gap: 18px;
   align-items: start;
 }
+.settings-grid.single {
+  grid-template-columns: minmax(0, 560px);
+}
 .settings-panel {
   overflow: hidden;
 }
@@ -1177,6 +1180,9 @@ td code {
 .switch-row input:checked + i::after {
   transform: translateX(15px);
 }
+.switch-row.compact {
+  padding: 11px 12px;
+}
 .input-action {
   position: relative;
 }
@@ -1224,6 +1230,25 @@ td code {
   color: var(--mute);
   font-size: 10px;
   line-height: 15px;
+}
+.capture-options.compact label {
+  align-items: center;
+  padding: 10px 12px;
+}
+.capture-options.compact input {
+  margin-top: 0;
+}
+.langfuse-fields {
+  display: grid;
+  gap: 14px;
+}
+.key-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.compact-notice {
+  margin: -10px 0 16px;
 }
 .settings-warning {
   padding: 10px 11px;
@@ -1295,17 +1320,17 @@ td code {
 }
 .login-intro h1 {
   margin: 0;
-  font-size: clamp(44px, 5.2vw, 68px);
-  line-height: 0.98;
+  font-size: clamp(38px, 4vw, 50px);
+  line-height: 1.02;
   font-weight: 600;
-  letter-spacing: -3.4px;
+  letter-spacing: -2.2px;
 }
 .login-intro > p {
   max-width: 550px;
-  margin: 25px 0 0;
+  margin: 16px 0 0;
   color: var(--body);
-  font-size: 17px;
-  line-height: 28px;
+  font-size: 15px;
+  line-height: 23px;
 }
 .protocol-row {
   margin-top: 30px;
@@ -1496,8 +1521,8 @@ td code {
     gap: 48px;
   }
   .login-intro h1 {
-    font-size: 48px;
-    letter-spacing: -2.4px;
+    font-size: 40px;
+    letter-spacing: -1.8px;
   }
 }
 
@@ -1586,8 +1611,8 @@ td code {
     margin-bottom: 25px;
   }
   .page-header h1 {
-    font-size: 29px;
-    letter-spacing: -1.15px;
+    font-size: 24px;
+    letter-spacing: -0.7px;
   }
   .page-action {
     width: 100%;
@@ -1656,9 +1681,9 @@ td code {
     padding: 0;
   }
   .login-intro h1 {
-    font-size: 41px;
-    line-height: 1;
-    letter-spacing: -2px;
+    font-size: 34px;
+    line-height: 1.05;
+    letter-spacing: -1.4px;
   }
   .login-intro > p {
     margin-top: 18px;

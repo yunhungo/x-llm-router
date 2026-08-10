@@ -33,11 +33,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-change-me-now}
-      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
-      LANGFUSE_TRACING_ENVIRONMENT: ${LANGFUSE_TRACING_ENVIRONMENT:-production}
       OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
       CHATGPT_API_BASE: ${CHATGPT_API_BASE:-https://chatgpt.com/backend-api/codex}
       CHATGPT_AUTH_BASE: ${CHATGPT_AUTH_BASE:-https://auth.openai.com}

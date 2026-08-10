@@ -8,7 +8,7 @@ async function main(): Promise<void> {
   const config = getConfig();
   await runMigrations();
   const createdAdmin = await bootstrapInitialAdmin();
-  const langfuseEnabled = await initializeLangfuse();
+  const langfuseProjectCount = await initializeLangfuse();
   const { buildApp } = await import('./app');
   const app = await buildApp();
 
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
       'Initial administrator created. Change the default password immediately.',
     );
   }
-  app.log.info({ langfuseEnabled }, 'Observability initialized');
+  app.log.info({ langfuseProjectCount }, 'Observability initialized');
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'Shutting down');

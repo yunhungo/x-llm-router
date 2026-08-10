@@ -9,8 +9,8 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 - OpenAI 双协议：暴露 Responses 与 Chat Completions；支持 JSON 和 SSE 流式响应。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT 与成本，并提供 14/30 天聚合视图。
-- Langfuse SDK v5：每次模型调用记录为 `generation` observation，默认不采集提示词/输出正文，可在 UI 中明确开启。
-- 管理后台：连接、Key、调用日志、Langfuse 和管理员账号全部可视化配置。
+- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，默认不采集提示词/输出正文。
+- 管理后台：连接、Key、调用日志、Key 级 Langfuse 和管理员账号全部可视化配置。
 - 自托管：PostgreSQL + API + Nginx Web 三服务 Docker Compose，启动时自动执行幂等迁移并创建初始管理员。
 
 ## 架构
@@ -120,13 +120,13 @@ const response = await client.responses.create({
 
 ## Langfuse
 
-在「平台设置」中填写 Public Key、Secret Key、Base URL 与 Environment。保存后重启 API 容器，使新的 OpenTelemetry exporter 生效：
+在「API Keys」中为每个虚拟 Key 独立填写 Public Key、Secret Key、Base URL 与 Environment。保存后重启 API 容器：
 
 ```bash
 docker compose restart api
 ```
 
-默认只记录模型、Token、成本、延迟、状态、虚拟 Key ID 与请求 ID；输入和输出正文必须显式开启。自托管 Langfuse 时把 Base URL 指向你的实例。
+不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。默认不记录输入和输出正文；自托管时将 Base URL 指向对应实例。
 
 ## 本地开发
 

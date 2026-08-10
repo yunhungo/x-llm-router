@@ -11,12 +11,23 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(12).max(256),
 });
 
+export const langfuseSettingsSchema = z.object({
+  enabled: z.boolean(),
+  publicKey: z.string().trim().max(255),
+  secretKey: z.string().trim().max(512).optional(),
+  baseUrl: z.string().url(),
+  environment: z.string().trim().min(1).max(40),
+  captureInput: z.boolean().default(false),
+  captureOutput: z.boolean().default(false),
+});
+
 export const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
   budgetUsd: z.number().nonnegative().nullable().optional(),
   rpmLimit: z.number().int().positive().max(100_000).default(60),
   expiresAt: z.string().datetime().nullable().optional(),
   providerConnectionId: z.string().uuid().nullable().optional(),
+  langfuse: langfuseSettingsSchema.optional(),
 });
 
 export const createProviderApiKeySchema = z.object({
@@ -25,16 +36,6 @@ export const createProviderApiKeySchema = z.object({
   baseUrl: z.string().url().optional(),
   defaultModel: z.string().trim().min(1).max(120).optional(),
   priority: z.number().int().min(0).max(10_000).default(100),
-});
-
-export const langfuseSettingsSchema = z.object({
-  enabled: z.boolean(),
-  publicKey: z.string().trim().max(255),
-  secretKey: z.string().trim().max(512).optional(),
-  baseUrl: z.string().url(),
-  environment: z.string().trim().min(1).max(80),
-  captureInput: z.boolean().default(false),
-  captureOutput: z.boolean().default(false),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

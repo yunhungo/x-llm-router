@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { propagateAttributes, startObservation } from '@langfuse/tracing';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import { currentLangfuseSettings } from '../services/langfuse';
+import { defaultLangfuseSettings } from '../services/langfuse';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
 import { requireVirtualApiKey } from '../services/virtual-keys';
 import { SseAccumulator } from '../services/sse';
@@ -119,7 +119,7 @@ async function gatewayHandler(
   let errorCode: string | undefined;
   let firstTokenAt: number | undefined;
   let traceOutput: unknown;
-  const langfuse = currentLangfuseSettings();
+  const langfuse = key.langfuse ?? defaultLangfuseSettings();
 
   const observation = propagateAttributes(
     {
@@ -127,7 +127,8 @@ async function gatewayHandler(
       userId: key.id,
       sessionId: String(request.headers['x-session-id'] ?? requestId),
       tags: ['gateway', endpoint],
-      metadata: { requestId, apiKey: key.name },
+      environment: langfuse.environment,
+      metadata: { requestId, apiKey: key.name, apiKeyId: key.id },
     },
     () =>
       startObservation(

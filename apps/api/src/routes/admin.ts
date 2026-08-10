@@ -14,9 +14,10 @@ import { getPool } from '../db/client';
 import { adminId, requireAdmin } from '../lib/admin-auth';
 import { encryptJson } from '../lib/crypto';
 import {
-  currentLangfuseSettings,
+  decryptLangfuseSettings,
+  defaultLangfuseSettings,
   publicLangfuseSettings,
-  saveLangfuseSettings,
+  saveApiKeyLangfuseSettings,
 } from '../services/langfuse';
 import { pollDeviceFlow, startDeviceFlow } from '../services/openai-oauth';
 import { createApiKeyRecord } from '../services/virtual-keys';
@@ -139,12 +140,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               k.budget_usd::float8 AS "budgetUsd", k.spend_usd::float8 AS "spendUsd",
               k.rpm_limit AS "rpmLimit", k.expires_at AS "expiresAt",
               k.last_used_at AS "lastUsedAt", k.created_at AS "createdAt",
+              k.langfuse_config_ciphertext AS "langfuseConfigCiphertext",
               p.name AS "providerName", p.id AS "providerConnectionId"
          FROM virtual_api_keys k
          LEFT JOIN provider_connections p ON p.id = k.provider_connection_id
         ORDER BY k.created_at DESC`,
     );
-    return { keys: result.rows };
+    return {
+      keys: result.rows.map(({ langfuseConfigCiphertext, ...key }) => ({
+        ...key,
+        langfuse: publicLangfuseSettings(decryptLangfuseSettings(langfuseConfigCiphertext)),
+      })),
+    };
   });
 
   app.post('/api/admin/keys', async (request, reply) => {
@@ -154,10 +161,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .code(400)
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
+    const langfuse = parsed.data.langfuse
+      ? {
+          ...defaultLangfuseSettings(),
+          ...parsed.data.langfuse,
+          secretKey: parsed.data.langfuse.secretKey ?? '',
+        }
+      : undefined;
+    if (langfuse?.enabled && (!langfuse.publicKey || !langfuse.secretKey)) {
+      return reply.code(400).send({
+        error: {
+          code: 'langfuse_credentials_required',
+          message: '启用 Langfuse 需要 Public Key 和 Secret Key。',
+        },
+      });
+    }
     const created = await createApiKeyRecord({
       name: parsed.data.name,
       rpmLimit: parsed.data.rpmLimit,
       createdBy: adminId(request),
+      ...(langfuse ? { langfuse } : {}),
       ...(parsed.data.budgetUsd !== undefined ? { budgetUsd: parsed.data.budgetUsd } : {}),
       ...(parsed.data.expiresAt !== undefined ? { expiresAt: parsed.data.expiresAt } : {}),
       ...(parsed.data.providerConnectionId !== undefined
@@ -179,6 +202,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .code(404)
         .send({ error: { code: 'not_found', message: 'Key 不存在或已撤销。' } });
     return { ok: true };
+  });
+
+  app.put('/api/admin/keys/:id/langfuse', async (request, reply) => {
+    const parsed = langfuseSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
+    }
+    const id = (request.params as { id: string }).id;
+    const updated = await saveApiKeyLangfuseSettings(id, {
+      enabled: parsed.data.enabled,
+      publicKey: parsed.data.publicKey,
+      baseUrl: parsed.data.baseUrl,
+      environment: parsed.data.environment,
+      captureInput: parsed.data.captureInput,
+      captureOutput: parsed.data.captureOutput,
+      ...(parsed.data.secretKey !== undefined ? { secretKey: parsed.data.secretKey } : {}),
+    });
+    if (!updated)
+      return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
+    return { ok: true, restartRequired: true };
   });
 
   app.get('/api/admin/usage/summary', async () => {
@@ -231,32 +276,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       [query.limit],
     );
     return { logs: result.rows };
-  });
-
-  app.get('/api/admin/settings/langfuse', async () => ({
-    settings: publicLangfuseSettings(currentLangfuseSettings()),
-  }));
-
-  app.put('/api/admin/settings/langfuse', async (request, reply) => {
-    const parsed = langfuseSettingsSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
-    }
-    await saveLangfuseSettings(
-      {
-        enabled: parsed.data.enabled,
-        publicKey: parsed.data.publicKey,
-        baseUrl: parsed.data.baseUrl,
-        environment: parsed.data.environment,
-        captureInput: parsed.data.captureInput,
-        captureOutput: parsed.data.captureOutput,
-        ...(parsed.data.secretKey !== undefined ? { secretKey: parsed.data.secretKey } : {}),
-      },
-      adminId(request),
-    );
-    return { ok: true, restartRequired: true };
   });
 
   app.get('/api/admin/settings/model-prices', async () => {

@@ -48,14 +48,8 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
           <div className="eyebrow">
             <Router size={13} /> OpenAI-compatible gateway
           </div>
-          <h1>
-            一处连接，
-            <br />
-            统一路由所有调用。
-          </h1>
-          <p>
-            OAuth、虚拟 API Key、双协议兼容、用量分析与 Langfuse 追踪，全部在你的基础设施中运行。
-          </p>
+          <h1>一个入口，统一路由。</h1>
+          <p>OAuth、API Key、用量与追踪。</p>
           <div className="protocol-row">
             <code>POST /v1/responses</code>
             <code>POST /v1/chat/completions</code>
@@ -66,7 +60,6 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
             <LockKeyhole size={19} />
           </div>
           <h2>登录控制平面</h2>
-          <p>使用平台管理员账号继续。</p>
           <form onSubmit={(event) => void submit(event)}>
             <Field label="用户名">
               <Input
@@ -76,7 +69,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
                 required
               />
             </Field>
-            <Field label="密码" hint="首次启动由 INITIAL_ADMIN_PASSWORD 设置。">
+            <Field label="密码">
               <Input
                 type="password"
                 value={password}
@@ -92,9 +85,6 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
               进入后台 <ArrowRight size={15} />
             </Button>
           </form>
-          <div className="login-note">
-            <span className="status-dot" /> 凭据通过 HttpOnly 会话 Cookie 保护
-          </div>
         </section>
       </div>
       <footer className="login-footer">

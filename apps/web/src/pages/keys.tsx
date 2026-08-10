@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
 
 import { api, ApiError, jsonBody } from '../api';
 import {
@@ -12,7 +12,7 @@ import {
   PageHeader,
   Skeleton,
 } from '../components/ui';
-import type { Provider, VirtualKey } from '../types';
+import type { LangfuseConfig, Provider, VirtualKey } from '../types';
 
 interface CreatedKey {
   id: string;
@@ -21,17 +21,140 @@ interface CreatedKey {
   warning: string;
 }
 
+interface LangfuseDraft {
+  enabled: boolean;
+  publicKey: string;
+  secretKey: string;
+  baseUrl: string;
+  environment: string;
+  captureInput: boolean;
+  captureOutput: boolean;
+}
+
+const emptyLangfuse = (): LangfuseDraft => ({
+  enabled: false,
+  publicKey: '',
+  secretKey: '',
+  baseUrl: 'https://cloud.langfuse.com',
+  environment: 'production',
+  captureInput: false,
+  captureOutput: false,
+});
+
+function langfuseDraft(config: LangfuseConfig): LangfuseDraft {
+  return {
+    enabled: config.enabled,
+    publicKey: config.publicKey,
+    secretKey: '',
+    baseUrl: config.baseUrl,
+    environment: config.environment,
+    captureInput: config.captureInput,
+    captureOutput: config.captureOutput,
+  };
+}
+
+function LangfuseFields({
+  value,
+  onChange,
+  hasSecretKey = false,
+}: {
+  value: LangfuseDraft;
+  onChange: (value: LangfuseDraft) => void;
+  hasSecretKey?: boolean;
+}) {
+  return (
+    <div className="langfuse-fields">
+      <label className="switch-row compact">
+        <div>
+          <strong>Langfuse</strong>
+          <span>此 Key 的独立项目</span>
+        </div>
+        <input
+          type="checkbox"
+          checked={value.enabled}
+          onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
+        />
+        <i />
+      </label>
+      {value.enabled ? (
+        <>
+          <div className="form-grid">
+            <Field label="Public Key">
+              <Input
+                value={value.publicKey}
+                onChange={(event) => onChange({ ...value, publicKey: event.target.value })}
+                placeholder="pk-lf-…"
+                required
+              />
+            </Field>
+            <Field label="Secret Key" {...(hasSecretKey ? { hint: '留空保持不变' } : {})}>
+              <Input
+                type="password"
+                value={value.secretKey}
+                onChange={(event) => onChange({ ...value, secretKey: event.target.value })}
+                placeholder={hasSecretKey ? '••••••••' : 'sk-lf-…'}
+                required={!hasSecretKey}
+              />
+            </Field>
+          </div>
+          <Field label="Base URL">
+            <Input
+              type="url"
+              value={value.baseUrl}
+              onChange={(event) => onChange({ ...value, baseUrl: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Environment">
+            <Input
+              value={value.environment}
+              onChange={(event) => onChange({ ...value, environment: event.target.value })}
+              required
+            />
+          </Field>
+          <div className="capture-options compact">
+            <label>
+              <input
+                type="checkbox"
+                checked={value.captureInput}
+                onChange={(event) => onChange({ ...value, captureInput: event.target.checked })}
+              />
+              <span>
+                <strong>记录输入</strong>
+              </span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={value.captureOutput}
+                onChange={(event) => onChange({ ...value, captureOutput: event.target.checked })}
+              />
+              <span>
+                <strong>记录输出</strong>
+              </span>
+            </label>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function KeysPage() {
   const [keys, setKeys] = useState<VirtualKey[]>();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [created, setCreated] = useState<CreatedKey>();
+  const [editingKey, setEditingKey] = useState<VirtualKey>();
+  const [editingLangfuse, setEditingLangfuse] = useState<LangfuseDraft>();
   const [name, setName] = useState('Development');
   const [rpm, setRpm] = useState(60);
   const [budget, setBudget] = useState('');
   const [providerId, setProviderId] = useState('');
+  const [langfuse, setLangfuse] = useState<LangfuseDraft>(emptyLangfuse);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
@@ -56,6 +179,7 @@ export function KeysPage() {
           rpmLimit: rpm,
           budgetUsd: budget ? Number(budget) : null,
           providerConnectionId: providerId || null,
+          langfuse,
         }),
       });
       setCreated(response);
@@ -66,8 +190,33 @@ export function KeysPage() {
       setLoading(false);
     }
   };
+
+  const saveLangfuse = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingKey || !editingLangfuse) return;
+    setLoading(true);
+    setError('');
+    try {
+      await api(`/api/admin/keys/${editingKey.id}/langfuse`, {
+        method: 'PUT',
+        ...jsonBody({
+          ...editingLangfuse,
+          secretKey: editingLangfuse.secretKey || undefined,
+        }),
+      });
+      setEditingKey(undefined);
+      setEditingLangfuse(undefined);
+      setNotice('Langfuse 已保存，重启 API 后生效。');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : '保存失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const revoke = async (key: VirtualKey) => {
-    if (!window.confirm(`撤销“${key.name}”？使用该 Key 的请求会立即失败。`)) return;
+    if (!window.confirm(`撤销“${key.name}”？`)) return;
     await api(`/api/admin/keys/${key.id}/revoke`, { method: 'POST' });
     await load();
   };
@@ -76,13 +225,14 @@ export function KeysPage() {
     <div className="page-wrap">
       <PageHeader
         eyebrow="Virtual keys"
-        title="API Keys。"
-        description="为客户端签发独立 Key，设置 RPM、预算和固定上游连接。"
+        title="API Keys"
+        description="密钥、额度与追踪"
         action={
           <Button
             onClick={() => {
               setShowCreate(true);
               setCreated(undefined);
+              setLangfuse(emptyLangfuse());
               setError('');
             }}
           >
@@ -90,6 +240,7 @@ export function KeysPage() {
           </Button>
         }
       />
+      {notice ? <div className="notice compact-notice">{notice}</div> : null}
       {!keys ? (
         <Skeleton height={360} />
       ) : keys.length ? (
@@ -100,8 +251,8 @@ export function KeysPage() {
                 <tr>
                   <th>名称</th>
                   <th>Key</th>
-                  <th>状态</th>
                   <th>上游</th>
+                  <th>Langfuse</th>
                   <th>RPM</th>
                   <th>预算 / 已用</th>
                   <th>最近调用</th>
@@ -113,21 +264,22 @@ export function KeysPage() {
                   <tr key={key.id}>
                     <td>
                       <strong>{key.name}</strong>
-                      <small>{new Date(key.createdAt).toLocaleDateString('zh-CN')} 创建</small>
+                      <small>{key.status === 'active' ? 'Active' : 'Revoked'}</small>
                     </td>
                     <td>
                       <code>{key.keyPrefix}</code>
                     </td>
-                    <td>
-                      <Badge tone={key.status === 'active' ? 'success' : 'neutral'}>
-                        {key.status === 'active' ? 'Active' : 'Revoked'}
-                      </Badge>
-                    </td>
                     <td>{key.providerName ?? '自动路由'}</td>
+                    <td>
+                      <Badge tone={key.langfuse.enabled ? 'success' : 'neutral'}>
+                        {key.langfuse.enabled ? 'On' : 'Off'}
+                      </Badge>
+                      {key.langfuse.publicKey ? <small>{key.langfuse.publicKey}</small> : null}
+                    </td>
                     <td>{key.rpmLimit.toLocaleString()}</td>
                     <td>
                       {key.budgetUsd === null ? 'Unlimited' : `$${key.budgetUsd.toFixed(2)}`}
-                      <small>${key.spendUsd.toFixed(4)} spent</small>
+                      <small>${key.spendUsd.toFixed(4)} used</small>
                     </td>
                     <td>
                       {key.lastUsedAt
@@ -140,14 +292,27 @@ export function KeysPage() {
                         : 'Never'}
                     </td>
                     <td>
-                      <button
-                        className="icon-button danger-icon"
-                        disabled={key.status !== 'active'}
-                        onClick={() => void revoke(key)}
-                        aria-label="撤销"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="key-actions">
+                        <button
+                          className="icon-button"
+                          onClick={() => {
+                            setEditingKey(key);
+                            setEditingLangfuse(langfuseDraft(key.langfuse));
+                            setError('');
+                          }}
+                          aria-label={`配置 ${key.name} 的 Langfuse`}
+                        >
+                          <Waypoints size={15} />
+                        </button>
+                        <button
+                          className="icon-button danger-icon"
+                          disabled={key.status !== 'active'}
+                          onClick={() => void revoke(key)}
+                          aria-label="撤销"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -158,7 +323,7 @@ export function KeysPage() {
       ) : (
         <EmptyState
           title="还没有 API Key"
-          description="创建第一个虚拟 Key 后，客户端就能通过 OpenAI 兼容接口访问网关。"
+          description="创建后即可调用网关。"
           action={
             <Button onClick={() => setShowCreate(true)}>
               <KeyRound size={14} /> 创建 Key
@@ -166,6 +331,7 @@ export function KeysPage() {
           }
         />
       )}
+
       {showCreate ? (
         <Modal
           title={created ? '保存 API Key' : '创建 API Key'}
@@ -180,7 +346,6 @@ export function KeysPage() {
                 <Check size={22} />
               </div>
               <h3>Key 已创建</h3>
-              <p>{created.warning}</p>
               <button
                 className="secret-key"
                 onClick={() => {
@@ -192,17 +357,10 @@ export function KeysPage() {
                 <span>{copied ? <Check size={15} /> : <Copy size={15} />}</span>
               </button>
               <div className="security-note">
-                <ShieldCheck size={14} /> 关闭窗口后无法再次查看完整 Key。
+                <ShieldCheck size={14} /> 仅显示一次
               </div>
               <div className="modal-actions">
-                <Button
-                  onClick={() => {
-                    setShowCreate(false);
-                    setCreated(undefined);
-                  }}
-                >
-                  我已保存
-                </Button>
+                <Button onClick={() => setShowCreate(false)}>完成</Button>
               </div>
             </div>
           ) : (
@@ -211,7 +369,7 @@ export function KeysPage() {
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
               <div className="form-grid">
-                <Field label="每分钟请求数">
+                <Field label="RPM">
                   <Input
                     type="number"
                     min={1}
@@ -221,7 +379,7 @@ export function KeysPage() {
                     required
                   />
                 </Field>
-                <Field label="预算 USD（可选）">
+                <Field label="预算 USD">
                   <Input
                     type="number"
                     min={0}
@@ -232,7 +390,7 @@ export function KeysPage() {
                   />
                 </Field>
               </div>
-              <Field label="固定上游（可选）" hint="留空时按连接优先级自动路由。">
+              <Field label="固定上游">
                 <select
                   className="input"
                   value={providerId}
@@ -246,17 +404,45 @@ export function KeysPage() {
                   ))}
                 </select>
               </Field>
+              <LangfuseFields value={langfuse} onChange={setLangfuse} />
               {error ? <div className="form-error">{error}</div> : null}
               <div className="modal-actions">
                 <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
                   取消
                 </Button>
                 <Button type="submit" loading={loading}>
-                  创建 Key
+                  创建
                 </Button>
               </div>
             </form>
           )}
+        </Modal>
+      ) : null}
+
+      {editingKey && editingLangfuse ? (
+        <Modal
+          title={`Langfuse · ${editingKey.name}`}
+          onClose={() => {
+            setEditingKey(undefined);
+            setEditingLangfuse(undefined);
+          }}
+        >
+          <form className="modal-body" onSubmit={(event) => void saveLangfuse(event)}>
+            <LangfuseFields
+              value={editingLangfuse}
+              onChange={setEditingLangfuse}
+              hasSecretKey={editingKey.langfuse.hasSecretKey}
+            />
+            {error ? <div className="form-error">{error}</div> : null}
+            <div className="modal-actions">
+              <Button type="button" variant="secondary" onClick={() => setEditingKey(undefined)}>
+                取消
+              </Button>
+              <Button type="submit" loading={loading}>
+                保存
+              </Button>
+            </div>
+          </form>
         </Modal>
       ) : null}
     </div>

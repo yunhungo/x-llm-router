@@ -4,6 +4,11 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { getPool } from '../db/client';
 import { createVirtualApiKey, hashApiKey } from '../lib/crypto';
+import {
+  decryptLangfuseSettings,
+  encryptLangfuseSettings,
+  type KeyLangfuseSettings,
+} from './langfuse';
 
 export interface VirtualApiKeyRecord {
   id: string;
@@ -13,6 +18,7 @@ export interface VirtualApiKeyRecord {
   spendUsd: number;
   rpmLimit: number;
   providerConnectionId: string | null;
+  langfuse?: KeyLangfuseSettings;
 }
 
 interface VirtualApiKeyRow {
@@ -23,6 +29,7 @@ interface VirtualApiKeyRow {
   spend_usd: string;
   rpm_limit: number;
   provider_connection_id: string | null;
+  langfuse_config_ciphertext: string | null;
 }
 
 export async function createApiKeyRecord(input: {
@@ -31,6 +38,7 @@ export async function createApiKeyRecord(input: {
   rpmLimit: number;
   expiresAt?: string | null;
   providerConnectionId?: string | null;
+  langfuse?: KeyLangfuseSettings;
   createdBy: string;
 }): Promise<{ id: string; rawKey: string; prefix: string }> {
   const generated = createVirtualApiKey();
@@ -38,8 +46,8 @@ export async function createApiKeyRecord(input: {
   await getPool().query(
     `INSERT INTO virtual_api_keys(
       id, name, key_prefix, key_hash, budget_usd, rpm_limit, expires_at,
-      provider_connection_id, created_by
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      provider_connection_id, langfuse_config_ciphertext, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       id,
       input.name,
@@ -49,6 +57,7 @@ export async function createApiKeyRecord(input: {
       input.rpmLimit,
       input.expiresAt ?? null,
       input.providerConnectionId ?? null,
+      input.langfuse ? encryptLangfuseSettings(input.langfuse) : null,
       input.createdBy,
     ],
   );
@@ -84,7 +93,8 @@ export async function requireVirtualApiKey(
   }
 
   const result = await getPool().query<VirtualApiKeyRow>(
-    `SELECT id, name, key_prefix, budget_usd, spend_usd, rpm_limit, provider_connection_id
+    `SELECT id, name, key_prefix, budget_usd, spend_usd, rpm_limit, provider_connection_id,
+            langfuse_config_ciphertext
        FROM virtual_api_keys
       WHERE key_hash = $1 AND status = 'active'
         AND (expires_at IS NULL OR expires_at > now())`,
@@ -132,6 +142,7 @@ export async function requireVirtualApiKey(
     return;
   }
 
+  const langfuse = decryptLangfuseSettings(row.langfuse_config_ciphertext);
   request.routerKey = {
     id: row.id,
     name: row.name,
@@ -140,6 +151,7 @@ export async function requireVirtualApiKey(
     spendUsd,
     rpmLimit: row.rpm_limit,
     providerConnectionId: row.provider_connection_id,
+    ...(langfuse ? { langfuse } : {}),
   };
 }
 

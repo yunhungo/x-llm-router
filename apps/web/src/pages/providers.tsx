@@ -138,8 +138,8 @@ export function ProvidersPage() {
     <div className="page-wrap">
       <PageHeader
         eyebrow="Upstream connections"
-        title="上游连接。"
-        description="通过 ChatGPT OAuth 或 OpenAI API Key 连接模型服务，并设置路由优先级。"
+        title="上游连接"
+        description="模型账号与路由顺序"
         action={
           <div className="button-group">
             <Button
@@ -251,7 +251,7 @@ export function ProvidersPage() {
       ) : (
         <EmptyState
           title="还没有上游连接"
-          description="建议先使用 GPT OAuth 连接 ChatGPT 账号，也可以直接添加 OpenAI API Key。"
+          description="添加 OAuth 或 API Key。"
           action={
             <Button onClick={() => setModal('oauth')}>
               <Link2 size={14} /> 连接 OpenAI

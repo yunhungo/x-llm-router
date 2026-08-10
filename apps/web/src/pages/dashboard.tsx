@@ -62,8 +62,8 @@ export function DashboardPage() {
     <div className="page-wrap">
       <PageHeader
         eyebrow="Gateway overview"
-        title="路由运行概览。"
-        description="过去 24 小时的调用、延迟、Token 与成本状态。"
+        title="运行概览"
+        description="近 24 小时"
         action={
           <div className="health-pill">
             <i /> Gateway healthy
