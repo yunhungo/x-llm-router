@@ -248,30 +248,22 @@ select.input {
   font-size: 13px;
 }
 .brand-mark {
-  position: relative;
-  width: 24px;
-  height: 22px;
+  display: block;
+  width: 26px;
+  height: 24px;
   flex: 0 0 auto;
+  color: var(--ink);
+  overflow: visible;
 }
-.brand-mark span:first-child {
-  position: absolute;
-  left: 0;
-  bottom: 1px;
-  width: 0;
-  height: 0;
-  border-left: 11px solid transparent;
-  border-right: 11px solid transparent;
-  border-bottom: 19px solid var(--ink);
+.brand-mark path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
-.brand-mark span:last-child {
-  position: absolute;
-  right: -1px;
-  bottom: 1px;
-  width: 9px;
-  height: 9px;
-  border: 2px solid var(--canvas);
-  transform: rotate(45deg);
-  background: var(--ink);
+.brand-mark circle {
+  fill: currentColor;
 }
 .brand-mark.large {
   transform: scale(1.35);

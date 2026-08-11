@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { api } from './api';
+import { BrandMark } from './components/brand-mark';
 import { AppLayout } from './components/layout';
 import { DashboardPage } from './pages/dashboard';
 import { KeyDetailPage } from './pages/key-detail';
@@ -29,10 +30,7 @@ export function App() {
   if (user === undefined) {
     return (
       <div className="boot-screen">
-        <div className="brand-mark large">
-          <span />
-          <span />
-        </div>
+        <BrandMark large />
         <span>正在连接控制平面…</span>
       </div>
     );
