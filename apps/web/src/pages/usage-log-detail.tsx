@@ -20,10 +20,16 @@ function json(value: unknown): string {
   return value === null || value === undefined ? '暂无数据' : JSON.stringify(value, null, 2);
 }
 
-export function UsageLogDetailPanel({ usageLogId }: { usageLogId: string }) {
+export function UsageLogDetailPanel({
+  usageLogId,
+  initialTab = 'upstream',
+}: {
+  usageLogId: string;
+  initialTab?: DetailTab;
+}) {
   const [response, setResponse] = useState<UsageCallDetailResponse>();
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<DetailTab>('upstream');
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -50,6 +56,10 @@ export function UsageLogDetailPanel({ usageLogId }: { usageLogId: string }) {
     ],
     [response],
   );
+  useEffect(() => {
+    if (!response?.detail) return;
+    setTab(tabs.includes(initialTab) ? initialTab : (tabs[0] ?? 'upstream'));
+  }, [initialTab, response, tabs, usageLogId]);
   const content = useMemo(() => {
     const detail = response?.detail;
     if (!detail) return '';

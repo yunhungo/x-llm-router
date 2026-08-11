@@ -197,6 +197,23 @@ export interface KeyModelUsage {
   averageTps: number;
 }
 
+export interface KeyModelUsagePoint {
+  bucket: string;
+  bucketEnd: string;
+  provider: string;
+  model: string;
+  calls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  costUsd: number;
+  averageTtftMs: number;
+  averageTps: number;
+  averageLatencyMs: number;
+}
+
 export interface KeyEndpointUsage {
   endpoint: string;
   calls: number;
@@ -243,6 +260,7 @@ export interface KeyAnalyticsResponse {
   key: VirtualKey & { provider: string | null };
   summary: KeyAnalyticsSummary;
   series: KeyUsagePoint[];
+  modelSeries: KeyModelUsagePoint[];
   models: KeyModelUsage[];
   endpoints: KeyEndpointUsage[];
   errors: KeyErrorUsage[];
