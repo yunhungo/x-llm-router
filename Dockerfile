@@ -20,9 +20,12 @@ RUN pnpm --filter @x-router/contracts build \
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
+ENV NODE_USE_ENV_PROXY=1
 ENV WEB_ROOT=/app/apps/web/dist
 WORKDIR /app
-RUN addgroup -S xrouter && adduser -S xrouter -G xrouter
+RUN node --help | grep -q -- '--use-env-proxy' \
+  && addgroup -S xrouter \
+  && adduser -S xrouter -G xrouter
 
 COPY --from=builder --chown=xrouter:xrouter /app/node_modules ./node_modules
 COPY --from=builder --chown=xrouter:xrouter /app/apps/api/node_modules ./apps/api/node_modules

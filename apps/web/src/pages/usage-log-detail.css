@@ -70,7 +70,7 @@
 }
 .usage-detail-tabs button.active {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-solid);
 }
 .usage-detail-retention {
   display: flex;

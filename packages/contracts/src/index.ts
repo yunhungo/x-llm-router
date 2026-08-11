@@ -36,17 +36,15 @@ export const langfuseSettingsSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .min(1)
     .max(120)
-    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]+$/, 'User ID Header 不是有效的 HTTP Header 名称。')
+    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]*$/, 'User ID Header 不是有效的 HTTP Header 名称。')
     .default('x-user-id'),
   sessionIdHeader: z
     .string()
     .trim()
     .toLowerCase()
-    .min(1)
     .max(120)
-    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]+$/, 'Session ID Header 不是有效的 HTTP Header 名称。')
+    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]*$/, 'Session ID Header 不是有效的 HTTP Header 名称。')
     .default('x-session-id'),
   captureInput: z.boolean().default(true),
   captureOutput: z.boolean().default(true),
@@ -55,7 +53,7 @@ export const langfuseSettingsSchema = z.object({
 export const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
   budgetUsd: z.number().nonnegative().nullable().optional(),
-  rpmLimit: z.number().int().positive().max(100_000).default(60),
+  rpmLimit: z.number().int().nonnegative().max(100_000).default(60),
   expiresAt: z.string().datetime().nullable().optional(),
   providerConnectionId: z.string().uuid().nullable().optional(),
   langfuse: langfuseSettingsSchema.optional(),

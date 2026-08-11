@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { FastifyRequest } from 'fastify';
 
 import { openAiProviderAdapter } from '../providers/openai';
+import { defaultLangfuseSettings } from '../services/langfuse';
 import type { ProviderRuntime } from '../services/providers';
-import { langfuseModelParameters } from './gateway';
+import { gatewayRequestId, langfuseModelParameters, langfuseRequestIdentity } from './gateway';
 
 const oauthProvider: ProviderRuntime = {
   id: 'provider-1',
@@ -25,6 +27,56 @@ const apiKeyProvider: ProviderRuntime = {
 };
 
 describe('gateway upstream request transformation', () => {
+  it('uses a stable API-key identity when clients omit optional Langfuse headers', () => {
+    const request = {
+      id: 'generated-request-id',
+      headers: { 'user-agent': 'Bob/1.20.0 (macOS)' },
+    } as unknown as FastifyRequest;
+
+    expect(
+      langfuseRequestIdentity(
+        request,
+        { model: 'deepseek-v4-flash' },
+        defaultLangfuseSettings(),
+        'key-123',
+      ),
+    ).toEqual({
+      userId: 'api-key:key-123',
+      userIdSource: 'api-key',
+      sessionIdSource: 'none',
+      clientName: 'Bob',
+    });
+  });
+
+  it('honors explicit identity headers and validates client request IDs', () => {
+    const request = {
+      id: 'generated-request-id',
+      headers: {
+        'x-user-id': 'bob-user',
+        'x-session-id': 'conversation-42',
+        'x-request-id': 'bob-request-42',
+      },
+    } as unknown as FastifyRequest;
+
+    expect(
+      langfuseRequestIdentity(request, {}, defaultLangfuseSettings(), 'key-123'),
+    ).toMatchObject({
+      userId: 'bob-user',
+      userIdSource: 'header:x-user-id',
+      sessionId: 'conversation-42',
+      sessionIdSource: 'header:x-session-id',
+    });
+    expect(gatewayRequestId(request)).toBe('bob-request-42');
+
+    const invalid = {
+      id: 'also invalid whitespace',
+      headers: { 'x-request-id': 'invalid whitespace' },
+    } as unknown as FastifyRequest;
+    expect(gatewayRequestId(invalid)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
   it('maps common model parameters to Langfuse generation attributes', () => {
     expect(
       langfuseModelParameters({

@@ -113,6 +113,10 @@ export class ReloadableLangfuseSpanProcessor {
     await Promise.all(disposals);
   }
 
+  hasKey(apiKeyId: string): boolean {
+    return this.current.has(apiKeyId);
+  }
+
   replaceKey(apiKeyId: string, processor?: RuntimeSpanProcessor): void {
     if (this.closed) throw new Error('Langfuse telemetry has already been shut down.');
 
@@ -175,6 +179,10 @@ export class ReloadableLangfuseSpanProcessor {
 const reloadableSpanProcessor = new ReloadableLangfuseSpanProcessor();
 let telemetrySdk: NodeSDK | undefined;
 
+export function normalizeLangfuseBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, '');
+}
+
 function createLangfuseSpanProcessor(
   apiKeyId: string,
   settings: KeyLangfuseSettings,
@@ -182,7 +190,7 @@ function createLangfuseSpanProcessor(
   return new LangfuseSpanProcessor({
     publicKey: settings.publicKey,
     secretKey: settings.secretKey,
-    baseUrl: settings.baseUrl,
+    baseUrl: normalizeLangfuseBaseUrl(settings.baseUrl),
     environment: settings.environment,
     shouldExportSpan: ({ otelSpan }) => otelSpan.attributes[API_KEY_ATTRIBUTE] === apiKeyId,
   });
@@ -227,17 +235,18 @@ export function defaultLangfuseSettings(): KeyLangfuseSettings {
 }
 
 export function encryptLangfuseSettings(settings: KeyLangfuseSettings): string {
-  return encryptJson(settings);
+  return encryptJson({ ...settings, baseUrl: normalizeLangfuseBaseUrl(settings.baseUrl) });
 }
 
 export function decryptLangfuseSettings(
   ciphertext: string | null | undefined,
 ): KeyLangfuseSettings | undefined {
   if (!ciphertext) return undefined;
-  return {
+  const settings = {
     ...defaultLangfuseSettings(),
     ...decryptJson<Partial<KeyLangfuseSettings>>(ciphertext),
   };
+  return { ...settings, baseUrl: normalizeLangfuseBaseUrl(settings.baseUrl) };
 }
 
 export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<string, unknown> {
@@ -246,7 +255,7 @@ export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<s
     enabled: value.enabled,
     publicKey: value.publicKey,
     hasSecretKey: Boolean(value.secretKey),
-    baseUrl: value.baseUrl,
+    baseUrl: normalizeLangfuseBaseUrl(value.baseUrl),
     environment: value.environment,
     traceName: value.traceName,
     version: value.version,
@@ -274,6 +283,7 @@ export async function saveApiKeyLangfuseSettings(
   const existing = decryptLangfuseSettings(row.langfuse_config_ciphertext);
   const settings: KeyLangfuseSettings = {
     ...input,
+    baseUrl: normalizeLangfuseBaseUrl(input.baseUrl),
     secretKey: input.secretKey || existing?.secretKey || '',
   };
   if (settings.enabled && (!settings.publicKey || !settings.secretKey)) {
@@ -300,6 +310,30 @@ export async function saveApiKeyLangfuseSettings(
 
   reloadableSpanProcessor.replaceKey(apiKeyId, nextProcessor);
   return true;
+}
+
+/**
+ * Self-heals runtime registration for keys created after process startup.
+ * This runs before the gateway starts its observation, so the first request
+ * for a newly created key is eligible for export without a service restart.
+ */
+export async function ensureApiKeyLangfuse(
+  apiKeyId: string,
+  settings: KeyLangfuseSettings,
+): Promise<boolean> {
+  if (!settings.enabled || !settings.publicKey || !settings.secretKey) return false;
+  if (reloadableSpanProcessor.hasKey(apiKeyId)) return true;
+
+  let processor: LangfuseSpanProcessor | undefined;
+  try {
+    processor = createLangfuseSpanProcessor(apiKeyId, settings);
+    ensureTelemetryStarted();
+    reloadableSpanProcessor.replaceKey(apiKeyId, processor);
+    return true;
+  } catch (error) {
+    if (processor) await disposeUnusedProcessor(processor);
+    throw error;
+  }
 }
 
 export async function initializeLangfuse(): Promise<number> {

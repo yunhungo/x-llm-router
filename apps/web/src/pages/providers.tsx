@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { api, ApiError, jsonBody } from '../api';
+import { copyText } from '../clipboard';
 import {
   Badge,
   Button,
@@ -57,29 +58,63 @@ export function ProvidersPage() {
 
   useEffect(() => {
     if (!flow) return;
-    const timer = window.setInterval(
-      () => {
-        void api<{ status: string; providerConnectionId?: string }>(
+    let cancelled = false;
+    let timer: number | undefined;
+    const pollIntervalMs = Math.max(flow.intervalSeconds, 5) * 1000;
+    const maxRetryDelayMs = Math.max(30_000, pollIntervalMs);
+    let retryDelayMs = pollIntervalMs;
+
+    const schedule = (delayMs: number): void => {
+      timer = window.setTimeout(() => void poll(), delayMs);
+    };
+
+    const poll = async (): Promise<void> => {
+      try {
+        const result = await api<{ status: string; providerConnectionId?: string }>(
           `/api/admin/providers/oauth/${flow.id}/poll`,
           { method: 'POST' },
-        )
-          .then((result) => {
-            if (result.status === 'complete') {
-              window.clearInterval(timer);
-              setFlow(undefined);
-              setModal(null);
-              setMessage('OpenAI OAuth 连接成功。');
-              void load();
-            } else if (result.status === 'expired' || result.status === 'failed') {
-              window.clearInterval(timer);
-              setMessage('授权已过期，请重新开始。');
-            }
-          })
-          .catch(() => undefined);
-      },
-      Math.max(flow.intervalSeconds, 5) * 1000,
-    );
-    return () => window.clearInterval(timer);
+        );
+        if (cancelled) return;
+        if (result.status === 'complete') {
+          setFlow(undefined);
+          setModal(null);
+          setMessage('OpenAI OAuth 连接成功。');
+          void load();
+          return;
+        }
+        if (result.status === 'expired' || result.status === 'failed') {
+          setFlow(undefined);
+          setMessage('授权已过期或失败，请重新开始。');
+          return;
+        }
+        retryDelayMs = pollIntervalMs;
+        setMessage('');
+        schedule(pollIntervalMs);
+      } catch (error) {
+        if (cancelled) return;
+        const terminalOAuthError =
+          error instanceof ApiError &&
+          (error.code === 'openai_oauth_rejected' ||
+            error.code === 'openai_oauth_invalid_response');
+        const retryable =
+          !terminalOAuthError && (!(error instanceof ApiError) || error.status >= 500);
+        const detail = error instanceof ApiError ? error.message : '暂时无法检查 OAuth 状态';
+        if (!retryable) {
+          setFlow(undefined);
+          setMessage(detail);
+          return;
+        }
+        retryDelayMs = Math.min(Math.max(retryDelayMs * 2, 10_000), maxRetryDelayMs);
+        setMessage(`${detail}；将自动重试。`);
+        schedule(retryDelayMs);
+      }
+    };
+
+    schedule(pollIntervalMs);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [flow, load]);
 
   const startOAuth = async (event: FormEvent) => {
@@ -294,8 +329,9 @@ export function ProvidersPage() {
                 </div>
               </div>
               <button
+                type="button"
                 className="device-code"
-                onClick={() => void navigator.clipboard.writeText(flow.userCode)}
+                onClick={() => void copyText(flow.userCode)}
               >
                 <code>{flow.userCode}</code>
                 <Copy size={16} />

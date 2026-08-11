@@ -6,17 +6,19 @@ import { decryptJson, encryptJson } from '../lib/crypto';
 
 export const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const DEFAULT_DEVICE_FLOW_SECONDS = 15 * 60;
+const AUTH_REQUEST_TIMEOUT_MS = 20_000;
 
-interface DeviceCodeResponse {
-  device_auth_id: string;
-  user_code?: string;
-  usercode?: string;
-  interval?: string | number;
-}
+type PublicOAuthErrorCode =
+  'openai_oauth_unavailable' | 'openai_oauth_rejected' | 'openai_oauth_invalid_response';
+
+type PublicOAuthError = Error & {
+  statusCode: 502;
+  code: PublicOAuthErrorCode;
+  exposeMessage: true;
+};
 
 interface AuthorizationCodeResponse {
   authorization_code: string;
-  code_challenge: string;
   code_verifier: string;
 }
 
@@ -55,12 +57,97 @@ async function readJsonOrText(response: Response): Promise<unknown> {
   }
 }
 
-function apiError(prefix: string, response: Response, body: unknown): Error {
-  const detail =
-    typeof body === 'object' && body && 'message' in body
-      ? String((body as { message: unknown }).message)
-      : response.statusText;
-  return new Error(`${prefix} (${response.status}): ${detail}`);
+function publicOAuthError(
+  code: PublicOAuthErrorCode,
+  message: string,
+  cause?: unknown,
+): PublicOAuthError {
+  const error = (
+    cause === undefined ? new Error(message) : new Error(message, { cause })
+  ) as PublicOAuthError;
+  error.statusCode = 502;
+  error.code = code;
+  error.exposeMessage = true;
+  return error;
+}
+
+function responseErrorDetail(response: Response, body: unknown): string {
+  let detail: unknown;
+  if (typeof body === 'object' && body) {
+    const record = body as Record<string, unknown>;
+    const nestedError =
+      typeof record.error === 'object' && record.error
+        ? (record.error as Record<string, unknown>)
+        : undefined;
+    detail =
+      record.message ??
+      record.error_description ??
+      record.detail ??
+      nestedError?.message ??
+      (typeof record.error === 'string' ? record.error : undefined);
+  }
+  const compact =
+    typeof detail === 'string' ? detail.replace(/\s+/gu, ' ').trim().slice(0, 500) : '';
+  return compact || response.statusText || `HTTP ${response.status}`;
+}
+
+function bodyRecord(body: unknown): Record<string, unknown> | undefined {
+  return typeof body === 'object' && body !== null && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : undefined;
+}
+
+function nonEmptyString(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function oauthTokenResponse(body: unknown): OAuthTokenResponse | undefined {
+  const record = bodyRecord(body);
+  const accessToken = nonEmptyString(record, 'access_token');
+  const idToken = nonEmptyString(record, 'id_token');
+  if (!accessToken || !idToken) return undefined;
+  const refreshToken = nonEmptyString(record, 'refresh_token');
+  return {
+    access_token: accessToken,
+    ...(refreshToken ? { refresh_token: refreshToken } : {}),
+    id_token: idToken,
+  };
+}
+
+function apiError(prefix: string, response: Response, body: unknown): PublicOAuthError {
+  const code =
+    response.status === 408 || response.status === 429 || response.status >= 500
+      ? 'openai_oauth_unavailable'
+      : 'openai_oauth_rejected';
+  return publicOAuthError(
+    code,
+    `${prefix} (${response.status}): ${responseErrorDetail(response, body)}`,
+  );
+}
+
+async function requestOpenAiAuth(
+  path: string,
+  operation: string,
+  init: RequestInit,
+): Promise<{ response: Response; body: unknown }> {
+  try {
+    const response = await fetch(authUrl(path), {
+      ...init,
+      signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+    });
+    const body = await readJsonOrText(response);
+    return { response, body };
+  } catch (cause) {
+    throw publicOAuthError(
+      'openai_oauth_unavailable',
+      `无法连接 OpenAI OAuth 服务（${operation}）。请检查容器 DNS、HTTPS_PROXY、NODE_USE_ENV_PROXY 和受信任 CA 配置。`,
+      cause,
+    );
+  }
 }
 
 function decodeJwtClaims(token: string): Record<string, unknown> {
@@ -94,20 +181,32 @@ export async function startDeviceFlow(input: { name: string; createdBy: string }
   intervalSeconds: number;
   expiresAt: string;
 }> {
-  const response = await fetch(authUrl('/api/accounts/deviceauth/usercode'), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ client_id: OPENAI_CODEX_CLIENT_ID }),
-  });
-  const body = (await readJsonOrText(response)) as DeviceCodeResponse;
+  const { response, body } = await requestOpenAiAuth(
+    '/api/accounts/deviceauth/usercode',
+    '申请设备码',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_id: OPENAI_CODEX_CLIENT_ID }),
+    },
+  );
   if (!response.ok) throw apiError('OpenAI device authorization failed', response, body);
 
-  const userCode = body.user_code ?? body.usercode;
-  if (!body.device_auth_id || !userCode) {
-    throw new Error('OpenAI device authorization response is missing required fields.');
+  const record = bodyRecord(body);
+  const deviceAuthId = nonEmptyString(record, 'device_auth_id');
+  const userCode = nonEmptyString(record, 'user_code') ?? nonEmptyString(record, 'usercode');
+  if (!deviceAuthId || !userCode) {
+    throw publicOAuthError('openai_oauth_invalid_response', 'OpenAI 设备授权响应缺少必要字段。');
   }
 
-  const intervalSeconds = Math.max(5, Number(body.interval ?? 5));
+  const parsedInterval = Number(record?.interval ?? 5);
+  if (!Number.isFinite(parsedInterval) || parsedInterval <= 0) {
+    throw publicOAuthError(
+      'openai_oauth_invalid_response',
+      'OpenAI 设备授权响应包含无效轮询间隔。',
+    );
+  }
+  const intervalSeconds = Math.min(60, Math.max(5, Math.ceil(parsedInterval)));
   const expiresAt = new Date(Date.now() + DEFAULT_DEVICE_FLOW_SECONDS * 1000);
   const id = randomUUID();
   await getPool().query(
@@ -118,7 +217,7 @@ export async function startDeviceFlow(input: { name: string; createdBy: string }
     [
       id,
       input.name,
-      encryptJson({ deviceAuthId: body.device_auth_id }),
+      encryptJson({ deviceAuthId }),
       userCode,
       authUrl('/codex/device'),
       intervalSeconds,
@@ -145,17 +244,17 @@ async function exchangeAuthorizationCode(
     client_id: OPENAI_CODEX_CLIENT_ID,
     code_verifier: code.code_verifier,
   });
-  const response = await fetch(authUrl('/oauth/token'), {
+  const { response, body } = await requestOpenAiAuth('/oauth/token', '交换访问令牌', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: form,
   });
-  const body = (await readJsonOrText(response)) as OAuthTokenResponse;
   if (!response.ok) throw apiError('OpenAI token exchange failed', response, body);
-  if (!body.access_token || !body.refresh_token || !body.id_token) {
-    throw new Error('OpenAI token exchange response is missing required fields.');
+  const tokens = oauthTokenResponse(body);
+  if (!tokens?.refresh_token) {
+    throw publicOAuthError('openai_oauth_invalid_response', 'OpenAI 令牌交换响应缺少必要字段。');
   }
-  return body;
+  return tokens;
 }
 
 export async function pollDeviceFlow(input: {
@@ -179,26 +278,37 @@ export async function pollDeviceFlow(input: {
   }
 
   const { deviceAuthId } = decryptJson<{ deviceAuthId: string }>(flow.device_auth_id_ciphertext);
-  const response = await fetch(authUrl('/api/accounts/deviceauth/token'), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ device_auth_id: deviceAuthId, user_code: flow.user_code }),
-  });
+  const { response, body } = await requestOpenAiAuth(
+    '/api/accounts/deviceauth/token',
+    '轮询设备授权状态',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_auth_id: deviceAuthId, user_code: flow.user_code }),
+    },
+  );
   if (response.status === 403 || response.status === 404) return { status: 'pending' };
-  const body = (await readJsonOrText(response)) as AuthorizationCodeResponse;
   if (!response.ok) {
     const error = apiError('OpenAI device authorization polling failed', response, body);
-    await getPool().query(
-      `UPDATE oauth_device_flows SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1`,
-      [flow.id, error.message],
-    );
+    if (error.code === 'openai_oauth_rejected') {
+      await getPool().query(
+        `UPDATE oauth_device_flows SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1`,
+        [flow.id, error.message],
+      );
+    }
     throw error;
   }
-  if (!body.authorization_code || !body.code_verifier) {
-    throw new Error('OpenAI device authorization polling response is incomplete.');
+  const record = bodyRecord(body);
+  const authorizationCode = nonEmptyString(record, 'authorization_code');
+  const codeVerifier = nonEmptyString(record, 'code_verifier');
+  if (!authorizationCode || !codeVerifier) {
+    throw publicOAuthError('openai_oauth_invalid_response', 'OpenAI 设备授权轮询响应不完整。');
   }
 
-  const tokens = await exchangeAuthorizationCode(body);
+  const tokens = await exchangeAuthorizationCode({
+    authorization_code: authorizationCode,
+    code_verifier: codeVerifier,
+  });
   const refreshToken = tokens.refresh_token;
   if (!refreshToken) throw new Error('OpenAI token exchange did not return a refresh token.');
   const metadata = tokenMetadata(tokens.id_token || tokens.access_token);
@@ -242,7 +352,7 @@ export async function pollDeviceFlow(input: {
 export async function refreshOAuthCredentials(
   credentials: OAuthCredentials,
 ): Promise<{ credentials: OAuthCredentials; expiresAt: Date | null; accountId: string | null }> {
-  const response = await fetch(authUrl('/oauth/token'), {
+  const { response, body } = await requestOpenAiAuth('/oauth/token', '刷新访问令牌', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -252,15 +362,15 @@ export async function refreshOAuthCredentials(
       scope: 'openid profile email',
     }),
   });
-  const body = (await readJsonOrText(response)) as OAuthTokenResponse;
   if (!response.ok) throw apiError('OpenAI token refresh failed', response, body);
-  if (!body.access_token || !body.id_token)
-    throw new Error('OpenAI token refresh response is incomplete.');
+  const tokens = oauthTokenResponse(body);
+  if (!tokens)
+    throw publicOAuthError('openai_oauth_invalid_response', 'OpenAI 令牌刷新响应不完整。');
 
   const next: OAuthCredentials = {
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token ?? credentials.refreshToken,
-    idToken: body.id_token,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token ?? credentials.refreshToken,
+    idToken: tokens.id_token,
   };
   const metadata = tokenMetadata(next.idToken || next.accessToken);
   return { credentials: next, ...metadata };

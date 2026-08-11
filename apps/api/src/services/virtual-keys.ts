@@ -7,6 +7,7 @@ import { createVirtualApiKey, hashApiKey } from '../lib/crypto';
 import {
   decryptLangfuseSettings,
   encryptLangfuseSettings,
+  ensureApiKeyLangfuse,
   type KeyLangfuseSettings,
 } from './langfuse';
 
@@ -125,24 +126,36 @@ export async function requireVirtualApiKey(
     return;
   }
 
-  const recent = await getPool().query<{ count: string }>(
-    `SELECT count(*)::text AS count FROM usage_logs
-      WHERE virtual_api_key_id = $1 AND created_at > now() - interval '1 minute'`,
-    [row.id],
-  );
-  if (Number(recent.rows[0]?.count ?? 0) >= row.rpm_limit) {
-    reply.header('retry-after', '60');
-    await reply.code(429).send({
-      error: {
-        type: 'rate_limit_error',
-        code: 'rpm_limit_exceeded',
-        message: 'API key requests-per-minute limit exceeded.',
-      },
-    });
-    return;
+  if (row.rpm_limit > 0) {
+    const recent = await getPool().query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM usage_logs
+        WHERE virtual_api_key_id = $1 AND created_at > now() - interval '1 minute'`,
+      [row.id],
+    );
+    if (Number(recent.rows[0]?.count ?? 0) >= row.rpm_limit) {
+      reply.header('retry-after', '60');
+      await reply.code(429).send({
+        error: {
+          type: 'rate_limit_error',
+          code: 'rpm_limit_exceeded',
+          message: 'API key requests-per-minute limit exceeded.',
+        },
+      });
+      return;
+    }
   }
 
   const langfuse = decryptLangfuseSettings(row.langfuse_config_ciphertext);
+  if (langfuse?.enabled) {
+    try {
+      await ensureApiKeyLangfuse(row.id, langfuse);
+    } catch (error) {
+      request.log.error(
+        { err: error, apiKeyId: row.id },
+        'Failed to register Langfuse processor for API key',
+      );
+    }
+  }
   request.routerKey = {
     id: row.id,
     name: row.name,

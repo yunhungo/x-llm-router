@@ -348,8 +348,8 @@ export function KeyDetailPage() {
       setError('名称不能为空。');
       return;
     }
-    if (!Number.isInteger(rpmLimit) || rpmLimit < 1 || rpmLimit > 100_000) {
-      setError('RPM 必须是 1 到 100000 之间的整数。');
+    if (!Number.isInteger(rpmLimit) || rpmLimit < 0 || rpmLimit > 100_000) {
+      setError('RPM 必须是 0 到 100000 之间的整数，0 表示不限制。');
       return;
     }
     if (budgetUsd !== null && (!Number.isFinite(budgetUsd) || budgetUsd < 0)) {
@@ -557,7 +557,7 @@ export function KeyDetailPage() {
               </div>
               <div>
                 <dt>RPM</dt>
-                <dd>{integer.format(key.rpmLimit)}</dd>
+                <dd>{key.rpmLimit === 0 ? '无限制' : integer.format(key.rpmLimit)}</dd>
               </div>
               <div>
                 <dt>预算</dt>
@@ -866,7 +866,9 @@ export function KeyDetailPage() {
             <article className="metric-card">
               <span>峰值 RPM</span>
               <strong>{integer.format(summary.peakRpm)}</strong>
-              <small>限额 {integer.format(key.rpmLimit)}</small>
+              <small>
+                {key.rpmLimit === 0 ? '不限流' : `限额 ${integer.format(key.rpmLimit)}`}
+              </small>
             </article>
           </section>
 
@@ -1165,10 +1167,10 @@ export function KeyDetailPage() {
                       />
                     </Field>
                   </div>
-                  <Field label="RPM">
+                  <Field label="RPM" hint="0 表示不限制">
                     <Input
                       type="number"
-                      min={1}
+                      min={0}
                       max={100_000}
                       value={currentGeneral.rpmLimit}
                       onChange={(event) =>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, ShieldCheck } from 'lucide-react';
 
 import { api, ApiError } from '../api';
+import { copyText } from '../clipboard';
 import { Skeleton } from '../components/ui';
 import type { UsageCallDetailResponse } from '../types';
 import './usage-log-detail.css';
@@ -115,8 +116,7 @@ export function UsageLogDetailPanel({
         <button
           className="usage-detail-copy"
           onClick={() => {
-            void navigator.clipboard.writeText(content);
-            setCopied(true);
+            void copyText(content).then(setCopied);
           }}
           aria-label="复制明细"
         >

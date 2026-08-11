@@ -32,7 +32,7 @@ const providerUpdateSchema = z.object({
 const apiKeyUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
-    rpmLimit: z.number().int().min(1).max(100_000).optional(),
+    rpmLimit: z.number().int().min(0).max(100_000).optional(),
     budgetUsd: z.number().nonnegative().nullable().optional(),
     expiresAt: z.string().datetime().nullable().optional(),
     providerConnectionId: z.string().uuid().nullable().optional(),

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -37,6 +39,30 @@ export async function buildApp(): Promise<FastifyInstance> {
     bodyLimit: 16 * 1024 * 1024,
     trustProxy: config.NODE_ENV === 'production',
     requestIdHeader: 'x-request-id',
+    genReqId: () => randomUUID(),
+  });
+
+  app.setErrorHandler(async (error, request, reply) => {
+    request.log.error({ err: error }, 'Unhandled request error');
+    if (reply.sent) return;
+    const typedError = error as Error & {
+      statusCode?: number;
+      code?: string;
+      exposeMessage?: boolean;
+    };
+    const statusCode =
+      typedError.statusCode && typedError.statusCode >= 400 ? typedError.statusCode : 500;
+    const exposeMessage = statusCode < 500 || typedError.exposeMessage === true;
+    return reply.code(statusCode).send({
+      error: {
+        type: statusCode >= 500 ? 'api_error' : 'invalid_request_error',
+        code: typedError.code ?? 'internal_error',
+        message:
+          config.NODE_ENV === 'production' && !exposeMessage
+            ? 'Internal server error.'
+            : typedError.message,
+      },
+    });
   });
 
   await app.register(cookie);
@@ -104,24 +130,6 @@ export async function buildApp(): Promise<FastifyInstance> {
         type: 'invalid_request_error',
         code: 'not_found',
         message: `Route ${request.method} ${request.url} not found.`,
-      },
-    });
-  });
-
-  app.setErrorHandler(async (error, request, reply) => {
-    request.log.error({ err: error }, 'Unhandled request error');
-    if (reply.sent) return;
-    const typedError = error as Error & { statusCode?: number; code?: string };
-    const statusCode =
-      typedError.statusCode && typedError.statusCode >= 400 ? typedError.statusCode : 500;
-    return reply.code(statusCode).send({
-      error: {
-        type: statusCode >= 500 ? 'api_error' : 'invalid_request_error',
-        code: typedError.code ?? 'internal_error',
-        message:
-          statusCode >= 500 && config.NODE_ENV === 'production'
-            ? 'Internal server error.'
-            : typedError.message,
       },
     });
   });

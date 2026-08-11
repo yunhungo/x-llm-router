@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     constructor(
       readonly options: {
         publicKey?: string;
+        baseUrl?: string;
         shouldExportSpan?: (input: {
           otelSpan: { attributes: Record<string, unknown> };
         }) => boolean;
@@ -129,6 +130,30 @@ describe('Langfuse runtime reload', () => {
     proxy.onEnd(span);
     expect(processor?.onStart).toHaveBeenCalledWith(span, context);
     expect(processor?.onEnd).toHaveBeenCalledWith(span);
+  });
+
+  it('registers a project on the first request for a key created after startup', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await expect(service.initializeLangfuse()).resolves.toBe(0);
+    await expect(
+      service.ensureApiKeyLangfuse(
+        apiKeyId,
+        settings({ baseUrl: 'https://langfuse.example.test/' }),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      service.ensureApiKeyLangfuse(
+        apiKeyId,
+        settings({ baseUrl: 'https://langfuse.example.test/' }),
+      ),
+    ).resolves.toBe(true);
+
+    expect(mocks.FakeNodeSDK.instances).toHaveLength(1);
+    expect(mocks.FakeLangfuseSpanProcessor.instances).toHaveLength(1);
+    expect(mocks.FakeLangfuseSpanProcessor.instances[0]?.options.baseUrl).toBe(
+      'https://langfuse.example.test',
+    );
   });
 
   it('disables a configured project without registering another SDK', async () => {

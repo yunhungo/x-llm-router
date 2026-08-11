@@ -59,7 +59,7 @@
 
 .key-detail-tabs button.active {
   background: var(--canvas);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-1);
   color: var(--ink);
 }
 
@@ -378,7 +378,7 @@
 
 .range-switch button.active {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .key-performance-grid {
@@ -527,7 +527,7 @@
 .chart-grouping button.active,
 .metric-tabs button.active {
   background: var(--canvas);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-1);
   color: var(--ink);
 }
 
@@ -586,7 +586,7 @@
 
 .log-search:focus-within {
   border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .log-search input {
@@ -736,7 +736,7 @@
 
 .price-input:focus {
   border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .pricing-table td {

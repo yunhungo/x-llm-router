@@ -17,17 +17,22 @@ vi.mock('../lib/admin-auth', () => ({
   requireAdmin: async () => undefined,
 }));
 
+import { setRuntimeSecretsForTests } from '../runtime-secrets';
 import { adminRoutes } from './admin';
 
 const keyId = '11111111-1111-4111-8111-111111111111';
 const providerId = '22222222-2222-4222-8222-222222222222';
 
-describe('admin API key updates', () => {
+describe('admin API keys', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
     query.mockReset();
     query.mockResolvedValue({ rows: [], rowCount: 0 });
+    setRuntimeSecretsForTests({
+      ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
+      JWT_SECRET: 'test-jwt-secret-with-enough-length',
+    });
     app = Fastify();
     await app.register(adminRoutes);
     await app.ready();
@@ -35,6 +40,30 @@ describe('admin API key updates', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('creates an unlimited key when RPM is zero', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/admin/keys',
+      payload: { name: 'Unlimited', rpmLimit: 0 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[1]?.[5]).toBe(0);
+  });
+
+  it('rejects a negative RPM when creating a key', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/admin/keys',
+      payload: { name: 'Invalid', rpmLimit: -1 },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'invalid_request' } });
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('updates every supported field and validates a selected provider', async () => {
@@ -47,7 +76,7 @@ describe('admin API key updates', () => {
       url: `/api/admin/keys/${keyId}`,
       payload: {
         name: '  Production  ',
-        rpmLimit: 1_200,
+        rpmLimit: 0,
         budgetUsd: 25.5,
         expiresAt: '2027-01-02T03:04:05.000Z',
         providerConnectionId: providerId,
@@ -63,7 +92,7 @@ describe('admin API key updates', () => {
       true,
       'Production',
       true,
-      1_200,
+      0,
       true,
       25.5,
       true,
@@ -107,7 +136,8 @@ describe('admin API key updates', () => {
     [{}, 'empty body'],
     [{ unrelated: true }, 'no supported field'],
     [{ name: '   ' }, 'empty name'],
-    [{ rpmLimit: 0 }, 'out-of-range RPM'],
+    [{ rpmLimit: -1 }, 'negative RPM'],
+    [{ rpmLimit: 100_001 }, 'RPM above the maximum'],
     [{ budgetUsd: -1 }, 'negative budget'],
     [{ expiresAt: 'tomorrow' }, 'invalid expiry'],
     [{ providerConnectionId: 'not-a-uuid' }, 'invalid provider ID'],

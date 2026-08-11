@@ -38,7 +38,14 @@ const metricOptions: Array<{ value: PerformanceMetric; label: string }> = [
   { value: 'cost', label: '成本' },
 ];
 
-const modelColors = ['#2563eb', '#0f766e', '#7c3aed', '#d97706', '#dc5a5a', '#475569'];
+const modelColors = [
+  'var(--chart-blue)',
+  'var(--chart-teal)',
+  'var(--chart-purple)',
+  'var(--chart-amber)',
+  'var(--chart-red)',
+  'var(--chart-slate)',
+];
 
 const seriesNames: Record<string, string> = {
   successfulCalls: '成功调用',
@@ -72,7 +79,7 @@ function modelChartSeries(models: KeyModelUsage[]): ModelChartSeries[] {
     identity: modelIdentity(model.provider, model.model),
     dataKey: `model_${index}`,
     label: duplicateModels.has(model.model) ? `${model.provider} / ${model.model}` : model.model,
-    color: modelColors[index] ?? '#64748b',
+    color: modelColors[index] ?? 'var(--chart-slate)',
   }));
 }
 
@@ -356,7 +363,7 @@ export function KeyPerformanceChart({
                   border: '1px solid var(--hairline-strong)',
                   borderRadius: 8,
                   background: 'var(--canvas)',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.12)',
+                  boxShadow: 'var(--shadow-3)',
                   fontSize: 11,
                 }}
               />
@@ -381,7 +388,7 @@ export function KeyPerformanceChart({
                       <Bar
                         dataKey="failedCalls"
                         stackId="calls"
-                        fill="#dc5a5a"
+                        fill="var(--chart-red)"
                         maxBarSize={28}
                         radius={[3, 3, 0, 0]}
                       />
@@ -391,8 +398,9 @@ export function KeyPerformanceChart({
                     <Area
                       type="monotone"
                       dataKey="cacheRate"
-                      stroke="#0f766e"
-                      fill="rgba(15, 118, 110, 0.14)"
+                      stroke="var(--chart-teal)"
+                      fill="var(--chart-teal)"
+                      fillOpacity={0.14}
                       strokeWidth={2}
                       activeDot={{ r: 5 }}
                     />
@@ -402,7 +410,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p10Tps"
-                        stroke="#d97706"
+                        stroke="var(--chart-amber)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -422,7 +430,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p50TtftMs"
-                        stroke="#0f766e"
+                        stroke="var(--chart-teal)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -430,7 +438,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p95TtftMs"
-                        stroke="#d97706"
+                        stroke="var(--chart-amber)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -438,7 +446,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p99TtftMs"
-                        stroke="#dc5a5a"
+                        stroke="var(--chart-red)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -450,7 +458,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p50LatencyMs"
-                        stroke="#0f766e"
+                        stroke="var(--chart-teal)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -458,7 +466,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p95LatencyMs"
-                        stroke="#d97706"
+                        stroke="var(--chart-amber)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -466,7 +474,7 @@ export function KeyPerformanceChart({
                       <Line
                         type="monotone"
                         dataKey="p99LatencyMs"
-                        stroke="#dc5a5a"
+                        stroke="var(--chart-red)"
                         strokeWidth={2}
                         dot={false}
                         connectNulls
@@ -479,8 +487,8 @@ export function KeyPerformanceChart({
                         type="monotone"
                         dataKey="inputTokens"
                         stackId="tokens"
-                        stroke="#64748b"
-                        fill="#64748b"
+                        stroke="var(--chart-slate)"
+                        fill="var(--chart-slate)"
                         fillOpacity={0.16}
                       />
                       <Area
@@ -497,8 +505,9 @@ export function KeyPerformanceChart({
                     <Area
                       type="monotone"
                       dataKey="costUsd"
-                      stroke="#7c3aed"
-                      fill="rgba(124, 58, 237, 0.15)"
+                      stroke="var(--chart-purple)"
+                      fill="var(--chart-purple)"
+                      fillOpacity={0.15}
                       strokeWidth={2}
                       activeDot={{ r: 5 }}
                     />

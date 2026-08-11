@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 
 import { propagateAttributes, startObservation } from '@langfuse/tracing';
@@ -70,6 +71,47 @@ function headerValue(request: FastifyRequest, name: string): string | undefined 
   return typeof text === 'string' && text.trim() ? text.trim().slice(0, 200) : undefined;
 }
 
+const REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
+
+export function gatewayRequestId(request: FastifyRequest): string {
+  const supplied = headerValue(request, 'x-request-id');
+  if (supplied && REQUEST_ID_PATTERN.test(supplied)) return supplied;
+  if (!supplied && typeof request.id === 'string' && REQUEST_ID_PATTERN.test(request.id)) {
+    return request.id;
+  }
+  return randomUUID();
+}
+
+export function langfuseRequestIdentity(
+  request: FastifyRequest,
+  body: Record<string, unknown>,
+  settings: ReturnType<typeof defaultLangfuseSettings>,
+  apiKeyId: string,
+): {
+  userId: string;
+  userIdSource: string;
+  sessionId?: string;
+  sessionIdSource: string;
+  clientName?: string;
+} {
+  const headerUserId = headerValue(request, settings.userIdHeader);
+  const bodyUserId =
+    typeof body.user === 'string' && body.user.trim() ? body.user.trim().slice(0, 200) : undefined;
+  const sessionId = headerValue(request, settings.sessionIdHeader);
+  const clientName = headerValue(request, 'user-agent')?.split(/[\s/;(]/, 1)[0];
+  return {
+    userId: headerUserId ?? bodyUserId ?? `api-key:${apiKeyId}`,
+    userIdSource: headerUserId
+      ? `header:${settings.userIdHeader}`
+      : bodyUserId
+        ? 'body.user'
+        : 'api-key',
+    ...(sessionId ? { sessionId } : {}),
+    sessionIdSource: sessionId ? `header:${settings.sessionIdHeader}` : 'none',
+    ...(clientName ? { clientName } : {}),
+  };
+}
+
 async function writeChunk(reply: FastifyReply, chunk: Uint8Array): Promise<void> {
   if (!reply.raw.write(chunk)) await once(reply.raw, 'drain');
 }
@@ -82,7 +124,7 @@ async function gatewayHandler(
   const startedAt = Date.now();
   const key = request.routerKey;
   if (!key) return;
-  const requestId = String(request.headers['x-request-id'] ?? request.id);
+  const requestId = gatewayRequestId(request);
   reply.header('x-request-id', requestId);
 
   const body =
@@ -117,12 +159,7 @@ async function gatewayHandler(
   let upstreamResponse: unknown;
   let capturedError: unknown;
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
-  const userId =
-    headerValue(request, langfuse.userIdHeader) ??
-    (typeof body.user === 'string' && body.user.trim()
-      ? body.user.trim().slice(0, 200)
-      : undefined);
-  const sessionId = headerValue(request, langfuse.sessionIdHeader);
+  const identity = langfuseRequestIdentity(request, body, langfuse, key.id);
   const traceName = langfuse.traceName || `route-${endpoint}`;
   const traceMetadata = {
     ...langfuse.metadata,
@@ -130,13 +167,16 @@ async function gatewayHandler(
     apiKey: key.name,
     apiKeyId: key.id,
     endpoint,
+    userIdSource: identity.userIdSource,
+    sessionIdSource: identity.sessionIdSource,
+    ...(identity.clientName ? { clientName: identity.clientName } : {}),
   };
 
   const observation = propagateAttributes(
     {
       traceName,
-      ...(userId ? { userId } : {}),
-      ...(sessionId ? { sessionId } : {}),
+      userId: identity.userId,
+      ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
       tags: [...new Set(['gateway', endpoint, ...langfuse.tags])],
       environment: langfuse.environment,
       ...(langfuse.version ? { version: langfuse.version } : {}),

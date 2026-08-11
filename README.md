@@ -62,6 +62,20 @@ GitHub Actions 只发布一个同时包含 API 与管理后台的 `x-llm-router`
 
 进入「上游连接」→「GPT OAuth」，系统会请求一次性设备码并打开 OpenAI 授权页。授权完成后，管理台会轮询状态并创建连接。设备码 15 分钟过期；只确认你本人从 xRouter 发起的授权。
 
+首次使用前，需要在 ChatGPT 个人账号的安全设置中启用 Device Code，或由工作区管理员在权限设置中启用设备码登录。若未启用，OpenAI 会拒绝设备授权请求。
+
+如果部署网络不能直连 `auth.openai.com` 和 `chatgpt.com`，请为应用容器配置可达的 HTTP(S) 代理。代理地址不能写容器内的 `127.0.0.1` 或 `localhost`；应使用容器能够访问的主机名、局域网地址或同一 Docker 网络中的代理服务。宿主机代理还必须监听非 loopback 地址并允许 Docker 网段访问。下面的地址只是示例，请替换为实际代理地址：
+
+```bash
+XROUTER_HTTP_PROXY=http://192.168.1.20:7897 \
+XROUTER_HTTPS_PROXY=http://192.168.1.20:7897 \
+docker compose -f docker-compose.release.yml up -d --force-recreate app
+```
+
+QNAP/Linux 上若代理运行在 NAS 宿主机，通常填写 NAS 的局域网 IP；也可以显式配置 Docker `host-gateway`。自定义 `XROUTER_NO_PROXY` 时，它会完整替换默认值，必须保留 `localhost,127.0.0.1,db`，并按需加入不应经过代理的内部上游或 Langfuse 域名。
+
+应用要求 Node.js 22.21+ 并已启用环境代理支持。OAuth 网络失败会返回可识别的 `openai_oauth_unavailable`（502），OpenAI 拒绝授权则返回 `openai_oauth_rejected`（502），不再统一显示为不可诊断的 500。
+
 该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
 
 ### API Key 上游
@@ -123,6 +137,8 @@ const response = await client.responses.create({
 在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后立即生效，不需要重启容器。
 
 不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
+
+客户端可以通过配置的请求头提供 `userId` 和 `sessionId`。若未提供用户头，xRouter 优先使用 OpenAI 请求体的 `user`，再回退到当前虚拟 Key 的稳定匿名身份；若未提供会话头则不伪造 Session，避免把每次随机 ID 误当成会话。缺失的 `x-request-id` 会由网关逐请求生成 UUID，用于本地调用记录、上游请求和 Langfuse trace 的关联。
 
 Key 详情页默认展示最近一天的数据，也可切换到周或月。调用趋势、缓存命中率、TPS、TTFT、端到端延迟、Token 与成本均使用时间序列图展示；成本按请求发生时匹配的模型单价计算并落库。点击时间桶或 P95/P99 等尾延迟指标，可下钻到具体调用记录。
 

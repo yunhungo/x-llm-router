@@ -12,6 +12,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
+import { copyText } from '../clipboard';
 import {
   emptyLangfuse,
   LangfuseFields,
@@ -46,6 +47,7 @@ export function KeysPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
 
   const load = useCallback(async () => {
     const [keyResult, providerResult] = await Promise.all([
@@ -72,6 +74,8 @@ export function KeysPage() {
           langfuse: langfusePayload(langfuse),
         }),
       });
+      setCopied(false);
+      setCopyError('');
       setCreated(response);
       await load();
     } catch (caught) {
@@ -176,7 +180,7 @@ export function KeysPage() {
                         '—'
                       )}
                     </td>
-                    <td>{key.rpmLimit.toLocaleString()}</td>
+                    <td>{key.rpmLimit === 0 ? '无限制' : key.rpmLimit.toLocaleString()}</td>
                     <td>
                       {key.budgetUsd === null ? 'Unlimited' : `$${key.budgetUsd.toFixed(2)}`}
                       <small>${key.spendUsd.toFixed(4)} used</small>
@@ -261,18 +265,28 @@ export function KeysPage() {
               </div>
               <h3>Key 已创建</h3>
               <button
+                type="button"
                 className="secret-key"
                 onClick={() => {
-                  void navigator.clipboard.writeText(created.rawKey);
-                  setCopied(true);
+                  void copyText(created.rawKey).then((didCopy) => {
+                    setCopied(didCopy);
+                    setCopyError(didCopy ? '' : '自动复制失败，请选择上方完整 Key 后手动复制。');
+                  });
                 }}
+                aria-label={copied ? 'API Key 已复制' : '复制 API Key'}
               >
                 <code>{created.rawKey}</code>
                 <span>{copied ? <Check size={15} /> : <Copy size={15} />}</span>
               </button>
-              <div className="security-note">
-                <ShieldCheck size={14} /> 仅显示一次
-              </div>
+              {copyError ? (
+                <div className="form-error" role="alert">
+                  {copyError}
+                </div>
+              ) : (
+                <div className="security-note" aria-live="polite">
+                  <ShieldCheck size={14} /> {copied ? '已复制 · 仅显示一次' : '仅显示一次'}
+                </div>
+              )}
               <div className="modal-actions">
                 <Button onClick={() => setShowCreate(false)}>完成</Button>
               </div>
@@ -283,10 +297,10 @@ export function KeysPage() {
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
               <div className="form-grid">
-                <Field label="RPM">
+                <Field label="RPM" hint="0 表示不限制">
                   <Input
                     type="number"
-                    min={1}
+                    min={0}
                     max={100000}
                     value={rpm}
                     onChange={(event) => setRpm(Number(event.target.value))}

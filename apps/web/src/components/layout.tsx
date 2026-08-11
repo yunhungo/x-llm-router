@@ -14,6 +14,7 @@ import { NavLink } from 'react-router-dom';
 
 import type { User } from '../types';
 import { BrandMark } from './brand-mark';
+import { ThemeSelector } from './theme-selector';
 
 const navigation = [
   { to: '/', label: '概览', icon: ChartNoAxesCombined, end: true },
@@ -65,6 +66,7 @@ export function AppLayout({
             </NavLink>
           ))}
         </nav>
+        <ThemeSelector className="sidebar-theme-selector" />
         <div className="sidebar-footer">
           <div className="user-avatar">{user.username.slice(0, 1).toUpperCase()}</div>
           <div className="user-copy">

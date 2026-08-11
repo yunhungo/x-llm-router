@@ -34,6 +34,10 @@ services:
       DATABASE_URL: postgresql://xrouter:xrouter@db:5432/xrouter
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: change-me-now
+      NODE_USE_ENV_PROXY: '1'
+      HTTP_PROXY: ${XROUTER_HTTP_PROXY:-}
+      HTTPS_PROXY: ${XROUTER_HTTPS_PROXY:-}
+      NO_PROXY: ${XROUTER_NO_PROXY:-localhost,127.0.0.1,db}
     depends_on:
       db:
         condition: service_healthy

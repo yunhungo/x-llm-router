@@ -160,14 +160,14 @@ export function LangfuseFields({
             />
           </Field>
           <div className="form-grid">
-            <Field label="User ID Header" hint="映射到 Langfuse userId">
+            <Field label="User ID Header" hint="缺失时使用当前 API Key 的稳定身份，不会逐请求随机">
               <Input
                 value={value.userIdHeader}
                 onChange={(event) => onChange({ ...value, userIdHeader: event.target.value })}
                 placeholder="x-user-id"
               />
             </Field>
-            <Field label="Session ID Header" hint="映射到 Langfuse sessionId">
+            <Field label="Session ID Header" hint="缺失时不创建伪 Session；应由客户端传会话 ID">
               <Input
                 value={value.sessionIdHeader}
                 onChange={(event) => onChange({ ...value, sessionIdHeader: event.target.value })}

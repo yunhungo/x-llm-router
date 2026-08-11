@@ -34,6 +34,10 @@ services:
       OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
       CHATGPT_API_BASE: ${CHATGPT_API_BASE:-https://chatgpt.com/backend-api/codex}
       CHATGPT_AUTH_BASE: ${CHATGPT_AUTH_BASE:-https://auth.openai.com}
+      NODE_USE_ENV_PROXY: '1'
+      HTTP_PROXY: ${XROUTER_HTTP_PROXY:-}
+      HTTPS_PROXY: ${XROUTER_HTTPS_PROXY:-}
+      NO_PROXY: ${XROUTER_NO_PROXY:-localhost,127.0.0.1,db}
     depends_on:
       db:
         condition: service_healthy

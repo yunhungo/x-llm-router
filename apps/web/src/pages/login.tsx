@@ -3,6 +3,7 @@ import { ArrowRight, LockKeyhole, Router } from 'lucide-react';
 
 import { api, ApiError, jsonBody } from '../api';
 import { BrandMark } from '../components/brand-mark';
+import { ThemeSelector } from '../components/theme-selector';
 import { Button, Field, Input } from '../components/ui';
 import type { User } from '../types';
 
@@ -40,6 +41,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
         <BrandMark />
         <strong>xRouter</strong>
         <span>Self-hosted LLM gateway</span>
+        <ThemeSelector className="login-theme-selector" />
       </div>
       <div className="login-content">
         <section className="login-intro">

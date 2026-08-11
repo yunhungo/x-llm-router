@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { langfuseSettingsSchema } from '@x-router/contracts';
+
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
 import {
   decryptLangfuseSettings,
@@ -75,6 +77,42 @@ describe('per-key Langfuse settings', () => {
       restartRequiredAfterSave: false,
     });
     expect(JSON.stringify(publicLangfuseSettings(settings))).not.toContain('sk-lf-secret');
+  });
+
+  it('normalizes a trailing slash before the OTLP endpoint is composed', () => {
+    const settings: KeyLangfuseSettings = {
+      enabled: true,
+      publicKey: 'pk-lf-project',
+      secretKey: 'sk-lf-secret',
+      baseUrl: 'https://langfuse.example.test///',
+      environment: 'production',
+      traceName: '',
+      version: '',
+      tags: [],
+      metadata: {},
+      userIdHeader: 'x-user-id',
+      sessionIdHeader: 'x-session-id',
+      captureInput: true,
+      captureOutput: true,
+    };
+
+    expect(decryptLangfuseSettings(encryptLangfuseSettings(settings))?.baseUrl).toBe(
+      'https://langfuse.example.test',
+    );
+  });
+
+  it('allows request header mappings to be disabled with empty values', () => {
+    const result = langfuseSettingsSchema.safeParse({
+      enabled: false,
+      publicKey: '',
+      baseUrl: 'https://cloud.langfuse.com',
+      environment: 'production',
+      userIdHeader: '',
+      sessionIdHeader: '',
+    });
+
+    if (!result.success) throw result.error;
+    expect(result.data).toMatchObject({ userIdHeader: '', sessionIdHeader: '' });
   });
 
   it('keeps in-flight spans on the previous processor while switching new spans immediately', async () => {
