@@ -71,10 +71,13 @@ describe('Langfuse runtime reload', () => {
     mocks.FakeLangfuseSpanProcessor.instances.length = 0;
     mocks.FakeNodeSDK.instances.length = 0;
     process.env.DATABASE_URL = 'postgresql://example';
-    process.env.ENCRYPTION_KEY = 'test-encryption-key-with-enough-length';
-    process.env.JWT_SECRET = 'test-jwt-secret-with-enough-length';
     const { resetConfigForTests } = await import('../config');
     resetConfigForTests();
+    const { setRuntimeSecretsForTests } = await import('../runtime-secrets');
+    setRuntimeSecretsForTests({
+      ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
+      JWT_SECRET: 'test-jwt-secret-with-enough-length',
+    });
     service = await import('./langfuse');
   });
 

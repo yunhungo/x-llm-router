@@ -2,11 +2,15 @@ import { getConfig } from './config';
 import { bootstrapInitialAdmin } from './db/bootstrap';
 import { closePool } from './db/client';
 import { runMigrations } from './db/migrate';
+import { waitForDatabase } from './db/wait';
+import { initializeRuntimeSecrets } from './runtime-secrets';
 import { initializeLangfuse, shutdownLangfuse } from './services/langfuse';
 
 async function main(): Promise<void> {
   const config = getConfig();
+  await waitForDatabase();
   await runMigrations();
+  await initializeRuntimeSecrets();
   const createdAdmin = await bootstrapInitialAdmin();
   const langfuseProjectCount = await initializeLangfuse();
   const { buildApp } = await import('./app');

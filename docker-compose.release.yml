@@ -1,18 +1,22 @@
-# Generic deployment compose for Docker Compose V2.
-# Copy .env.example to .env and replace every production secret before starting.
+# Production deployment for Docker Compose V2 / QNAP Container Station.
+# No .env file is required. PostgreSQL is the only persistent state.
 
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-xrouter}
-      POSTGRES_USER: ${POSTGRES_USER:-xrouter}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: xrouter
+      POSTGRES_USER: xrouter
+      POSTGRES_PASSWORD: xrouter
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - type: bind
+        source: /share/Container/xrouter/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-xrouter} -d ${POSTGRES_DB:-xrouter}']
+      test: ['CMD-SHELL', 'pg_isready -U xrouter -d xrouter']
       interval: 10s
       timeout: 5s
       retries: 20
@@ -24,27 +28,17 @@ services:
         max-file: '3'
 
   app:
-    image: ${XROUTER_IMAGE:-mayflowerx/x-llm-router:latest}
+    image: mayflowerx/x-llm-router:latest
     restart: unless-stopped
     environment:
-      NODE_ENV: production
-      API_PORT: 4000
-      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN in .env}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-xrouter}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-xrouter}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
-      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD in .env}
-      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
-      CHATGPT_API_BASE: ${CHATGPT_API_BASE:-https://chatgpt.com/backend-api/codex}
-      CHATGPT_AUTH_BASE: ${CHATGPT_AUTH_BASE:-https://auth.openai.com}
+      DATABASE_URL: postgresql://xrouter:xrouter@db:5432/xrouter
+      INITIAL_ADMIN_USERNAME: admin
+      INITIAL_ADMIN_PASSWORD: change-me-now
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - '${WEB_PORT:-3000}:4000'
-      - '${API_PORT:-4000}:4000'
+      - '59051:4000'
     healthcheck:
       test:
         [
@@ -62,6 +56,3 @@ services:
       options:
         max-size: '10m'
         max-file: '3'
-
-volumes:
-  postgres-data:

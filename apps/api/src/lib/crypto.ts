@@ -1,11 +1,11 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 
-import { getConfig } from '../config';
+import { getRuntimeSecrets } from '../runtime-secrets';
 
 const VERSION = 'v1';
 
 function encryptionKey(): Buffer {
-  return createHash('sha256').update(getConfig().ENCRYPTION_KEY, 'utf8').digest();
+  return createHash('sha256').update(getRuntimeSecrets().ENCRYPTION_KEY, 'utf8').digest();
 }
 
 export function encryptJson(value: unknown): string {

@@ -29,8 +29,6 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-xrouter}:${POSTGRES_PASSWORD:-xrouter}@db:5432/${POSTGRES_DB:-xrouter}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-local-development-encryption-key-change-me}
-      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-change-me-now}
       OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}

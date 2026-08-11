@@ -39,28 +39,22 @@ DESIGN.md                 Vercel-inspired UI 规范
 
 ## Docker Compose 启动
 
-生产环境先生成独立密钥：
+生产部署不需要创建 `.env` 或手工生成密钥，直接启动：
 
 ```bash
-cp .env.example .env
-openssl rand -base64 32  # 写入 ENCRYPTION_KEY
-openssl rand -base64 32  # 写入 JWT_SECRET
+docker compose -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml ps
 ```
 
-同时修改 `.env` 中的 `POSTGRES_PASSWORD` 与 `INITIAL_ADMIN_PASSWORD`，然后启动：
-
-```bash
-docker compose up --build -d
-docker compose ps
-```
-
-- 管理后台：<http://localhost:3000>
-- API：<http://localhost:4000>
-- 健康检查：<http://localhost:4000/readyz>
+- 管理后台：<http://localhost:59051>
+- API：<http://localhost:59051/v1>
+- 健康检查：<http://localhost:59051/readyz>
+- 默认管理员账号：`admin`
+- 默认管理员密码：`change-me-now`
 
 GitHub Actions 只发布一个同时包含 API 与管理后台的 `x-llm-router` 镜像，目标为 `ghcr.io/<owner>/x-llm-router` 和 Docker Hub 的 `<DOCKERHUB_USERNAME>/x-llm-router`。
 
-未提供 `.env` 时，Compose 的演示初始账号是 `admin` / `change-me-now`。首次登录后请立即在「平台设置」中修改；默认密钥只适合本机开发，不能用于公网部署。
+数据库账号写在 Compose 中且不映射到宿主机端口。首次启动时，应用会在 PostgreSQL 的 `platform_settings` 表中生成 JWT 密钥和凭据加密密钥，后续启动复用原值。所有持久化数据均保存在 `/share/Container/xrouter/postgres`；请备份该目录，并在首次登录后立即修改默认管理员密码。
 
 ## 配置上游
 
@@ -126,11 +120,7 @@ const response = await client.responses.create({
 
 ## Langfuse
 
-在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后重启 xRouter 容器：
-
-```bash
-docker compose restart app
-```
+在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后立即生效，不需要重启容器。
 
 不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
 
@@ -159,9 +149,9 @@ pnpm format:check
 
 ## 安全边界
 
-- 请使用至少 32 字节随机值作为 `ENCRYPTION_KEY` 和 `JWT_SECRET`，并确保它们彼此不同。
-- `ENCRYPTION_KEY` 丢失后无法解密上游凭据；轮换需要重新连接上游。
-- 管理端会话使用 HttpOnly、SameSite=Lax Cookie；生产部署必须通过 HTTPS，并将 `WEB_ORIGIN` 设置为准确域名。
+- 应用首次启动会在 PostgreSQL 中生成彼此独立的 32 字节 `ENCRYPTION_KEY` 和 `JWT_SECRET`，无需手工配置。
+- `ENCRYPTION_KEY` 随 PostgreSQL 数据持久化；数据库数据丢失后，现有上游凭据无法恢复。
+- 管理端会话使用 HttpOnly、SameSite=Lax Cookie；合并部署会自动校验当前访问来源，只有前后端分离部署时才需要设置 `WEB_ORIGIN`。
 - 虚拟 Key 的 RPM 校验由 PostgreSQL 调用日志计算，适合首版和中等流量；多副本高吞吐部署应增加 Redis/Valkey 原子限流。
 - 目前价格表内置 GPT-5.6 系列示例，可通过管理 API/数据库更新；未知模型仍记录 Token，但成本显示为 0。
 

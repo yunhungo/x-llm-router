@@ -3,12 +3,17 @@ import { z } from 'zod';
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
-  WEB_ORIGIN: z.string().default('http://localhost:3000'),
+  WEB_ORIGIN: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z
+      .string()
+      .url()
+      .transform((value) => new URL(value).origin)
+      .optional(),
+  ),
   WEB_ROOT: z.string().min(1).optional(),
   LOG_LEVEL: z.string().default('info'),
   DATABASE_URL: z.string().min(1),
-  ENCRYPTION_KEY: z.string().min(16),
-  JWT_SECRET: z.string().min(16),
   INITIAL_ADMIN_USERNAME: z.string().min(1).default('admin'),
   INITIAL_ADMIN_PASSWORD: z.string().min(8).default('change-me-now'),
   OPENAI_API_BASE: z.string().url().default('https://api.openai.com/v1'),

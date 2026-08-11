@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resetConfigForTests } from '../config';
+import { setRuntimeSecretsForTests } from '../runtime-secrets';
 import {
   decryptLangfuseSettings,
   encryptLangfuseSettings,
@@ -20,10 +20,10 @@ function fakeProcessor() {
 
 describe('per-key Langfuse settings', () => {
   beforeEach(() => {
-    process.env.DATABASE_URL = 'postgresql://example';
-    process.env.ENCRYPTION_KEY = 'test-encryption-key-with-enough-length';
-    process.env.JWT_SECRET = 'test-jwt-secret-with-enough-length';
-    resetConfigForTests();
+    setRuntimeSecretsForTests({
+      ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
+      JWT_SECRET: 'test-jwt-secret-with-enough-length',
+    });
   });
 
   it('encrypts the complete project configuration', () => {

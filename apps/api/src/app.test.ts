@@ -15,16 +15,16 @@ vi.mock('./db/client', () => ({
 
 import { buildApp } from './app';
 import { resetConfigForTests } from './config';
+import { setRuntimeSecretsForTests } from './runtime-secrets';
 
 describe('embedded web application', () => {
   let app: FastifyInstance;
   let webRoot: string;
   const originalEnvironment = {
     DATABASE_URL: process.env.DATABASE_URL,
-    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
-    JWT_SECRET: process.env.JWT_SECRET,
     LOG_LEVEL: process.env.LOG_LEVEL,
     WEB_ROOT: process.env.WEB_ROOT,
+    WEB_ORIGIN: process.env.WEB_ORIGIN,
   };
 
   beforeAll(async () => {
@@ -34,11 +34,14 @@ describe('embedded web application', () => {
     await writeFile(join(webRoot, 'assets', 'app.js'), 'globalThis.xRouter = true;');
 
     process.env.DATABASE_URL = 'postgresql://example';
-    process.env.ENCRYPTION_KEY = 'test-encryption-key-with-enough-length';
-    process.env.JWT_SECRET = 'test-jwt-secret-with-enough-length';
     process.env.LOG_LEVEL = 'silent';
     process.env.WEB_ROOT = webRoot;
+    delete process.env.WEB_ORIGIN;
     resetConfigForTests();
+    setRuntimeSecretsForTests({
+      ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
+      JWT_SECRET: 'test-jwt-secret-with-enough-length',
+    });
 
     app = await buildApp();
     await app.ready();
@@ -52,6 +55,7 @@ describe('embedded web application', () => {
       else process.env[name] = value;
     }
     resetConfigForTests();
+    setRuntimeSecretsForTests();
   });
 
   it('serves the built index and static assets', async () => {
@@ -84,5 +88,29 @@ describe('embedded web application', () => {
     });
     expect(apiResponse.statusCode).toBe(404);
     expect(apiResponse.json()).toMatchObject({ error: { code: 'not_found' } });
+  });
+
+  it('accepts the current browser origin without a configured public URL', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { host: 'router.example.test', origin: 'http://router.example.test' },
+      payload: { username: 'admin', password: 'not-the-password' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: 'invalid_credentials' } });
+  });
+
+  it('rejects a foreign browser origin', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { host: 'router.example.test', origin: 'https://attacker.example' },
+      payload: { username: 'admin', password: 'not-the-password' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: { code: 'origin_rejected' } });
   });
 });

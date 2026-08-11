@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 
 import { getConfig } from './config';
 import { getPool } from './db/client';
@@ -12,7 +12,23 @@ import { authRoutes } from './routes/auth';
 import { gatewayRoutes } from './routes/gateway';
 import { keyAnalyticsRoutes } from './routes/key-analytics';
 import { usageDetailRoutes } from './routes/usage-details';
+import { getRuntimeSecrets } from './runtime-secrets';
 import { registerUsageDetailRetention } from './services/usage-details';
+
+function normalizedOrigin(value: string): string | undefined {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function requestOriginAllowed(request: FastifyRequest, configuredOrigin?: string): boolean {
+  const requestOrigin = request.headers.origin;
+  if (!requestOrigin) return true;
+  const expectedOrigin = configuredOrigin ?? `${request.protocol}://${request.host}`;
+  return normalizedOrigin(requestOrigin) === normalizedOrigin(expectedOrigin);
+}
 
 export async function buildApp(): Promise<FastifyInstance> {
   const config = getConfig();
@@ -25,11 +41,13 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(cookie);
   await app.register(jwt, {
-    secret: config.JWT_SECRET,
+    secret: getRuntimeSecrets().JWT_SECRET,
     cookie: { cookieName: 'xrouter_session', signed: false },
   });
   await app.register(rateLimit, { global: false });
-  await app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
+  if (config.WEB_ORIGIN) {
+    await app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
+  }
   if (config.WEB_ROOT) {
     await app.register(staticFiles, {
       root: config.WEB_ROOT,
@@ -46,8 +64,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (
       request.url.startsWith('/api/') &&
       !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-      request.headers.origin &&
-      request.headers.origin !== config.WEB_ORIGIN
+      !requestOriginAllowed(request, config.WEB_ORIGIN)
     ) {
       return reply
         .code(403)
