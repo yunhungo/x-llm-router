@@ -72,6 +72,10 @@ class PassthroughStreamBridge implements GatewayStreamBridge {
     return this.accumulator.errorCode;
   }
 
+  get hasOutput() {
+    return this.accumulator.hasOutput;
+  }
+
   feed(chunk: Uint8Array, final = false): Uint8Array[] {
     this.accumulator.feed(chunk, final);
     return chunk.byteLength > 0 ? [chunk] : [];
@@ -99,6 +103,13 @@ export const openAiProviderAdapter: ProviderAdapter = {
     const body: Record<string, unknown> = { ...inputBody, model };
 
     if (provider.authType === 'api_key') {
+      if (provider.apiMode !== endpoint) {
+        const configuredMode = provider.apiMode === 'responses' ? 'Responses' : 'Chat Completions';
+        throw Object.assign(
+          new Error(`This upstream is configured for the ${configuredMode} API.`),
+          { statusCode: 400, code: 'provider_api_mode_mismatch' },
+        );
+      }
       if (endpoint === 'chat.completions') addChatStreamUsage(body);
       return {
         endpoint,

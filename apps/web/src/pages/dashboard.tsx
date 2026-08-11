@@ -13,6 +13,13 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { Badge, PageHeader, Skeleton } from '../components/ui';
 import type { ModelUsage, UsagePoint, UsageSummary } from '../types';
+import {
+  formatAxisCallCount,
+  formatCallCount,
+  getAxisPosition,
+  getChartMetrics,
+  getLinePositions,
+} from './dashboard-chart';
 
 const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
 const money = new Intl.NumberFormat('en-US', {
@@ -23,44 +30,83 @@ const money = new Intl.NumberFormat('en-US', {
 });
 
 function MiniChart({ points }: { points: UsagePoint[] }) {
-  const peak = Math.max(...points.map((point) => point.calls), 0);
-  const scaleMax = Math.max(peak, 1);
-  const total = points.reduce((sum, point) => sum + point.calls, 0);
+  const { peak, scaleMax, ticks, total } = getChartMetrics(points);
+  const positions = getLinePositions(points, scaleMax);
+  const linePoints = positions.map((position) => `${position.x},${position.y}`).join(' ');
+  const firstPosition = positions[0];
+  const lastPosition = positions.at(-1);
+  const areaPoints =
+    firstPosition && lastPosition ? `${firstPosition.x},98 ${linePoints} ${lastPosition.x},98` : '';
   return (
     <div className="trend-content">
       <div className="chart-summary">
         <span>
-          {points.length} 天总调用 <strong>{total.toLocaleString()}</strong>
+          {points.length} 天总调用 <strong>{formatCallCount(total)}</strong>
         </span>
         <span>
-          单日峰值 <strong>{peak.toLocaleString()}</strong>
+          单日峰值 <strong>{formatCallCount(peak)}</strong>
         </span>
       </div>
-      <div className="mini-chart" role="group" aria-label={`最近 ${points.length} 天调用趋势`}>
-        {points.map((point) => (
-          <div
-            className="bar-column"
-            key={point.bucket}
-            tabIndex={0}
-            aria-label={`${point.bucket}，${point.calls.toLocaleString()} 次调用`}
-          >
-            <div className="bar-tooltip" aria-hidden="true">
-              <strong>{point.bucket}</strong>
-              <span>{point.calls.toLocaleString()} 次调用</span>
-            </div>
-            <div className="bar-track">
-              <div
-                className={`bar-value${point.calls === 0 ? ' is-empty' : ''}`}
-                style={{ height: `${(point.calls / scaleMax) * 100}%` }}
-              >
-                <strong className="bar-count">{point.calls.toLocaleString()}</strong>
-              </div>
-            </div>
-            <time className="bar-label" dateTime={point.bucket}>
+      <div className="line-chart" role="group" aria-label={`最近 ${points.length} 天调用趋势`}>
+        <div className="line-chart-stage">
+          <div className="line-y-axis" aria-hidden="true">
+            {ticks.map((tick) => (
+              <span key={tick} style={{ bottom: `${getAxisPosition(tick, scaleMax)}%` }}>
+                {formatAxisCallCount(tick)}
+              </span>
+            ))}
+          </div>
+          <div className="line-plot">
+            <svg
+              className="line-chart-svg"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="traffic-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--blue)" stopOpacity="0.2" />
+                  <stop offset="100%" stopColor="var(--blue)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {ticks.map((tick) => {
+                const y = 100 - getAxisPosition(tick, scaleMax);
+                return <line className="line-grid" key={tick} x1="2" x2="98" y1={y} y2={y} />;
+              })}
+              {areaPoints ? <polygon className="line-area" points={areaPoints} /> : null}
+              {linePoints ? <polyline className="line-stroke" points={linePoints} /> : null}
+            </svg>
+            {points.map((point, index) => {
+              const position = positions[index];
+              if (!position) return null;
+              return (
+                <button
+                  className={`line-point${index === 0 ? ' is-first' : ''}${index === points.length - 1 ? ' is-last' : ''}`}
+                  key={point.bucket}
+                  type="button"
+                  style={{ left: `${position.x}%`, top: `${position.y}%` }}
+                  aria-label={`${point.bucket}，${formatCallCount(point.calls)} 次调用`}
+                >
+                  <span className="line-tooltip" aria-hidden="true">
+                    <strong>{point.bucket}</strong>
+                    <span>{formatCallCount(point.calls)} 次调用</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div
+          className="line-x-axis"
+          style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(0, 1fr))` }}
+          aria-hidden="true"
+        >
+          {points.map((point) => (
+            <time className="line-x-label" dateTime={point.bucket} key={point.bucket}>
               {point.bucket.slice(5)}
             </time>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

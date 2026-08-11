@@ -11,7 +11,7 @@
     "dev": "pnpm --parallel --filter @x-router/api --filter @x-router/web dev",
     "build": "pnpm --filter @x-router/contracts build && pnpm --filter @x-router/api build && pnpm --filter @x-router/web build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @x-router/api test",
+    "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

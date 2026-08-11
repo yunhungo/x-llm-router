@@ -9,7 +9,6 @@ import {
   langfuseSettingsSchema,
 } from '@x-router/contracts';
 
-import { getConfig } from '../config';
 import { getPool } from '../db/client';
 import { adminId, requireAdmin } from '../lib/admin-auth';
 import { encryptJson } from '../lib/crypto';
@@ -47,7 +46,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/providers', async () => {
     const result = await getPool().query(
       `SELECT id, name, provider, auth_type AS "authType", status, account_id AS "accountId",
-              base_url AS "baseUrl", default_model AS "defaultModel", priority,
+              api_mode AS "apiMode", base_url AS "baseUrl", default_model AS "defaultModel", priority,
               token_expires_at AS "tokenExpiresAt", last_error AS "lastError",
               created_at AS "createdAt", updated_at AS "updatedAt"
          FROM provider_connections ORDER BY priority ASC, created_at ASC`,
@@ -64,36 +63,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .code(400)
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
-    let adapter;
     try {
-      adapter = getProviderAdapter(parsed.data.provider);
+      getProviderAdapter(parsed.data.provider);
     } catch (error) {
       const typed = error as Error & { code?: string };
       return reply.code(400).send({
         error: { code: typed.code ?? 'unsupported_provider', message: typed.message },
       });
     }
-    const baseUrl =
-      parsed.data.baseUrl ??
-      (parsed.data.provider === 'openai' ? getConfig().OPENAI_API_BASE : adapter.defaultApiBaseUrl);
-    if (!baseUrl) {
-      return reply.code(400).send({
-        error: { code: 'base_url_required', message: 'This provider requires a Base URL.' },
-      });
-    }
     const id = randomUUID();
     await getPool().query(
       `INSERT INTO provider_connections(
-        id, name, provider, auth_type, credentials_ciphertext, base_url,
+        id, name, provider, auth_type, api_mode, credentials_ciphertext, base_url,
         default_model, priority, created_by
-      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8)`,
+      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8,$9)`,
       [
         id,
         parsed.data.name,
         parsed.data.provider,
+        parsed.data.apiMode,
         encryptJson({ apiKey: parsed.data.apiKey }),
-        baseUrl,
-        parsed.data.defaultModel ?? adapter.defaultModel ?? null,
+        parsed.data.baseUrl,
+        parsed.data.defaultModel ?? null,
         parsed.data.priority,
         adminId(request),
       ],
@@ -278,8 +269,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       publicKey: parsed.data.publicKey,
       baseUrl: parsed.data.baseUrl,
       environment: parsed.data.environment,
-      captureInput: true,
-      captureOutput: true,
+      traceName: parsed.data.traceName,
+      version: parsed.data.version,
+      tags: parsed.data.tags,
+      metadata: parsed.data.metadata,
+      userIdHeader: parsed.data.userIdHeader,
+      sessionIdHeader: parsed.data.sessionIdHeader,
+      captureInput: parsed.data.captureInput,
+      captureOutput: parsed.data.captureOutput,
       ...(parsed.data.secretKey !== undefined ? { secretKey: parsed.data.secretKey } : {}),
     });
     if (!updated)

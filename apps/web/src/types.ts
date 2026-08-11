@@ -8,6 +8,7 @@ export interface Provider {
   name: string;
   provider: string;
   authType: 'oauth' | 'api_key';
+  apiMode: 'responses' | 'chat.completions';
   status: 'active' | 'disabled' | 'error';
   accountId: string | null;
   baseUrl: string;
@@ -36,6 +37,14 @@ export interface LangfuseConfig {
   hasSecretKey: boolean;
   baseUrl: string;
   environment: string;
+  traceName: string;
+  version: string;
+  tags: string[];
+  metadata: Record<string, string>;
+  userIdHeader: string;
+  sessionIdHeader: string;
+  captureInput: boolean;
+  captureOutput: boolean;
   restartRequiredAfterSave: boolean;
 }
 
@@ -137,23 +146,41 @@ export interface KeyAnalyticsSummary {
   averageLatencyMs: number;
   p50LatencyMs: number;
   p95LatencyMs: number;
+  p99LatencyMs: number;
   averageTtftMs: number;
   p50TtftMs: number;
   p95TtftMs: number;
+  p99TtftMs: number;
   averageTps: number;
+  p10Tps: number;
+  p50Tps: number;
   p95Tps: number;
+  streamingCalls: number;
   peakRpm: number;
 }
 
 export interface KeyUsagePoint {
   bucket: string;
+  bucketEnd: string;
   calls: number;
   successfulCalls: number;
+  failedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
   tokens: number;
   cachedTokens: number;
   costUsd: number;
   averageTtftMs: number;
+  p50TtftMs: number;
+  p95TtftMs: number;
+  p99TtftMs: number;
   averageTps: number;
+  p10Tps: number;
+  p50Tps: number;
+  averageLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
 }
 
 export interface KeyModelUsage {
@@ -185,6 +212,19 @@ export interface KeyErrorUsage {
 
 export interface KeyUsageLog extends Omit<UsageLog, 'apiKeyId' | 'apiKeyName'> {
   tps: number | null;
+}
+
+export type KeyLogMetric = 'recent' | 'errors' | 'latency' | 'ttft' | 'tps';
+
+export interface KeyUsageLogsResponse {
+  logs: KeyUsageLog[];
+  total: number;
+  query: {
+    metric: KeyLogMetric;
+    threshold: number | null;
+    from: string | null;
+    to: string | null;
+  };
 }
 
 export interface ModelPriceMatch {

@@ -7,6 +7,7 @@ export class SseAccumulator {
   usage: TokenUsage = emptyUsage();
   completedResponse: Record<string, unknown> | null = null;
   errorCode: string | undefined;
+  hasOutput = false;
 
   feed(chunk: Uint8Array, final = false): void {
     this.buffer += this.decoder.decode(chunk, { stream: !final });
@@ -26,6 +27,29 @@ export class SseAccumulator {
     if (!data || data === '[DONE]') return;
     try {
       const payload = JSON.parse(data) as Record<string, unknown>;
+      if (
+        (payload.type === 'response.output_text.delta' ||
+          payload.type === 'response.function_call_arguments.delta') &&
+        typeof payload.delta === 'string' &&
+        payload.delta.length > 0
+      ) {
+        this.hasOutput = true;
+      }
+      const choices = Array.isArray(payload.choices) ? payload.choices : [];
+      if (
+        choices.some((choice) => {
+          if (!choice || typeof choice !== 'object') return false;
+          const delta = (choice as Record<string, unknown>).delta;
+          if (!delta || typeof delta !== 'object') return false;
+          const value = delta as Record<string, unknown>;
+          return (
+            (typeof value.content === 'string' && value.content.length > 0) ||
+            (Array.isArray(value.tool_calls) && value.tool_calls.length > 0)
+          );
+        })
+      ) {
+        this.hasOutput = true;
+      }
       const nextUsage = extractTokenUsage(payload);
       if (nextUsage.totalTokens > 0) this.usage = nextUsage;
       if (

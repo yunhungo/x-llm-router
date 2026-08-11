@@ -23,7 +23,7 @@ import {
   PageHeader,
   Skeleton,
 } from '../components/ui';
-import type { Provider, ProviderCatalogItem } from '../types';
+import type { Provider } from '../types';
 
 interface DeviceFlow {
   id: string;
@@ -33,12 +33,15 @@ interface DeviceFlow {
   expiresAt: string;
 }
 
+type ConnectionMethod = 'api-key' | 'oauth';
+type ApiMode = 'responses' | 'chat.completions';
+
 export function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>();
-  const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([]);
-  const [modal, setModal] = useState<'oauth' | 'api-key' | null>(null);
-  const [providerType, setProviderType] = useState('openai');
-  const [name, setName] = useState('OpenAI');
+  const [modal, setModal] = useState<'add' | null>(null);
+  const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod>('api-key');
+  const [apiMode, setApiMode] = useState<ApiMode>('chat.completions');
+  const [name, setName] = useState('OpenAI API');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
   const [defaultModel, setDefaultModel] = useState('');
@@ -47,12 +50,8 @@ export function ProvidersPage() {
   const [message, setMessage] = useState('');
 
   const load = useCallback(async () => {
-    const [providerResult, catalogResult] = await Promise.all([
-      api<{ providers: Provider[] }>('/api/admin/providers'),
-      api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
-    ]);
-    setProviders(providerResult.providers);
-    setCatalog(catalogResult.providers);
+    const result = await api<{ providers: Provider[] }>('/api/admin/providers');
+    setProviders(result.providers);
   }, []);
   useEffect(() => void load(), [load]);
 
@@ -110,7 +109,8 @@ export function ProvidersPage() {
         method: 'POST',
         ...jsonBody({
           name,
-          provider: providerType,
+          provider: 'openai',
+          apiMode,
           apiKey,
           baseUrl,
           defaultModel: defaultModel || undefined,
@@ -128,24 +128,21 @@ export function ProvidersPage() {
     }
   };
 
-  const selectProviderType = (id: string) => {
-    setProviderType(id);
-    const selected = catalog.find((provider) => provider.id === id);
-    if (!selected) return;
-    setName(selected.name);
-    setBaseUrl(selected.defaultApiBaseUrl ?? '');
-    setDefaultModel(selected.defaultModel ?? '');
-  };
-
-  const openApiKeyModal = () => {
-    const selected = catalog.find((provider) => provider.id === providerType) ?? catalog[0];
-    if (selected) selectProviderType(selected.id);
-    setApiKey('');
+  const selectConnectionMethod = (method: ConnectionMethod) => {
+    setConnectionMethod(method);
+    setName(method === 'api-key' ? 'OpenAI API' : 'OpenAI OAuth');
     setFlow(undefined);
-    setModal('api-key');
   };
 
-  const selectedProvider = catalog.find((provider) => provider.id === providerType);
+  const openAddProviderModal = () => {
+    selectConnectionMethod('api-key');
+    setApiMode('chat.completions');
+    setApiKey('');
+    setBaseUrl('https://api.openai.com/v1');
+    setDefaultModel('');
+    setFlow(undefined);
+    setModal('add');
+  };
 
   const toggle = async (provider: Provider) => {
     await api(`/api/admin/providers/${provider.id}`, {
@@ -165,19 +162,9 @@ export function ProvidersPage() {
       <PageHeader
         title="上游连接"
         action={
-          <div className="button-group">
-            <Button variant="secondary" onClick={openApiKeyModal}>
-              <KeyRound size={14} /> API 上游
-            </Button>
-            <Button
-              onClick={() => {
-                setModal('oauth');
-                setFlow(undefined);
-              }}
-            >
-              <Plus size={14} /> GPT OAuth
-            </Button>
-          </div>
+          <Button onClick={openAddProviderModal}>
+            <Plus size={14} /> 添加上游
+          </Button>
         }
       />
       {message ? (
@@ -208,11 +195,7 @@ export function ProvidersPage() {
                       {provider.authType === 'oauth' ? 'OAuth' : 'API Key'}
                     </Badge>
                   </div>
-                  <span>
-                    {catalog.find((item) => item.id === provider.provider)?.name ??
-                      provider.provider}{' '}
-                    · 优先级 {provider.priority}
-                  </span>
+                  <span>OpenAI · 优先级 {provider.priority}</span>
                 </div>
                 <button className="icon-button">
                   <MoreHorizontal size={17} />
@@ -236,6 +219,14 @@ export function ProvidersPage() {
                         ? 'Error'
                         : 'Disabled'}
                   </Badge>
+                </div>
+                <div>
+                  <span>API 方式</span>
+                  <code>
+                    {provider.authType === 'oauth' || provider.apiMode === 'responses'
+                      ? 'Responses'
+                      : 'Chat Completions'}
+                  </code>
                 </div>
                 <div>
                   <span>默认模型</span>
@@ -273,47 +264,24 @@ export function ProvidersPage() {
       ) : (
         <EmptyState
           title="还没有上游连接"
-          description="添加 GPT OAuth、DeepSeek 或其他 OpenAI-compatible API 上游。"
+          description="添加 OpenAI 上游，并选择 API Key 或 OAuth 接入。"
           action={
-            <Button onClick={openApiKeyModal}>
-              <KeyRound size={14} /> 添加 API 上游
+            <Button onClick={openAddProviderModal}>
+              <Plus size={14} /> 添加上游
             </Button>
           }
         />
       )}
 
-      {modal === 'oauth' ? (
+      {modal === 'add' ? (
         <Modal
-          title="连接 GPT OAuth"
+          title="添加上游连接"
           onClose={() => {
             setModal(null);
             setFlow(undefined);
           }}
         >
-          {!flow ? (
-            <form className="modal-body" onSubmit={(event) => void startOAuth(event)}>
-              <div className="oauth-intro">
-                <div className="oauth-icon">
-                  <PlugZap size={22} />
-                </div>
-                <div>
-                  <strong>使用 ChatGPT 设备授权</strong>
-                  <p>不会要求你在 xRouter 中输入 ChatGPT 密码。授权令牌会加密保存在 PostgreSQL。</p>
-                </div>
-              </div>
-              <Field label="连接名称">
-                <Input value={name} onChange={(event) => setName(event.target.value)} required />
-              </Field>
-              <div className="modal-actions">
-                <Button type="button" variant="secondary" onClick={() => setModal(null)}>
-                  取消
-                </Button>
-                <Button type="submit" loading={loading}>
-                  开始授权 <Link2 size={14} />
-                </Button>
-              </div>
-            </form>
-          ) : (
+          {flow ? (
             <div className="modal-body device-flow">
               <div className="device-status">
                 <RefreshCcw size={17} className="spin" />
@@ -344,77 +312,132 @@ export function ProvidersPage() {
                 <Check size={13} /> 仅继续你本人从此页面发起的授权。
               </div>
             </div>
-          )}
-        </Modal>
-      ) : null}
-      {modal === 'api-key' ? (
-        <Modal title="添加 API 上游" onClose={() => setModal(null)}>
-          <form className="modal-body" onSubmit={(event) => void createApiKeyProvider(event)}>
-            <Field
-              label="上游类型"
-              hint={
-                selectedProvider
-                  ? `网关支持：${selectedProvider.capabilities.gatewayApis
-                      .map((endpoint) =>
-                        endpoint === 'responses' ? 'Responses' : 'Chat Completions',
-                      )
-                      .join('、')}`
-                  : '正在加载可用的上游类型…'
-              }
-            >
-              <select
-                className="input"
-                value={providerType}
-                onChange={(event) => selectProviderType(event.target.value)}
-                required
+          ) : connectionMethod === 'oauth' ? (
+            <form className="modal-body" onSubmit={(event) => void startOAuth(event)}>
+              <Field label="Provider">
+                <select className="input" value="openai" disabled>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </Field>
+              <Field label="接入方式">
+                <select
+                  className="input"
+                  value={connectionMethod}
+                  onChange={(event) =>
+                    selectConnectionMethod(event.target.value as ConnectionMethod)
+                  }
+                >
+                  <option value="api-key">API Key</option>
+                  <option value="oauth">OAuth</option>
+                </select>
+              </Field>
+              <div className="oauth-intro">
+                <div className="oauth-icon">
+                  <PlugZap size={22} />
+                </div>
+                <div>
+                  <strong>使用 ChatGPT 设备授权</strong>
+                  <p>不会要求你在 xRouter 中输入 ChatGPT 密码。授权令牌会加密保存在 PostgreSQL。</p>
+                </div>
+              </div>
+              <Field label="连接名称">
+                <Input value={name} onChange={(event) => setName(event.target.value)} required />
+              </Field>
+              <div className="modal-actions">
+                <Button type="button" variant="secondary" onClick={() => setModal(null)}>
+                  取消
+                </Button>
+                <Button type="submit" loading={loading}>
+                  开始授权 <Link2 size={14} />
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form className="modal-body" onSubmit={(event) => void createApiKeyProvider(event)}>
+              <Field label="Provider">
+                <select className="input" value="openai" disabled>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </Field>
+              <Field label="接入方式">
+                <select
+                  className="input"
+                  value={connectionMethod}
+                  onChange={(event) =>
+                    selectConnectionMethod(event.target.value as ConnectionMethod)
+                  }
+                >
+                  <option value="api-key">API Key</option>
+                  <option value="oauth">OAuth</option>
+                </select>
+              </Field>
+              <Field label="接口类型" hint="使用 OpenAI 兼容的请求与响应格式。">
+                <select className="input" value="openai-compatible" disabled>
+                  <option value="openai-compatible">OpenAI Compatible</option>
+                </select>
+              </Field>
+              <Field
+                label="API 方式"
+                hint={`请求会发送到 ${
+                  apiMode === 'responses' ? '/responses' : '/chat/completions'
+                }。`}
               >
-                {catalog.map((provider) => (
-                  <option value={provider.id} key={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="连接名称">
-              <Input value={name} onChange={(event) => setName(event.target.value)} required />
-            </Field>
-            <Field
-              label={`${selectedProvider?.name ?? '上游'} API Key`}
-              hint="只会以加密形式存储。"
-            >
-              <Input
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder="输入上游 API Key"
-                required
-              />
-            </Field>
-            <Field label="Base URL">
-              <Input
-                type="url"
-                value={baseUrl}
-                onChange={(event) => setBaseUrl(event.target.value)}
-                placeholder="https://api.example.com/v1"
-                required
-              />
-            </Field>
-            <Field label="默认模型（可选）">
-              <Input
-                value={defaultModel}
-                onChange={(event) => setDefaultModel(event.target.value)}
-                placeholder="例如 deepseek-v4-flash"
-              />
-            </Field>
-            <div className="modal-actions">
-              <Button type="button" variant="secondary" onClick={() => setModal(null)}>
-                取消
-              </Button>
-              <Button type="submit" loading={loading}>
-                保存连接
-              </Button>
-            </div>
-          </form>
+                <select
+                  className="input"
+                  value={apiMode}
+                  onChange={(event) => setApiMode(event.target.value as ApiMode)}
+                >
+                  <option value="responses">Responses API</option>
+                  <option value="chat.completions">Chat Completions API</option>
+                </select>
+              </Field>
+              <Field label="连接名称">
+                <Input value={name} onChange={(event) => setName(event.target.value)} required />
+              </Field>
+              <Field label="API Key" hint="只会以加密形式存储。">
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder="输入上游 API Key"
+                  required
+                />
+              </Field>
+              <Field
+                label="Base URL"
+                hint="可从常用地址中选择，也可以直接输入自定义域名；不包含接口路径。"
+              >
+                <Input
+                  type="url"
+                  list="openai-compatible-base-urls"
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  placeholder="https://api.example.com/v1"
+                  required
+                />
+                <datalist id="openai-compatible-base-urls">
+                  <option value="https://api.openai.com/v1">OpenAI</option>
+                  <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+                  <option value="https://api.siliconflow.cn/v1">SiliconFlow</option>
+                </datalist>
+              </Field>
+              <Field label="默认模型（可选）">
+                <Input
+                  value={defaultModel}
+                  onChange={(event) => setDefaultModel(event.target.value)}
+                  placeholder="例如 gpt-4.1"
+                />
+              </Field>
+              <div className="modal-actions">
+                <Button type="button" variant="secondary" onClick={() => setModal(null)}>
+                  取消
+                </Button>
+                <Button type="submit" loading={loading}>
+                  保存连接
+                </Button>
+              </div>
+            </form>
+          )}
         </Modal>
       ) : null}
     </div>

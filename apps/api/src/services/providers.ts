@@ -1,5 +1,6 @@
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
+import type { GatewayEndpoint } from '../providers/types';
 import { type OAuthCredentials, refreshOAuthCredentials } from './openai-oauth';
 
 interface ProviderRow {
@@ -7,6 +8,7 @@ interface ProviderRow {
   name: string;
   provider: string;
   auth_type: 'oauth' | 'api_key';
+  api_mode: GatewayEndpoint;
   credentials_ciphertext: string;
   account_id: string | null;
   base_url: string;
@@ -23,6 +25,7 @@ export interface ProviderRuntime {
   name: string;
   provider: string;
   authType: 'oauth' | 'api_key';
+  apiMode: GatewayEndpoint;
   baseUrl: string;
   defaultModel: string | null;
   authorization: string;
@@ -32,15 +35,20 @@ export interface ProviderRuntime {
 export async function getProviderRuntime(
   preferredId: string | null,
   sessionId: string,
+  endpoint: GatewayEndpoint,
 ): Promise<ProviderRuntime> {
   const result = await getPool().query<ProviderRow>(
-    `SELECT id, name, provider, auth_type, credentials_ciphertext, account_id, base_url,
+    `SELECT id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
             default_model, token_expires_at
        FROM provider_connections
-      WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)
+      WHERE status = 'active'
+        AND (
+          ($1::uuid IS NOT NULL AND id = $1)
+          OR ($1::uuid IS NULL AND (auth_type = 'oauth' OR api_mode = $2))
+        )
       ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, priority ASC, created_at ASC
       LIMIT 1`,
-    [preferredId],
+    [preferredId, endpoint],
   );
   const row = result.rows[0];
   if (!row) {
@@ -57,6 +65,7 @@ export async function getProviderRuntime(
       name: row.name,
       provider: row.provider,
       authType: row.auth_type,
+      apiMode: row.api_mode,
       baseUrl: row.base_url.replace(/\/$/, ''),
       defaultModel: row.default_model,
       authorization: `Bearer ${credentials.apiKey}`,
@@ -102,6 +111,7 @@ export async function getProviderRuntime(
     name: row.name,
     provider: row.provider,
     authType: row.auth_type,
+    apiMode: row.api_mode,
     baseUrl: row.base_url.replace(/\/$/, ''),
     defaultModel: row.default_model,
     authorization: `Bearer ${credentials.accessToken}`,

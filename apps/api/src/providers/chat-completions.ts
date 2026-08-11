@@ -242,6 +242,7 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
     totalTokens: 0,
   };
   private currentErrorCode: string | undefined;
+  private outputStarted = false;
 
   constructor(
     private readonly requestedModel: string,
@@ -258,6 +259,10 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
 
   get errorCode(): string | undefined {
     return this.currentErrorCode;
+  }
+
+  get hasOutput(): boolean {
+    return this.outputStarted;
   }
 
   feed(chunk: Uint8Array, final = false): Uint8Array[] {
@@ -309,6 +314,7 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
       this.emittedRole = true;
       output.push(sseData(this.chunk({ role: 'assistant', content: '' })));
     } else if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+      if (event.delta.length > 0) this.outputStarted = true;
       if (!this.emittedRole) {
         this.emittedRole = true;
         output.push(sseData(this.chunk({ role: 'assistant', content: '' })));
@@ -317,6 +323,7 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
     } else if (event.type === 'response.output_item.added') {
       const item = record(event.item);
       if (item?.type === 'function_call' && typeof item.name === 'string') {
+        this.outputStarted = true;
         const itemId = String(item.id ?? item.call_id ?? `tool_${this.nextToolIndex}`);
         const index = this.nextToolIndex++;
         this.toolIndexes.set(itemId, index);
@@ -339,6 +346,7 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
       event.type === 'response.function_call_arguments.delta' &&
       typeof event.delta === 'string'
     ) {
+      if (event.delta.length > 0) this.outputStarted = true;
       const itemId = String(event.item_id ?? '');
       const index = this.toolIndexes.get(itemId) ?? Number(event.output_index ?? 0);
       output.push(

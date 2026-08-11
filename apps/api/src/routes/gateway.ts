@@ -32,6 +32,44 @@ function outputForTrace(payload: unknown): unknown {
   return record.output ?? payload;
 }
 
+const MODEL_PARAMETER_KEYS = [
+  'temperature',
+  'top_p',
+  'max_tokens',
+  'max_completion_tokens',
+  'max_output_tokens',
+  'frequency_penalty',
+  'presence_penalty',
+  'seed',
+  'service_tier',
+  'reasoning_effort',
+] as const;
+
+export function langfuseModelParameters(
+  body: Record<string, unknown>,
+): Record<string, string | number> {
+  const parameters: Record<string, string | number> = {};
+  for (const key of MODEL_PARAMETER_KEYS) {
+    const value = body[key];
+    if (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) {
+      parameters[key] = value;
+    }
+  }
+  const reasoning = body.reasoning;
+  if (reasoning && typeof reasoning === 'object') {
+    const effort = (reasoning as Record<string, unknown>).effort;
+    if (typeof effort === 'string') parameters['reasoning.effort'] = effort;
+  }
+  return parameters;
+}
+
+function headerValue(request: FastifyRequest, name: string): string | undefined {
+  if (!name) return undefined;
+  const value = request.headers[name.toLowerCase()];
+  const text = Array.isArray(value) ? value[0] : value;
+  return typeof text === 'string' && text.trim() ? text.trim().slice(0, 200) : undefined;
+}
+
 async function writeChunk(reply: FastifyReply, chunk: Uint8Array): Promise<void> {
   if (!reply.raw.write(chunk)) await once(reply.raw, 'drain');
 }
@@ -79,33 +117,59 @@ async function gatewayHandler(
   let upstreamResponse: unknown;
   let capturedError: unknown;
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
+  const userId =
+    headerValue(request, langfuse.userIdHeader) ??
+    (typeof body.user === 'string' && body.user.trim()
+      ? body.user.trim().slice(0, 200)
+      : undefined);
+  const sessionId = headerValue(request, langfuse.sessionIdHeader);
+  const traceName = langfuse.traceName || `route-${endpoint}`;
+  const traceMetadata = {
+    ...langfuse.metadata,
+    requestId,
+    apiKey: key.name,
+    apiKeyId: key.id,
+    endpoint,
+  };
 
   const observation = propagateAttributes(
     {
-      traceName: `route-${endpoint}`,
-      userId: key.id,
-      sessionId: String(request.headers['x-session-id'] ?? requestId),
-      tags: ['gateway', endpoint],
+      traceName,
+      ...(userId ? { userId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      tags: [...new Set(['gateway', endpoint, ...langfuse.tags])],
       environment: langfuse.environment,
-      metadata: { requestId, apiKey: key.name, apiKeyId: key.id },
+      ...(langfuse.version ? { version: langfuse.version } : {}),
+      metadata: traceMetadata,
     },
     () =>
       startObservation(
-        'route-llm-request',
+        'generate-response',
         {
-          input: langfuse.captureInput ? body : { model, endpoint },
-          model,
-          metadata: { requestId, endpoint, apiKeyId: key.id },
+          input: langfuse.captureInput ? body : { model: requestedModel, endpoint },
+          model: requestedModel,
+          modelParameters: langfuseModelParameters(body),
+          metadata: { ...traceMetadata, requestedModel },
         },
         { asType: 'generation' },
       ),
   );
 
   try {
-    provider = await getProviderRuntime(key.providerConnectionId, requestId);
+    provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
     const adapter = getProviderAdapter(provider.provider);
     const prepared = adapter.prepareRequest(endpoint, body, provider);
     model = String(prepared.body.model);
+    observation.update({
+      model,
+      modelParameters: langfuseModelParameters(prepared.body),
+      metadata: {
+        requestedModel,
+        actualModel: model,
+        provider: provider.provider,
+        providerConnectionId: provider.id,
+      },
+    });
     const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
     const upstreamHeaders = {
       authorization: provider.authorization,
@@ -161,9 +225,9 @@ async function gatewayHandler(
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (!firstTokenAt && value.byteLength > 0) firstTokenAt = Date.now();
           detailCollector.feed(value);
           const clientChunks = bridge.feed(value);
+          if (!firstTokenAt && bridge.hasOutput) firstTokenAt = Date.now();
           if (prepared.clientWantsStream) {
             for (const chunk of clientChunks) await writeChunk(reply, chunk);
           }
@@ -258,6 +322,8 @@ async function gatewayHandler(
       });
       observation.update({
         output: langfuse.captureOutput ? traceOutput : { statusCode, success: statusCode < 400 },
+        model: model || requestedModel,
+        ...(firstTokenAt ? { completionStartTime: new Date(firstTokenAt) } : {}),
         usageDetails: {
           input: usage.inputTokens,
           input_cached: usage.cachedInputTokens,
@@ -265,7 +331,15 @@ async function gatewayHandler(
           total: usage.totalTokens,
         },
         costDetails: { total: recorded.costUsd },
-        metadata: { statusCode, latencyMs, errorCode: errorCode ?? '' },
+        metadata: {
+          statusCode,
+          latencyMs,
+          timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
+          errorCode: errorCode ?? '',
+        },
+        ...(statusCode >= 400
+          ? { level: 'ERROR' as const, statusMessage: errorCode ?? `HTTP ${statusCode}` }
+          : {}),
       });
     } catch (recordError) {
       request.log.error({ err: recordError, requestId }, 'Failed to record gateway usage');

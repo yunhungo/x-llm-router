@@ -1,4 +1,4 @@
-export const schemaVersion = 5;
+export const schemaVersion = 6;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS provider_connections (
   name varchar(120) NOT NULL,
   provider varchar(40) NOT NULL,
   auth_type varchar(40) NOT NULL CHECK (auth_type IN ('oauth', 'api_key')),
+  api_mode varchar(40) NOT NULL DEFAULT 'chat.completions'
+    CHECK (api_mode IN ('responses', 'chat.completions')),
   status varchar(24) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'error')),
   credentials_ciphertext text NOT NULL,
   account_id varchar(255),
@@ -38,6 +40,28 @@ CREATE INDEX IF NOT EXISTS provider_connections_routing_idx
 
 ALTER TABLE provider_connections
   DROP CONSTRAINT IF EXISTS provider_connections_provider_check;
+
+ALTER TABLE provider_connections
+  ADD COLUMN IF NOT EXISTS api_mode varchar(40);
+
+UPDATE provider_connections
+   SET api_mode = CASE WHEN auth_type = 'oauth' THEN 'responses' ELSE 'chat.completions' END
+ WHERE api_mode IS NULL;
+
+UPDATE provider_connections
+   SET provider = 'openai'
+ WHERE auth_type = 'api_key' AND provider = 'openai-compatible';
+
+ALTER TABLE provider_connections
+  ALTER COLUMN api_mode SET DEFAULT 'chat.completions',
+  ALTER COLUMN api_mode SET NOT NULL;
+
+ALTER TABLE provider_connections
+  DROP CONSTRAINT IF EXISTS provider_connections_api_mode_check;
+
+ALTER TABLE provider_connections
+  ADD CONSTRAINT provider_connections_api_mode_check
+  CHECK (api_mode IN ('responses', 'chat.completions'));
 
 CREATE TABLE IF NOT EXISTS oauth_device_flows (
   id uuid PRIMARY KEY,

@@ -1,6 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
-  ArrowLeft,
   CircleDollarSign,
   ChevronDown,
   Clock3,
@@ -11,12 +10,21 @@ import {
   Timer,
   Zap,
 } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
 import { Badge, Button, PageHeader, Skeleton } from '../components/ui';
-import type { KeyAnalyticsRange, KeyAnalyticsResponse, ModelPriceMatch, Provider } from '../types';
+import type {
+  KeyAnalyticsRange,
+  KeyAnalyticsResponse,
+  KeyLogMetric,
+  KeyUsageLogsResponse,
+  KeyUsagePoint,
+  ModelPriceMatch,
+  Provider,
+} from '../types';
 import './key-detail.css';
+import { KeyPerformanceChart, type PerformanceMetric } from './key-performance-chart';
 import { UsageLogDetailPanel } from './usage-log-detail';
 
 const money = new Intl.NumberFormat('en-US', {
@@ -34,6 +42,14 @@ interface PriceDraft {
   outputPerMillion: string;
 }
 
+interface LogDrilldown {
+  label: string;
+  metric: KeyLogMetric;
+  threshold?: number;
+  from?: string;
+  to?: string;
+}
+
 function priceDraft(price: ModelPriceMatch): PriceDraft {
   return {
     inputPerMillion: price.inputPerMillion?.toString() ?? '',
@@ -44,6 +60,10 @@ function priceDraft(price: ModelPriceMatch): PriceDraft {
 
 function successRate(calls: number, successfulCalls: number) {
   return calls ? (successfulCalls / calls) * 100 : 0;
+}
+
+function finiteMetric(value: unknown, fallback = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function formatDate(value: string) {
@@ -61,7 +81,7 @@ function endpointLabel(endpoint: string) {
 
 export function KeyDetailPage() {
   const { id } = useParams();
-  const [range, setRange] = useState<KeyAnalyticsRange>('7d');
+  const [range, setRange] = useState<KeyAnalyticsRange>('24h');
   const [data, setData] = useState<KeyAnalyticsResponse>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -72,11 +92,18 @@ export function KeyDetailPage() {
   const [providerId, setProviderId] = useState('');
   const [savingProvider, setSavingProvider] = useState(false);
   const [expandedLogId, setExpandedLogId] = useState<string>();
+  const [chartMetric, setChartMetric] = useState<PerformanceMetric>('calls');
+  const [drilldown, setDrilldown] = useState<LogDrilldown>();
+  const [focusedLogs, setFocusedLogs] = useState<KeyUsageLogsResponse>();
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError('');
+    setDrilldown(undefined);
+    setFocusedLogs(undefined);
+    setExpandedLogId(undefined);
     try {
       const [response, providerResponse] = await Promise.all([
         api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`),
@@ -99,10 +126,42 @@ export function KeyDetailPage() {
 
   useEffect(() => void load(), [load]);
 
-  const maxCalls = useMemo(
-    () => Math.max(1, ...(data?.series.map((point) => point.calls) ?? [1])),
-    [data],
-  );
+  const loadDrilldown = async (next: LogDrilldown) => {
+    if (!id) return;
+    setLogsLoading(true);
+    setError('');
+    setDrilldown(next);
+    setExpandedLogId(undefined);
+    const params = new URLSearchParams({ range, limit: '100', metric: next.metric });
+    if (next.threshold !== undefined) params.set('threshold', String(next.threshold));
+    if (next.from) params.set('from', next.from);
+    if (next.to) params.set('to', next.to);
+    try {
+      const response = await api<KeyUsageLogsResponse>(
+        `/api/admin/keys/${id}/analytics/logs?${params.toString()}`,
+      );
+      setFocusedLogs(response);
+      requestAnimationFrame(() =>
+        document.getElementById('key-usage-logs')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        }),
+      );
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : '调用明细查询失败。');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const selectBucket = (point: KeyUsagePoint) => {
+    void loadDrilldown({
+      label: `${formatDate(point.bucket)} 时间桶`,
+      metric: 'recent',
+      from: point.bucket,
+      to: point.bucketEnd,
+    });
+  };
 
   const savePrice = async (price: ModelPriceMatch) => {
     const key = `${price.provider}:${price.model}`;
@@ -168,9 +227,6 @@ export function KeyDetailPage() {
   if (!data) {
     return (
       <div className="page-wrap">
-        <Link to="/keys" className="back-link">
-          <ArrowLeft size={14} /> API Keys
-        </Link>
         <div className="form-error">{error || 'API Key 不存在。'}</div>
       </div>
     );
@@ -180,24 +236,40 @@ export function KeyDetailPage() {
   const cacheRate = summary.inputTokens
     ? (summary.cachedInputTokens / summary.inputTokens) * 100
     : 0;
+  const p50Tps = finiteMetric(summary.p50Tps, finiteMetric(summary.averageTps));
+  const p10Tps = finiteMetric(summary.p10Tps, p50Tps);
+  const streamingCalls = finiteMetric(
+    summary.streamingCalls,
+    data.logs.filter((log) => log.timeToFirstTokenMs !== null).length,
+  );
+  const p50TtftMs = finiteMetric(summary.p50TtftMs, finiteMetric(summary.averageTtftMs));
+  const p95TtftMs = finiteMetric(summary.p95TtftMs, p50TtftMs);
+  const p99TtftMs = finiteMetric(summary.p99TtftMs, p95TtftMs);
+  const p50LatencyMs = finiteMetric(summary.p50LatencyMs, finiteMetric(summary.averageLatencyMs));
+  const p95LatencyMs = finiteMetric(summary.p95LatencyMs, p50LatencyMs);
+  const p99LatencyMs = finiteMetric(summary.p99LatencyMs, p95LatencyMs);
+  const visibleLogs = focusedLogs?.logs ?? data.logs;
 
   return (
     <div className="page-wrap key-detail-page">
-      <Link to="/keys" className="back-link">
-        <ArrowLeft size={14} /> API Keys
-      </Link>
       <PageHeader
         title={key.name}
         action={
           <div className="detail-actions">
             <div className="range-switch" aria-label="统计范围">
-              {(['24h', '7d', '30d'] as const).map((value) => (
+              {(
+                [
+                  ['24h', '天'],
+                  ['7d', '周'],
+                  ['30d', '月'],
+                ] as const
+              ).map(([value, label]) => (
                 <button
                   key={value}
                   className={range === value ? 'active' : ''}
                   onClick={() => setRange(value)}
                 >
-                  {value}
+                  {label}
                 </button>
               ))}
             </div>
@@ -267,18 +339,98 @@ export function KeyDetailPage() {
         </article>
         <article className="metric-card">
           <span>TPS</span>
-          <strong>{decimal.format(summary.averageTps)}</strong>
-          <small>P95 {decimal.format(summary.p95Tps)} token/s</small>
+          <strong>{decimal.format(p50Tps)}</strong>
+          <small>
+            P50 · 平均 {decimal.format(summary.averageTps)}
+            <button
+              type="button"
+              disabled={p10Tps <= 0}
+              onClick={(event) => {
+                event.stopPropagation();
+                void loadDrilldown({
+                  label: `TPS ≤ P10 (${decimal.format(p10Tps)} token/s)`,
+                  metric: 'tps',
+                  threshold: p10Tps,
+                });
+              }}
+            >
+              查看 P10 慢尾
+            </button>
+          </small>
         </article>
         <article className="metric-card">
           <span>TTFT</span>
-          <strong>{decimal.format(summary.averageTtftMs)} ms</strong>
-          <small>P95 {decimal.format(summary.p95TtftMs)} ms</small>
+          <strong>{decimal.format(p50TtftMs)} ms</strong>
+          <small>
+            P50 · {integer.format(streamingCalls)} 次流式调用
+            <span className="metric-query-links">
+              <button
+                type="button"
+                disabled={streamingCalls === 0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void loadDrilldown({
+                    label: `TTFT ≥ P95 (${decimal.format(p95TtftMs)} ms)`,
+                    metric: 'ttft',
+                    threshold: p95TtftMs,
+                  });
+                }}
+              >
+                P95
+              </button>
+              <button
+                type="button"
+                disabled={streamingCalls === 0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void loadDrilldown({
+                    label: `TTFT ≥ P99 (${decimal.format(p99TtftMs)} ms)`,
+                    metric: 'ttft',
+                    threshold: p99TtftMs,
+                  });
+                }}
+              >
+                P99
+              </button>
+            </span>
+          </small>
         </article>
         <article className="metric-card">
           <span>端到端延迟</span>
-          <strong>{decimal.format(summary.averageLatencyMs)} ms</strong>
-          <small>P95 {decimal.format(summary.p95LatencyMs)} ms</small>
+          <strong>{decimal.format(p50LatencyMs)} ms</strong>
+          <small>
+            P50 · 平均 {decimal.format(summary.averageLatencyMs)} ms
+            <span className="metric-query-links">
+              <button
+                type="button"
+                disabled={summary.calls === 0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void loadDrilldown({
+                    label: `延迟 ≥ P95 (${decimal.format(p95LatencyMs)} ms)`,
+                    metric: 'latency',
+                    threshold: p95LatencyMs,
+                  });
+                }}
+              >
+                P95
+              </button>
+              <button
+                type="button"
+                disabled={summary.calls === 0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void loadDrilldown({
+                    label: `延迟 ≥ P99 (${decimal.format(p99LatencyMs)} ms)`,
+                    metric: 'latency',
+                    threshold: p99LatencyMs,
+                  });
+                }}
+              >
+                P99
+              </button>
+            </span>
+          </small>
         </article>
         <article className="metric-card">
           <span>峰值 RPM</span>
@@ -287,35 +439,15 @@ export function KeyDetailPage() {
         </article>
       </section>
 
-      <div className="key-analytics-grid">
-        <section className="panel key-trend-panel">
-          <div className="panel-heading">
-            <h2>调用趋势</h2>
-            <span className="panel-note">Calls / bucket</span>
-          </div>
-          {data.series.length ? (
-            <div className="trend-bars" role="img" aria-label="调用趋势图">
-              {data.series.map((point) => (
-                <div className="trend-column" key={point.bucket}>
-                  <div
-                    className="trend-bar"
-                    style={{ height: `${Math.max(4, (point.calls / maxCalls) * 100)}%` }}
-                    title={`${formatDate(point.bucket)} · ${point.calls} calls · ${integer.format(point.tokens)} tokens`}
-                  />
-                  <span>
-                    {new Date(point.bucket).toLocaleDateString('zh-CN', {
-                      month: '2-digit',
-                      day: '2-digit',
-                    })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="analytics-empty">该时段没有调用。</div>
-          )}
-        </section>
+      <KeyPerformanceChart
+        points={data.series}
+        range={range}
+        metric={chartMetric}
+        onMetricChange={setChartMetric}
+        onBucketSelect={selectBucket}
+      />
 
+      <div className="key-analytics-grid detail-section">
         <section className="panel distribution-panel">
           <div className="panel-heading">
             <h2>端点</h2>
@@ -544,11 +676,29 @@ export function KeyDetailPage() {
         </div>
       </section>
 
-      <section className="panel flush-panel detail-section">
-        <div className="panel-heading">
-          <h2>调用记录</h2>
-          <span className="panel-note">最近 100 条</span>
+      <section className="panel flush-panel detail-section" id="key-usage-logs">
+        <div className="panel-heading usage-log-heading">
+          <div>
+            <h2>调用记录</h2>
+            <span className="panel-note">
+              {drilldown ? `${drilldown.label} · ${focusedLogs?.total ?? 0} 条` : '最近 100 条'}
+            </span>
+          </div>
+          {drilldown ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setDrilldown(undefined);
+                setFocusedLogs(undefined);
+                setExpandedLogId(undefined);
+              }}
+            >
+              清除筛选
+            </Button>
+          ) : null}
         </div>
+        {logsLoading ? <div className="log-query-progress">正在查询对应请求…</div> : null}
         <div className="table-wrap usage-table key-detail-table">
           <table>
             <thead>
@@ -565,8 +715,8 @@ export function KeyDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {data.logs.length ? (
-                data.logs.map((log) => (
+              {visibleLogs.length ? (
+                visibleLogs.map((log) => (
                   <Fragment key={log.id}>
                     <tr
                       className="usage-log-row"

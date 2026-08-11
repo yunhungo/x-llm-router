@@ -1,11 +1,8 @@
-import { deepSeekProviderAdapter, openAiCompatibleProviderAdapter } from './openai-compatible';
 import { openAiProviderAdapter } from './openai';
 import type { ProviderAdapter } from './types';
 
 const adapters = new Map<string, ProviderAdapter>([
   [openAiProviderAdapter.id, openAiProviderAdapter],
-  [deepSeekProviderAdapter.id, deepSeekProviderAdapter],
-  [openAiCompatibleProviderAdapter.id, openAiCompatibleProviderAdapter],
 ]);
 
 export function getProviderAdapter(provider: string): ProviderAdapter {

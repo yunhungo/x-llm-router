@@ -156,5 +156,6 @@ describe('Chat Completions and Responses conversion', () => {
       totalTokens: 3,
     });
     expect(bridge.completedResponse).toMatchObject({ object: 'chat.completion' });
+    expect(bridge.hasOutput).toBe(true);
   });
 });

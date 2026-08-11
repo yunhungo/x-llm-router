@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { openAiProviderAdapter } from '../providers/openai';
 import type { ProviderRuntime } from '../services/providers';
+import { langfuseModelParameters } from './gateway';
 
 const oauthProvider: ProviderRuntime = {
   id: 'provider-1',
   name: 'OpenAI',
   provider: 'openai',
   authType: 'oauth',
+  apiMode: 'responses',
   baseUrl: 'https://chatgpt.com/backend-api/codex',
   defaultModel: 'gpt-5.6-luna',
   authorization: 'Bearer test-token',
@@ -18,10 +20,30 @@ const apiKeyProvider: ProviderRuntime = {
   ...oauthProvider,
   id: 'provider-2',
   authType: 'api_key',
+  apiMode: 'chat.completions',
   baseUrl: 'https://api.openai.com/v1',
 };
 
 describe('gateway upstream request transformation', () => {
+  it('maps common model parameters to Langfuse generation attributes', () => {
+    expect(
+      langfuseModelParameters({
+        temperature: 0.2,
+        top_p: 0.9,
+        max_output_tokens: 800,
+        service_tier: 'priority',
+        reasoning: { effort: 'high' },
+        tools: [{ type: 'function' }],
+      }),
+    ).toEqual({
+      temperature: 0.2,
+      top_p: 0.9,
+      max_output_tokens: 800,
+      service_tier: 'priority',
+      'reasoning.effort': 'high',
+    });
+  });
+
   it('converts an OpenAI Responses string input for the ChatGPT Codex backend', () => {
     const transformed = openAiProviderAdapter.prepareRequest(
       'responses',
@@ -78,19 +100,25 @@ describe('gateway upstream request transformation', () => {
     ]);
   });
 
-  it('keeps API key Chat Completions as a direct upstream request', () => {
-    const body = {
-      model: 'gpt-5.6-luna',
-      messages: [{ role: 'user', content: 'Hello' }],
-    };
-    const transformed = openAiProviderAdapter.prepareRequest(
-      'chat.completions',
-      body,
-      apiKeyProvider,
-    );
+  it.each([
+    ['responses', '/responses'],
+    ['chat.completions', '/chat/completions'],
+  ] as const)('routes an API Key connection through its configured %s API', (apiMode, path) => {
+    const provider = { ...apiKeyProvider, apiMode };
+    const body =
+      apiMode === 'responses'
+        ? { input: 'Hello' }
+        : { messages: [{ role: 'user', content: 'Hello' }] };
 
-    expect(transformed.path).toBe('/chat/completions');
-    expect(transformed.responseMode).toBe('passthrough');
-    expect(transformed.body.messages).toBe(body.messages);
+    expect(openAiProviderAdapter.prepareRequest(apiMode, body, provider)).toMatchObject({
+      path,
+      responseMode: 'passthrough',
+    });
+  });
+
+  it('rejects a request that differs from the API Key connection mode', () => {
+    expect(() =>
+      openAiProviderAdapter.prepareRequest('responses', { input: 'Hello' }, apiKeyProvider),
+    ).toThrow(/configured for the Chat Completions API/);
   });
 });

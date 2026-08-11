@@ -10,13 +10,11 @@
 
 ## OpenAI Adapter
 
-- OpenAI API Key：Responses 和 Chat Completions 均原样直通。
+- OpenAI API Key：连接会固定选择 Responses 或 Chat Completions，匹配的请求原样直通。
 - ChatGPT OAuth：上游只调用 Responses；Chat Completions 请求、非流式响应、SSE 文本增量、工具调用和 usage 由 Adapter 双向转换。
 - Responses 请求保持 Responses 语义；字符串 `input` 会规范化为输入 Item 列表。
 
-## OpenAI-compatible Adapter
-
-DeepSeek 和自定义 OpenAI-compatible 上游使用通用直通 Adapter。每个实现通过 capability 明确声明可用端点；当前 DeepSeek 只声明其官方 Chat Completions 接口，不会把不支持的 Responses 请求发送到上游。
+API Key 接入使用 OpenAI-compatible 请求与响应格式，Base URL 可以从常用地址中选择，也可以输入自定义域名。API 方式不匹配的请求会在访问上游前被拒绝。
 
 ## 新增 Provider
 
@@ -24,6 +22,6 @@ DeepSeek 和自定义 OpenAI-compatible 上游使用通用直通 Adapter。每�
 
 1. 实现 `providers/types.ts` 中的 `ProviderAdapter`。
 2. 在 `providers/registry.ts` 注册实现。
-3. 根据 Provider 的认证方式增加凭据录入；API Key 类型已使用通用的 `provider` 字段。
+3. 根据 Provider 的认证方式增加凭据录入，并声明支持的 API 方式。
 
 Provider 数据库字段不再限制为 OpenAI。未注册的 Provider 会在创建连接或路由时明确拒绝，不会进入网关主流程。

@@ -5,11 +5,11 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 ## 首版能力
 
 - ChatGPT OAuth：采用 Codex 官方设备码授权流程，访问令牌、刷新令牌和账号信息以 AES-256-GCM 加密保存。
-- API Key 上游：内置 OpenAI、DeepSeek 和自定义 OpenAI-compatible 连接，密钥不会以明文写入数据库或日志。
+- OpenAI API 上游：使用 OpenAI-compatible 接口，可为每条连接指定 Responses 或 Chat Completions；密钥不会以明文写入数据库或日志。
 - OpenAI 双协议：暴露 Responses 与 Chat Completions；支持 JSON 和 SSE 流式响应。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
-- 用量与成本：逐请求记录 Token、状态、延迟、TTFT 与成本，并提供 14/30 天聚合视图。
-- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目并记录完整输入输出。
+- 用量与成本：逐请求记录 Token、状态、延迟、TTFT、TPS、缓存命中与成本，并提供天/周/月图表和异常请求下钻。
+- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，可配置输入输出采集和追踪上下文。
 - 管理后台：连接、Key、调用日志、Key 级 Langfuse 和管理员账号全部可视化配置。
 - 自托管：PostgreSQL + API + Nginx Web 三服务 Docker Compose，启动时自动执行幂等迁移并创建初始管理员。
 
@@ -73,11 +73,12 @@ docker compose ps
 
 ### API Key 上游
 
-进入「上游连接」→「API 上游」，可以选择：
+进入「上游连接」→「添加上游」，Provider 选择 OpenAI，再选择 API Key 或 OAuth 接入方式。选择 API Key 时，接口类型固定为 OpenAI Compatible，并需要指定 API 方式：
 
-- OpenAI：默认 Base URL 为 `https://api.openai.com/v1`，支持 Responses 与 Chat Completions。
-- DeepSeek：默认 Base URL 为 `https://api.deepseek.com`、默认模型为 `deepseek-v4-flash`，支持 Chat Completions。
-- OpenAI Compatible：填写服务商提供的 Base URL 与默认模型，通过 Chat Completions 直通调用。
+- Responses API：请求发送到 Base URL 下的 `/responses`。
+- Chat Completions API：请求发送到 Base URL 下的 `/chat/completions`。
+
+Base URL 不需要包含上述接口路径。输入框可以选择 OpenAI、OpenRouter、SiliconFlow 等常用地址，也可以直接填写其他 OpenAI-compatible 服务的自定义域名，不需要为每个服务商单独增加 Provider 类型。
 
 所有上游密钥都会加密保存。创建虚拟 API Key 时可以固定一个上游；客户端仍只需连接 xRouter 的 `/v1` 地址。
 
@@ -126,13 +127,15 @@ const response = await client.responses.create({
 
 ## Langfuse
 
-在「API Keys」中为每个虚拟 Key 独立填写 Public Key、Secret Key、Base URL 与 Environment。保存后重启 API 容器：
+在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后重启 API 容器：
 
 ```bash
 docker compose restart api
 ```
 
-不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目，并记录完整输入和输出正文。自托管时将 Base URL 指向对应实例。
+不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
+
+Key 详情页默认展示最近一天的数据，也可切换到周或月。调用趋势、缓存命中率、TPS、TTFT、端到端延迟、Token 与成本均使用时间序列图展示；成本按请求发生时匹配的模型单价计算并落库。点击时间桶或 P95/P99 等尾延迟指标，可下钻到具体调用记录。
 
 ## 本地开发
 
