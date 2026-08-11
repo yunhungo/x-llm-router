@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 
 import { changePasswordSchema, loginSchema } from '@x-router/contracts';
 
-import { getConfig } from '../config';
 import { getPool } from '../db/client';
 import { adminId, requireAdmin } from '../lib/admin-auth';
 
@@ -46,7 +45,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         path: '/',
         httpOnly: true,
         sameSite: 'lax',
-        secure: getConfig().NODE_ENV === 'production',
+        secure: request.protocol === 'https',
         maxAge: 7 * 24 * 60 * 60,
       });
       await getPool().query('UPDATE platform_users SET last_login_at = now() WHERE id = $1', [
