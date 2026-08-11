@@ -1,0 +1,137 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { query } = vi.hoisted(() => ({
+  query: vi.fn(async (_sql: string, _params?: unknown[]) => ({
+    rows: [] as unknown[],
+    rowCount: 0,
+  })),
+}));
+
+vi.mock('../db/client', () => ({
+  getPool: () => ({ query }),
+}));
+
+vi.mock('../lib/admin-auth', () => ({
+  adminId: () => '00000000-0000-4000-8000-000000000000',
+  requireAdmin: async () => undefined,
+}));
+
+import { adminRoutes } from './admin';
+
+const keyId = '11111111-1111-4111-8111-111111111111';
+const providerId = '22222222-2222-4222-8222-222222222222';
+
+describe('admin API key updates', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    query.mockReset();
+    query.mockResolvedValue({ rows: [], rowCount: 0 });
+    app = Fastify();
+    await app.register(adminRoutes);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('updates every supported field and validates a selected provider', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: providerId }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: keyId }], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/keys/${keyId}`,
+      payload: {
+        name: '  Production  ',
+        rpmLimit: 1_200,
+        budgetUsd: 25.5,
+        expiresAt: '2027-01-02T03:04:05.000Z',
+        providerConnectionId: providerId,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[1]).toEqual([providerId]);
+    expect(query.mock.calls[1]?.[1]).toEqual([
+      keyId,
+      true,
+      'Production',
+      true,
+      1_200,
+      true,
+      25.5,
+      true,
+      '2027-01-02T03:04:05.000Z',
+      true,
+      providerId,
+    ]);
+  });
+
+  it('preserves omitted fields while allowing explicit nullable values', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: keyId }], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/keys/${keyId}`,
+      payload: {
+        budgetUsd: null,
+        expiresAt: null,
+        providerConnectionId: null,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      keyId,
+      false,
+      null,
+      false,
+      null,
+      true,
+      null,
+      true,
+      null,
+      true,
+      null,
+    ]);
+  });
+
+  it.each([
+    [{}, 'empty body'],
+    [{ unrelated: true }, 'no supported field'],
+    [{ name: '   ' }, 'empty name'],
+    [{ rpmLimit: 0 }, 'out-of-range RPM'],
+    [{ budgetUsd: -1 }, 'negative budget'],
+    [{ expiresAt: 'tomorrow' }, 'invalid expiry'],
+    [{ providerConnectionId: 'not-a-uuid' }, 'invalid provider ID'],
+  ])('rejects %s (%s)', async (payload, _label) => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/keys/${keyId}`,
+      payload,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'invalid_request' } });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('keeps the provider-not-found error for a non-null provider selection', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/keys/${keyId}`,
+      payload: { providerConnectionId: providerId },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: { code: 'provider_not_found' } });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+});

@@ -29,9 +29,17 @@ const providerUpdateSchema = z.object({
   defaultModel: z.string().trim().max(120).nullable().optional(),
   priority: z.number().int().min(0).max(10_000).optional(),
 });
-const apiKeyUpdateSchema = z.object({
-  providerConnectionId: z.string().uuid().nullable(),
-});
+const apiKeyUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    rpmLimit: z.number().int().min(1).max(100_000).optional(),
+    budgetUsd: z.number().nonnegative().nullable().optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
+    providerConnectionId: z.string().uuid().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: '至少提供一个可更新字段。',
+  });
 const priceSchema = z.object({
   provider: z.string().trim().min(1).max(40).default('*'),
   modelPattern: z.string().trim().min(1).max(120),
@@ -226,7 +234,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const parsed = apiKeyUpdateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
-        error: { code: 'invalid_request', message: '请选择有效的上游连接。' },
+        error: { code: 'invalid_request', message: parsed.error.issues[0]?.message },
       });
     }
     const id = (request.params as { id: string }).id;
@@ -243,10 +251,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
     const updated = await getPool().query(
       `UPDATE virtual_api_keys
-          SET provider_connection_id = $2
+          SET name = CASE WHEN $2::boolean THEN $3::text ELSE name END,
+              rpm_limit = CASE WHEN $4::boolean THEN $5::integer ELSE rpm_limit END,
+              budget_usd = CASE WHEN $6::boolean THEN $7::numeric ELSE budget_usd END,
+              expires_at = CASE WHEN $8::boolean THEN $9::timestamptz ELSE expires_at END,
+              provider_connection_id = CASE
+                WHEN $10::boolean THEN $11::uuid ELSE provider_connection_id
+              END
         WHERE id = $1 AND status = 'active'
         RETURNING id`,
-      [id, parsed.data.providerConnectionId],
+      [
+        id,
+        Object.hasOwn(parsed.data, 'name'),
+        parsed.data.name ?? null,
+        Object.hasOwn(parsed.data, 'rpmLimit'),
+        parsed.data.rpmLimit ?? null,
+        Object.hasOwn(parsed.data, 'budgetUsd'),
+        parsed.data.budgetUsd ?? null,
+        Object.hasOwn(parsed.data, 'expiresAt'),
+        parsed.data.expiresAt ?? null,
+        Object.hasOwn(parsed.data, 'providerConnectionId'),
+        parsed.data.providerConnectionId ?? null,
+      ],
     );
     if (!updated.rowCount) {
       return reply.code(404).send({
@@ -281,7 +307,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!updated)
       return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
-    return { ok: true, restartRequired: true };
+    return { ok: true, restartRequired: false };
   });
 
   app.get('/api/admin/usage/summary', async () => {

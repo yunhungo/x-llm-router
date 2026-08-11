@@ -13,9 +13,9 @@ export function Button({
 }) {
   return (
     <button
+      {...props}
       className={`button button-${variant} ${className}`}
       disabled={loading || props.disabled}
-      {...props}
     >
       {loading ? <LoaderCircle size={15} className="spin" /> : null}
       {children}

@@ -11,9 +11,22 @@ import {
   YAxis,
 } from 'recharts';
 
-import type { KeyAnalyticsRange, KeyUsagePoint } from '../types';
+import type { KeyAnalyticsRange, KeyModelUsage, KeyModelUsagePoint, KeyUsagePoint } from '../types';
 
 export type PerformanceMetric = 'calls' | 'cache' | 'tps' | 'ttft' | 'latency' | 'tokens' | 'cost';
+export type ChartGrouping = 'total' | 'model';
+
+interface ModelChartSeries {
+  identity: string;
+  dataKey: string;
+  label: string;
+  color: string;
+}
+
+export interface GroupedChartDatum {
+  bucket: string;
+  [key: string]: string | number | null;
+}
 
 const metricOptions: Array<{ value: PerformanceMetric; label: string }> = [
   { value: 'calls', label: '调用' },
@@ -24,6 +37,8 @@ const metricOptions: Array<{ value: PerformanceMetric; label: string }> = [
   { value: 'tokens', label: 'Token' },
   { value: 'cost', label: '成本' },
 ];
+
+const modelColors = ['#2563eb', '#0f766e', '#7c3aed', '#d97706', '#dc5a5a', '#475569'];
 
 const seriesNames: Record<string, string> = {
   successfulCalls: '成功调用',
@@ -41,6 +56,25 @@ const seriesNames: Record<string, string> = {
   outputTokens: '输出 Token',
   costUsd: '成本',
 };
+
+function modelIdentity(provider: string, model: string) {
+  return `${provider}\u0000${model}`;
+}
+
+function modelChartSeries(models: KeyModelUsage[]): ModelChartSeries[] {
+  const duplicateModels = new Set(
+    models
+      .filter((model, index) => models.findIndex((item) => item.model === model.model) !== index)
+      .map((model) => model.model),
+  );
+
+  return models.slice(0, modelColors.length).map((model, index) => ({
+    identity: modelIdentity(model.provider, model.model),
+    dataKey: `model_${index}`,
+    label: duplicateModels.has(model.model) ? `${model.provider} / ${model.model}` : model.model,
+    color: modelColors[index] ?? '#64748b',
+  }));
+}
 
 function compact(value: number): string {
   return new Intl.NumberFormat('zh-CN', {
@@ -66,7 +100,9 @@ function axisValue(metric: PerformanceMetric, value: number): string {
   if (metric === 'cost') {
     if (value === 0) return '$0';
     if (Math.abs(value) < 0.0001) return `$${value.toExponential(1)}`;
-    return `$${value < 0.01 ? value.toFixed(4) : compact(value)}`;
+    if (Math.abs(value) < 0.01) return `$${value.toFixed(4)}`;
+    if (Math.abs(value) < 1) return `$${value.toFixed(2)}`;
+    return `$${compact(value)}`;
   }
   return compact(value);
 }
@@ -133,40 +169,151 @@ export function normalizePerformancePoint(point: KeyUsagePoint) {
   };
 }
 
+function groupedMetricValue(point: KeyModelUsagePoint, metric: PerformanceMetric) {
+  if (metric === 'calls') return finiteMetric(point.calls);
+  if (metric === 'tokens')
+    return finiteMetric(point.inputTokens) + finiteMetric(point.outputTokens);
+  if (metric === 'cost') return finiteMetric(point.costUsd);
+  if (metric === 'cache') {
+    const input = finiteMetric(point.inputTokens);
+    return input ? (finiteMetric(point.cachedTokens) / input) * 100 : null;
+  }
+  if (metric === 'tps') return finiteMetric(point.averageTps) || null;
+  if (metric === 'ttft') return finiteMetric(point.averageTtftMs) || null;
+  return finiteMetric(point.averageLatencyMs) || null;
+}
+
+export function buildGroupedChartData(
+  points: KeyUsagePoint[],
+  modelPoints: KeyModelUsagePoint[],
+  series: Array<Pick<ModelChartSeries, 'identity' | 'dataKey'>>,
+  metric: PerformanceMetric,
+): GroupedChartDatum[] {
+  const additive = metric === 'calls' || metric === 'tokens' || metric === 'cost';
+  const seriesByIdentity = new Map(series.map((item) => [item.identity, item]));
+  const rows = new Map(
+    points.map((point) => [
+      point.bucket,
+      Object.fromEntries([
+        ['bucket', point.bucket],
+        ...series.map((item) => [item.dataKey, additive ? 0 : null]),
+      ]) as GroupedChartDatum,
+    ]),
+  );
+
+  modelPoints.forEach((point) => {
+    const chartSeries = seriesByIdentity.get(modelIdentity(point.provider, point.model));
+    const row = rows.get(point.bucket);
+    if (chartSeries && row) row[chartSeries.dataKey] = groupedMetricValue(point, metric);
+  });
+
+  return [...rows.values()];
+}
+
+function GroupedSeries({
+  metric,
+  series,
+}: {
+  metric: PerformanceMetric;
+  series: ModelChartSeries[];
+}) {
+  const isAdditive = metric === 'calls' || metric === 'tokens' || metric === 'cost';
+  if (isAdditive) {
+    return series.map((item) => (
+      <Area
+        key={item.dataKey}
+        type="monotone"
+        dataKey={item.dataKey}
+        stackId="models"
+        stroke={item.color}
+        fill={item.color}
+        fillOpacity={0.2}
+        strokeWidth={1.8}
+        activeDot={{ r: 4 }}
+      />
+    ));
+  }
+  return series.map((item) => (
+    <Line
+      key={item.dataKey}
+      type="monotone"
+      dataKey={item.dataKey}
+      stroke={item.color}
+      strokeWidth={2}
+      dot={false}
+      connectNulls
+      activeDot={{ r: 4 }}
+    />
+  ));
+}
+
 export function KeyPerformanceChart({
   points,
+  modelPoints,
+  models,
   range,
   metric,
+  grouping,
   onMetricChange,
+  onGroupingChange,
   onBucketSelect,
 }: {
   points: KeyUsagePoint[];
+  modelPoints: KeyModelUsagePoint[];
+  models: KeyModelUsage[];
   range: KeyAnalyticsRange;
   metric: PerformanceMetric;
+  grouping: ChartGrouping;
   onMetricChange: (metric: PerformanceMetric) => void;
+  onGroupingChange: (grouping: ChartGrouping) => void;
   onBucketSelect: (point: KeyUsagePoint) => void;
 }) {
-  const chartData = points.map(normalizePerformancePoint);
+  const totalChartData = points.map(normalizePerformancePoint);
+  const groupedSeries = modelChartSeries(models);
+  const groupedChartData = buildGroupedChartData(points, modelPoints, groupedSeries, metric);
+  const chartData = grouping === 'model' ? groupedChartData : totalChartData;
   const hasCalls = points.some((point) => point.calls > 0);
+  const groupedNames = Object.fromEntries(groupedSeries.map((item) => [item.dataKey, item.label]));
 
   return (
     <section className="panel performance-chart-panel detail-section">
       <div className="performance-chart-heading">
-        <div>
-          <h2>性能趋势</h2>
-          <span>点击时间桶，下钻到该时段的具体请求</span>
+        <div className="chart-title-row">
+          <h2>趋势</h2>
+          {grouping === 'model' && models.length > modelColors.length ? (
+            <span>调用量前 {modelColors.length} 个模型</span>
+          ) : null}
         </div>
-        <div className="metric-tabs" aria-label="图表指标">
-          {metricOptions.map((option) => (
+        <div className="chart-controls">
+          <div className="chart-grouping" aria-label="图表分类方式">
             <button
               type="button"
-              key={option.value}
-              className={metric === option.value ? 'active' : ''}
-              onClick={() => onMetricChange(option.value)}
+              className={grouping === 'total' ? 'active' : ''}
+              onClick={() => onGroupingChange('total')}
             >
-              {option.label}
+              汇总
             </button>
-          ))}
+            <button
+              type="button"
+              className={grouping === 'model' ? 'active' : ''}
+              disabled={!groupedSeries.length}
+              onClick={() => onGroupingChange('model')}
+            >
+              按模型
+            </button>
+          </div>
+          <div className="metric-tabs" aria-label="图表指标">
+            {metricOptions.map((option) => (
+              <button
+                type="button"
+                key={option.value}
+                className={metric === option.value ? 'active' : ''}
+                onClick={() => onMetricChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {hasCalls ? (
@@ -203,7 +350,7 @@ export function KeyPerformanceChart({
                 labelFormatter={(value) => fullTime(String(value))}
                 formatter={(value, name) => [
                   formatPerformanceValue(metric, Number(value ?? 0)),
-                  seriesNames[String(name)] ?? String(name),
+                  groupedNames[String(name)] ?? seriesNames[String(name)] ?? String(name),
                 ]}
                 contentStyle={{
                   border: '1px solid var(--hairline-strong)',
@@ -214,134 +361,155 @@ export function KeyPerformanceChart({
                 }}
               />
               <Legend
-                formatter={(value: string) => seriesNames[value] ?? value}
+                formatter={(value: string) => groupedNames[value] ?? seriesNames[value] ?? value}
                 wrapperStyle={{ fontSize: 10, paddingTop: 8 }}
               />
 
-              {metric === 'calls' ? (
+              {grouping === 'model' ? (
+                <GroupedSeries metric={metric} series={groupedSeries} />
+              ) : (
                 <>
-                  <Bar
-                    dataKey="successfulCalls"
-                    stackId="calls"
-                    fill="var(--ink)"
-                    maxBarSize={28}
-                    radius={[0, 0, 3, 3]}
-                  />
-                  <Bar
-                    dataKey="failedCalls"
-                    stackId="calls"
-                    fill="#dc5a5a"
-                    maxBarSize={28}
-                    radius={[3, 3, 0, 0]}
-                  />
+                  {metric === 'calls' ? (
+                    <>
+                      <Bar
+                        dataKey="successfulCalls"
+                        stackId="calls"
+                        fill="var(--ink)"
+                        maxBarSize={28}
+                        radius={[0, 0, 3, 3]}
+                      />
+                      <Bar
+                        dataKey="failedCalls"
+                        stackId="calls"
+                        fill="#dc5a5a"
+                        maxBarSize={28}
+                        radius={[3, 3, 0, 0]}
+                      />
+                    </>
+                  ) : null}
+                  {metric === 'cache' ? (
+                    <Area
+                      type="monotone"
+                      dataKey="cacheRate"
+                      stroke="#0f766e"
+                      fill="rgba(15, 118, 110, 0.14)"
+                      strokeWidth={2}
+                      activeDot={{ r: 5 }}
+                    />
+                  ) : null}
+                  {metric === 'tps' ? (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="p10Tps"
+                        stroke="#d97706"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="p50Tps"
+                        stroke="var(--blue)"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    </>
+                  ) : null}
+                  {metric === 'ttft' ? (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="p50TtftMs"
+                        stroke="#0f766e"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="p95TtftMs"
+                        stroke="#d97706"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="p99TtftMs"
+                        stroke="#dc5a5a"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    </>
+                  ) : null}
+                  {metric === 'latency' ? (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="p50LatencyMs"
+                        stroke="#0f766e"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="p95LatencyMs"
+                        stroke="#d97706"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="p99LatencyMs"
+                        stroke="#dc5a5a"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    </>
+                  ) : null}
+                  {metric === 'tokens' ? (
+                    <>
+                      <Area
+                        type="monotone"
+                        dataKey="inputTokens"
+                        stackId="tokens"
+                        stroke="#64748b"
+                        fill="#64748b"
+                        fillOpacity={0.16}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="outputTokens"
+                        stackId="tokens"
+                        stroke="var(--blue)"
+                        fill="var(--blue)"
+                        fillOpacity={0.18}
+                      />
+                    </>
+                  ) : null}
+                  {metric === 'cost' ? (
+                    <Area
+                      type="monotone"
+                      dataKey="costUsd"
+                      stroke="#7c3aed"
+                      fill="rgba(124, 58, 237, 0.15)"
+                      strokeWidth={2}
+                      activeDot={{ r: 5 }}
+                    />
+                  ) : null}
                 </>
-              ) : null}
-              {metric === 'cache' ? (
-                <Area
-                  type="monotone"
-                  dataKey="cacheRate"
-                  stroke="#0f766e"
-                  fill="rgba(15, 118, 110, 0.14)"
-                  strokeWidth={2}
-                  activeDot={{ r: 5 }}
-                />
-              ) : null}
-              {metric === 'tps' ? (
-                <>
-                  <Line
-                    type="monotone"
-                    dataKey="p10Tps"
-                    stroke="#d97706"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p50Tps"
-                    stroke="var(--blue)"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </>
-              ) : null}
-              {metric === 'ttft' ? (
-                <>
-                  <Line
-                    type="monotone"
-                    dataKey="p50TtftMs"
-                    stroke="#0f766e"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p95TtftMs"
-                    stroke="#d97706"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p99TtftMs"
-                    stroke="#dc5a5a"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </>
-              ) : null}
-              {metric === 'latency' ? (
-                <>
-                  <Line
-                    type="monotone"
-                    dataKey="p50LatencyMs"
-                    stroke="#0f766e"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p95LatencyMs"
-                    stroke="#d97706"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p99LatencyMs"
-                    stroke="#dc5a5a"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </>
-              ) : null}
-              {metric === 'tokens' ? (
-                <>
-                  <Bar dataKey="inputTokens" stackId="tokens" fill="#64748b" maxBarSize={28} />
-                  <Bar
-                    dataKey="outputTokens"
-                    stackId="tokens"
-                    fill="var(--blue)"
-                    maxBarSize={28}
-                    radius={[3, 3, 0, 0]}
-                  />
-                </>
-              ) : null}
-              {metric === 'cost' ? (
-                <Bar dataKey="costUsd" fill="#7c3aed" maxBarSize={28} radius={[3, 3, 0, 0]} />
-              ) : null}
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="analytics-empty performance-empty">该时段没有调用。</div>
+        <div className="analytics-empty performance-empty">暂无调用</div>
       )}
     </section>
   );

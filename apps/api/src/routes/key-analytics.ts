@@ -72,7 +72,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
     }
 
-    const [summary, series, models, endpoints, errors, logs, prices] = await Promise.all([
+    const analytics = await Promise.all([
       pool.query(
         `WITH scope AS (
            SELECT * FROM usage_logs
@@ -159,6 +159,38 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM buckets b
            LEFT JOIN scope s ON s.created_at >= b.bucket AND s.created_at < b.bucket + $3::interval
           GROUP BY b.bucket ORDER BY b.bucket`,
+        [id, rangeConfig.interval, rangeConfig.bucket],
+      ),
+      pool.query(
+        `WITH scoped AS (
+           SELECT date_bin($3::interval, u.created_at, timestamptz '2000-01-01') AS bucket,
+                  COALESCE(p.provider, 'unknown') AS provider, u.model, u.success,
+                  u.input_tokens, u.output_tokens, u.cached_input_tokens, u.cost_usd,
+                  u.time_to_first_token_ms, u.latency_ms,
+                  CASE WHEN u.output_tokens > 0
+                         AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)
+                    THEN u.output_tokens * 1000.0 /
+                         (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
+                    ELSE NULL END AS tps
+             FROM usage_logs u
+             LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+            WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+         )
+         SELECT bucket, bucket + $3::interval AS "bucketEnd", provider, model,
+                count(*)::int AS calls,
+                count(*) FILTER (WHERE success)::int AS "successfulCalls",
+                count(*) FILTER (WHERE NOT success)::int AS "failedCalls",
+                COALESCE(sum(input_tokens), 0)::float8 AS "inputTokens",
+                COALESCE(sum(output_tokens), 0)::float8 AS "outputTokens",
+                COALESCE(sum(cached_input_tokens), 0)::float8 AS "cachedTokens",
+                COALESCE(sum(cost_usd), 0)::float8 AS "costUsd",
+                COALESCE(avg(time_to_first_token_ms)
+                  FILTER (WHERE time_to_first_token_ms IS NOT NULL), 0)::float8 AS "averageTtftMs",
+                COALESCE(avg(tps) FILTER (WHERE tps > 0), 0)::float8 AS "averageTps",
+                COALESCE(avg(latency_ms), 0)::float8 AS "averageLatencyMs"
+           FROM scoped
+          GROUP BY bucket, provider, model
+          ORDER BY bucket, provider, model`,
         [id, rangeConfig.interval, rangeConfig.bucket],
       ),
       pool.query(
@@ -252,6 +284,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         [id],
       ),
     ]);
+    const [summary, series, modelSeries, models, endpoints, errors, logs, prices] = analytics;
 
     const { langfuseConfigCiphertext, ...key } = keyRow;
     return {
@@ -262,6 +295,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       },
       summary: summary.rows[0],
       series: series.rows,
+      modelSeries: modelSeries.rows,
       models: models.rows,
       endpoints: endpoints.rows,
       errors: errors.rows,
