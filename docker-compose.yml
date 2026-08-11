@@ -18,10 +18,10 @@ services:
       timeout: 3s
       retries: 20
 
-  api:
+  app:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -40,6 +40,7 @@ services:
       db:
         condition: service_healthy
     ports:
+      - '${WEB_PORT:-3000}:4000'
       - '${API_PORT:-4000}:4000'
     healthcheck:
       test:
@@ -53,17 +54,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - '${WEB_PORT:-3000}:3000'
 
 volumes:
   postgres-data:

@@ -11,7 +11,7 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT、TPS、缓存命中与成本，并提供天/周/月图表和异常请求下钻。
 - Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，可配置输入输出采集和追踪上下文。
 - 管理后台：连接、Key、调用日志、Key 级 Langfuse 和管理员账号全部可视化配置。
-- 自托管：PostgreSQL + API + Nginx Web 三服务 Docker Compose，启动时自动执行幂等迁移并创建初始管理员。
+- 自托管：PostgreSQL + xRouter 两服务 Docker Compose；单个 xRouter 镜像同时提供 API 和管理后台，启动时自动执行幂等迁移并创建初始管理员。
 
 ## 架构
 
@@ -21,10 +21,9 @@ Client / OpenAI SDK
         ▼
   Fastify Gateway ──────► OpenAI API Key upstream
         │                ► ChatGPT Codex OAuth upstream
+        ├── serves React Admin UI and /api/admin/*
         ├── PostgreSQL: users, providers, virtual keys, usage
         └── Langfuse: generation observations (optional)
-
-React Admin UI ─────────► /api/admin/*
 ```
 
 项目采用 pnpm workspace：
@@ -33,10 +32,8 @@ React Admin UI ─────────► /api/admin/*
 apps/api/                 Fastify 网关、OAuth、用量与管理 API
 apps/web/                 React + Vite 管理后台
 packages/contracts/       前后端共享 Zod 契约
-infra/nginx/              Web 静态托管与 SSE 反向代理
-Dockerfile.api            API 多阶段镜像
-Dockerfile.web            Web 多阶段镜像
-docker-compose.yml        PostgreSQL / API / Web 编排
+Dockerfile                API + Web 单一多阶段镜像
+docker-compose.yml        PostgreSQL / xRouter 编排
 DESIGN.md                 Vercel-inspired UI 规范
 ```
 
@@ -60,6 +57,8 @@ docker compose ps
 - 管理后台：<http://localhost:3000>
 - API：<http://localhost:4000>
 - 健康检查：<http://localhost:4000/readyz>
+
+GitHub Actions 只发布一个同时包含 API 与管理后台的 `x-llm-router` 镜像，目标为 `ghcr.io/<owner>/x-llm-router` 和 Docker Hub 的 `<DOCKERHUB_USERNAME>/x-llm-router`。
 
 未提供 `.env` 时，Compose 的演示初始账号是 `admin` / `change-me-now`。首次登录后请立即在「平台设置」中修改；默认密钥只适合本机开发，不能用于公网部署。
 
@@ -127,10 +126,10 @@ const response = await client.responses.create({
 
 ## Langfuse
 
-在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后重启 API 容器：
+在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后重启 xRouter 容器：
 
 ```bash
-docker compose restart api
+docker compose restart app
 ```
 
 不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
