@@ -4,6 +4,7 @@ const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
+  WEB_ROOT: z.string().min(1).optional(),
   LOG_LEVEL: z.string().default('info'),
   DATABASE_URL: z.string().min(1),
   ENCRYPTION_KEY: z.string().min(16),

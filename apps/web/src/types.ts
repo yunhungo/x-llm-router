@@ -6,7 +6,9 @@ export interface User {
 export interface Provider {
   id: string;
   name: string;
+  provider: string;
   authType: 'oauth' | 'api_key';
+  apiMode: 'responses' | 'chat.completions';
   status: 'active' | 'disabled' | 'error';
   accountId: string | null;
   baseUrl: string;
@@ -17,12 +19,32 @@ export interface Provider {
   createdAt: string;
 }
 
+export interface ProviderCatalogItem {
+  id: string;
+  name: string;
+  defaultApiBaseUrl: string | null;
+  defaultModel: string | null;
+  capabilities: {
+    upstreamApis: Array<'responses' | 'chat.completions'>;
+    gatewayApis: Array<'responses' | 'chat.completions'>;
+    supportsOAuth: boolean;
+  };
+}
+
 export interface LangfuseConfig {
   enabled: boolean;
   publicKey: string;
   hasSecretKey: boolean;
   baseUrl: string;
   environment: string;
+  traceName: string;
+  version: string;
+  tags: string[];
+  metadata: Record<string, string>;
+  userIdHeader: string;
+  sessionIdHeader: string;
+  captureInput: boolean;
+  captureOutput: boolean;
   restartRequiredAfterSave: boolean;
 }
 
@@ -68,11 +90,14 @@ export interface ModelUsage {
 export interface UsageLog {
   id: string;
   requestId: string;
+  apiKeyId: string | null;
   endpoint: string;
+  requestedModel: string;
   model: string;
   statusCode: number;
   success: boolean;
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
   costUsd: number;
@@ -82,4 +107,145 @@ export interface UsageLog {
   createdAt: string;
   apiKeyName: string | null;
   providerName: string | null;
+  detailAvailable: boolean;
+}
+
+export interface UsageCallDetail {
+  id: string;
+  requestId: string;
+  endpoint: string;
+  requestedModel: string;
+  upstreamModel: string;
+  gatewayCurl: string;
+  upstreamCurl: string | null;
+  clientRequest: unknown;
+  upstreamRequest: unknown | null;
+  upstreamResponse: unknown | null;
+  error: unknown | null;
+  capturedAt: string;
+  expiresAt: string;
+}
+
+export interface UsageCallDetailResponse {
+  detail: UsageCallDetail | null;
+  expired: boolean;
+}
+
+export type KeyAnalyticsRange = '24h' | '7d' | '30d';
+
+export interface KeyAnalyticsSummary {
+  calls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  averageCostUsd: number;
+  averageLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+  averageTtftMs: number;
+  p50TtftMs: number;
+  p95TtftMs: number;
+  p99TtftMs: number;
+  averageTps: number;
+  p10Tps: number;
+  p50Tps: number;
+  p95Tps: number;
+  streamingCalls: number;
+  peakRpm: number;
+}
+
+export interface KeyUsagePoint {
+  bucket: string;
+  bucketEnd: string;
+  calls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  tokens: number;
+  cachedTokens: number;
+  costUsd: number;
+  averageTtftMs: number;
+  p50TtftMs: number;
+  p95TtftMs: number;
+  p99TtftMs: number;
+  averageTps: number;
+  p10Tps: number;
+  p50Tps: number;
+  averageLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+}
+
+export interface KeyModelUsage {
+  model: string;
+  provider: string;
+  calls: number;
+  successfulCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  averageLatencyMs: number;
+  averageTps: number;
+}
+
+export interface KeyEndpointUsage {
+  endpoint: string;
+  calls: number;
+  successfulCalls: number;
+  tokens: number;
+  costUsd: number;
+}
+
+export interface KeyErrorUsage {
+  code: string;
+  calls: number;
+}
+
+export interface KeyUsageLog extends Omit<UsageLog, 'apiKeyId' | 'apiKeyName'> {
+  tps: number | null;
+}
+
+export type KeyLogMetric = 'recent' | 'errors' | 'latency' | 'ttft' | 'tps';
+
+export interface KeyUsageLogsResponse {
+  logs: KeyUsageLog[];
+  total: number;
+  query: {
+    metric: KeyLogMetric;
+    threshold: number | null;
+    from: string | null;
+    to: string | null;
+  };
+}
+
+export interface ModelPriceMatch {
+  provider: string;
+  model: string;
+  matchedProvider: string | null;
+  matchedPattern: string | null;
+  inputPerMillion: number | null;
+  cachedInputPerMillion: number | null;
+  outputPerMillion: number | null;
+  updatedAt: string | null;
+}
+
+export interface KeyAnalyticsResponse {
+  range: KeyAnalyticsRange;
+  key: VirtualKey & { provider: string | null };
+  summary: KeyAnalyticsSummary;
+  series: KeyUsagePoint[];
+  models: KeyModelUsage[];
+  endpoints: KeyEndpointUsage[];
+  errors: KeyErrorUsage[];
+  logs: KeyUsageLog[];
+  prices: ModelPriceMatch[];
 }

@@ -1,4 +1,4 @@
-export const schemaVersion = 2;
+export const schemaVersion = 6;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -18,8 +18,10 @@ CREATE TABLE IF NOT EXISTS platform_users (
 CREATE TABLE IF NOT EXISTS provider_connections (
   id uuid PRIMARY KEY,
   name varchar(120) NOT NULL,
-  provider varchar(40) NOT NULL CHECK (provider IN ('openai')),
+  provider varchar(40) NOT NULL,
   auth_type varchar(40) NOT NULL CHECK (auth_type IN ('oauth', 'api_key')),
+  api_mode varchar(40) NOT NULL DEFAULT 'chat.completions'
+    CHECK (api_mode IN ('responses', 'chat.completions')),
   status varchar(24) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'error')),
   credentials_ciphertext text NOT NULL,
   account_id varchar(255),
@@ -35,6 +37,31 @@ CREATE TABLE IF NOT EXISTS provider_connections (
 
 CREATE INDEX IF NOT EXISTS provider_connections_routing_idx
   ON provider_connections(status, priority, created_at);
+
+ALTER TABLE provider_connections
+  DROP CONSTRAINT IF EXISTS provider_connections_provider_check;
+
+ALTER TABLE provider_connections
+  ADD COLUMN IF NOT EXISTS api_mode varchar(40);
+
+UPDATE provider_connections
+   SET api_mode = CASE WHEN auth_type = 'oauth' THEN 'responses' ELSE 'chat.completions' END
+ WHERE api_mode IS NULL;
+
+UPDATE provider_connections
+   SET provider = 'openai'
+ WHERE auth_type = 'api_key' AND provider = 'openai-compatible';
+
+ALTER TABLE provider_connections
+  ALTER COLUMN api_mode SET DEFAULT 'chat.completions',
+  ALTER COLUMN api_mode SET NOT NULL;
+
+ALTER TABLE provider_connections
+  DROP CONSTRAINT IF EXISTS provider_connections_api_mode_check;
+
+ALTER TABLE provider_connections
+  ADD CONSTRAINT provider_connections_api_mode_check
+  CHECK (api_mode IN ('responses', 'chat.completions'));
 
 CREATE TABLE IF NOT EXISTS oauth_device_flows (
   id uuid PRIMARY KEY,
@@ -80,10 +107,12 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   virtual_api_key_id uuid REFERENCES virtual_api_keys(id) ON DELETE SET NULL,
   provider_connection_id uuid REFERENCES provider_connections(id) ON DELETE SET NULL,
   endpoint varchar(40) NOT NULL,
+  requested_model varchar(120) NOT NULL,
   model varchar(120) NOT NULL,
   status_code integer NOT NULL,
   success boolean NOT NULL,
   input_tokens integer NOT NULL DEFAULT 0,
+  cached_input_tokens integer NOT NULL DEFAULT 0,
   output_tokens integer NOT NULL DEFAULT 0,
   total_tokens integer NOT NULL DEFAULT 0,
   cost_usd numeric(14, 8) NOT NULL DEFAULT 0,
@@ -94,9 +123,39 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE usage_logs
+  ADD COLUMN IF NOT EXISTS cached_input_tokens integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS requested_model varchar(120);
+
+UPDATE usage_logs
+   SET requested_model = model
+ WHERE requested_model IS NULL;
+
+UPDATE usage_logs
+   SET model = substring(model FROM 9)
+ WHERE model LIKE 'chatgpt-gpt-%'
+   AND metadata->>'providerAuthType' = 'oauth';
+
+ALTER TABLE usage_logs
+  ALTER COLUMN requested_model SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS usage_logs_created_idx ON usage_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_logs_key_created_idx ON usage_logs(virtual_api_key_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_logs_model_created_idx ON usage_logs(model, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS usage_log_details (
+  usage_log_id uuid PRIMARY KEY REFERENCES usage_logs(id) ON DELETE CASCADE,
+  gateway_curl text NOT NULL,
+  upstream_curl text,
+  client_request jsonb NOT NULL DEFAULT '{}'::jsonb,
+  upstream_request jsonb,
+  upstream_response jsonb,
+  error jsonb,
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days')
+);
+
+CREATE INDEX IF NOT EXISTS usage_log_details_expires_idx ON usage_log_details(expires_at);
 
 CREATE TABLE IF NOT EXISTS platform_settings (
   key varchar(120) PRIMARY KEY,
@@ -107,17 +166,52 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 );
 
 CREATE TABLE IF NOT EXISTS model_prices (
-  model_pattern varchar(120) PRIMARY KEY,
+  provider varchar(40) NOT NULL DEFAULT '*',
+  model_pattern varchar(120) NOT NULL,
   input_per_million numeric(14, 6) NOT NULL,
+  cached_input_per_million numeric(14, 6) NOT NULL,
   output_per_million numeric(14, 6) NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(provider, model_pattern)
 );
 
-INSERT INTO model_prices(model_pattern, input_per_million, output_per_million)
+ALTER TABLE model_prices
+  ADD COLUMN IF NOT EXISTS provider varchar(40) NOT NULL DEFAULT '*',
+  ADD COLUMN IF NOT EXISTS cached_input_per_million numeric(14, 6);
+
+UPDATE model_prices
+   SET cached_input_per_million = input_per_million
+ WHERE cached_input_per_million IS NULL;
+
+ALTER TABLE model_prices
+  ALTER COLUMN cached_input_per_million SET NOT NULL;
+
+DO $$
+DECLARE
+  primary_key_columns integer;
+BEGIN
+  SELECT cardinality(conkey)
+    INTO primary_key_columns
+    FROM pg_constraint
+   WHERE conrelid = 'model_prices'::regclass AND contype = 'p';
+
+  IF primary_key_columns = 1 THEN
+    ALTER TABLE model_prices DROP CONSTRAINT model_prices_pkey;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'model_prices'::regclass AND contype = 'p'
+  ) THEN
+    ALTER TABLE model_prices ADD PRIMARY KEY(provider, model_pattern);
+  END IF;
+END $$;
+
+INSERT INTO model_prices(provider, model_pattern, input_per_million, cached_input_per_million, output_per_million)
 VALUES
-  ('gpt-5.6-sol', 5.0, 30.0),
-  ('gpt-5.6', 5.0, 30.0),
-  ('gpt-5.6-terra', 2.0, 12.0),
-  ('gpt-5.6-luna', 0.2, 1.2)
-ON CONFLICT (model_pattern) DO NOTHING;
+  ('*', 'gpt-5.6-sol', 5.0, 0.5, 30.0),
+  ('*', 'gpt-5.6', 5.0, 0.5, 30.0),
+  ('*', 'gpt-5.6-terra', 2.0, 0.2, 12.0),
+  ('*', 'gpt-5.6-luna', 0.2, 0.02, 1.2)
+ON CONFLICT (provider, model_pattern) DO NOTHING;
 `;

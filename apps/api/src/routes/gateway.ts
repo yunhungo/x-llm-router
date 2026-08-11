@@ -3,92 +3,13 @@ import { once } from 'node:events';
 import { propagateAttributes, startObservation } from '@langfuse/tracing';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { getProviderAdapter } from '../providers/registry';
+import type { GatewayEndpoint } from '../providers/types';
 import { defaultLangfuseSettings } from '../services/langfuse';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
+import { buildCurl, SseDetailCollector } from '../services/usage-details';
 import { requireVirtualApiKey } from '../services/virtual-keys';
-import { SseAccumulator } from '../services/sse';
 import { emptyUsage, extractTokenUsage, recordUsage, type TokenUsage } from '../services/usage';
-
-type GatewayEndpoint = 'responses' | 'chat.completions';
-
-const CHATGPT_RESPONSE_KEYS = new Set([
-  'model',
-  'input',
-  'instructions',
-  'stream',
-  'store',
-  'include',
-  'tools',
-  'tool_choice',
-  'reasoning',
-  'previous_response_id',
-  'truncation',
-]);
-
-function normalizeChatGptModel(model: string): string {
-  if (model.startsWith('chatgpt/')) return model.slice('chatgpt/'.length);
-  if (model.startsWith('chatgpt-gpt-')) return model.slice('chatgpt-'.length);
-  return model;
-}
-
-function normalizeChatGptInput(input: unknown): unknown {
-  if (typeof input !== 'string') return input;
-  return [
-    {
-      role: 'user',
-      content: [{ type: 'input_text', text: input }],
-    },
-  ];
-}
-
-export function buildUpstreamBody(
-  body: Record<string, unknown>,
-  endpoint: GatewayEndpoint,
-  provider: ProviderRuntime,
-): { body: Record<string, unknown>; clientWantsStream: boolean } {
-  const model = typeof body.model === 'string' && body.model ? body.model : provider.defaultModel;
-  if (!model) {
-    throw Object.assign(
-      new Error('A model is required and the selected provider has no default model.'),
-      {
-        statusCode: 400,
-        code: 'model_required',
-      },
-    );
-  }
-  const clientWantsStream = body.stream === true;
-  const normalized: Record<string, unknown> = { ...body, model };
-
-  if (provider.authType === 'oauth' && endpoint === 'responses') {
-    normalized.model = normalizeChatGptModel(model);
-    normalized.input = normalizeChatGptInput(normalized.input);
-    normalized.stream = true;
-    normalized.store = false;
-    const include = Array.isArray(normalized.include) ? [...normalized.include] : [];
-    if (!include.includes('reasoning.encrypted_content'))
-      include.push('reasoning.encrypted_content');
-    normalized.include = include;
-    if (!normalized.instructions) {
-      normalized.instructions =
-        'You are a helpful AI assistant accessed through an OpenAI-compatible router. Follow the user instructions carefully.';
-    }
-    return {
-      clientWantsStream,
-      body: Object.fromEntries(
-        Object.entries(normalized).filter(([key]) => CHATGPT_RESPONSE_KEYS.has(key)),
-      ),
-    };
-  }
-
-  if (normalized.stream === true && endpoint === 'chat.completions') {
-    const streamOptions =
-      normalized.stream_options && typeof normalized.stream_options === 'object'
-        ? (normalized.stream_options as Record<string, unknown>)
-        : {};
-    normalized.stream_options = { ...streamOptions, include_usage: true };
-  }
-  return { body: normalized, clientWantsStream };
-}
 
 function errorCodeFromPayload(payload: unknown): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
@@ -111,6 +32,44 @@ function outputForTrace(payload: unknown): unknown {
   return record.output ?? payload;
 }
 
+const MODEL_PARAMETER_KEYS = [
+  'temperature',
+  'top_p',
+  'max_tokens',
+  'max_completion_tokens',
+  'max_output_tokens',
+  'frequency_penalty',
+  'presence_penalty',
+  'seed',
+  'service_tier',
+  'reasoning_effort',
+] as const;
+
+export function langfuseModelParameters(
+  body: Record<string, unknown>,
+): Record<string, string | number> {
+  const parameters: Record<string, string | number> = {};
+  for (const key of MODEL_PARAMETER_KEYS) {
+    const value = body[key];
+    if (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) {
+      parameters[key] = value;
+    }
+  }
+  const reasoning = body.reasoning;
+  if (reasoning && typeof reasoning === 'object') {
+    const effort = (reasoning as Record<string, unknown>).effort;
+    if (typeof effort === 'string') parameters['reasoning.effort'] = effort;
+  }
+  return parameters;
+}
+
+function headerValue(request: FastifyRequest, name: string): string | undefined {
+  if (!name) return undefined;
+  const value = request.headers[name.toLowerCase()];
+  const text = Array.isArray(value) ? value[0] : value;
+  return typeof text === 'string' && text.trim() ? text.trim().slice(0, 200) : undefined;
+}
+
 async function writeChunk(reply: FastifyReply, chunk: Uint8Array): Promise<void> {
   if (!reply.raw.write(chunk)) await once(reply.raw, 'drain');
 }
@@ -130,6 +89,22 @@ async function gatewayHandler(
     request.body && typeof request.body === 'object'
       ? ({ ...request.body } as Record<string, unknown>)
       : {};
+  const requestedModel =
+    typeof body.model === 'string' && body.model ? body.model : '(provider default)';
+  const clientUrl = `${request.protocol}://${request.headers.host ?? request.hostname}${request.url}`;
+  const clientRequest = {
+    method: request.method,
+    url: clientUrl,
+    headers: request.headers,
+    body,
+  };
+  const gatewayCurl = buildCurl({
+    url: clientUrl,
+    body,
+    authorization: '<ROUTER_API_KEY>',
+    accept: body.stream === true ? 'text/event-stream' : 'application/json',
+    requestId,
+  });
   let provider: ProviderRuntime | undefined;
   let model = typeof body.model === 'string' ? body.model : '';
   let usage: TokenUsage = emptyUsage();
@@ -137,58 +112,106 @@ async function gatewayHandler(
   let errorCode: string | undefined;
   let firstTokenAt: number | undefined;
   let traceOutput: unknown;
+  let upstreamCurl: string | undefined;
+  let upstreamRequest: unknown;
+  let upstreamResponse: unknown;
+  let capturedError: unknown;
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
+  const userId =
+    headerValue(request, langfuse.userIdHeader) ??
+    (typeof body.user === 'string' && body.user.trim()
+      ? body.user.trim().slice(0, 200)
+      : undefined);
+  const sessionId = headerValue(request, langfuse.sessionIdHeader);
+  const traceName = langfuse.traceName || `route-${endpoint}`;
+  const traceMetadata = {
+    ...langfuse.metadata,
+    requestId,
+    apiKey: key.name,
+    apiKeyId: key.id,
+    endpoint,
+  };
 
   const observation = propagateAttributes(
     {
-      traceName: `route-${endpoint}`,
-      userId: key.id,
-      sessionId: String(request.headers['x-session-id'] ?? requestId),
-      tags: ['gateway', endpoint],
+      traceName,
+      ...(userId ? { userId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      tags: [...new Set(['gateway', endpoint, ...langfuse.tags])],
       environment: langfuse.environment,
-      metadata: { requestId, apiKey: key.name, apiKeyId: key.id },
+      ...(langfuse.version ? { version: langfuse.version } : {}),
+      metadata: traceMetadata,
     },
     () =>
       startObservation(
-        'route-llm-request',
+        'generate-response',
         {
-          input: langfuse.captureInput ? body : { model, endpoint },
-          model,
-          metadata: { requestId, endpoint, apiKeyId: key.id },
+          input: langfuse.captureInput ? body : { model: requestedModel, endpoint },
+          model: requestedModel,
+          modelParameters: langfuseModelParameters(body),
+          metadata: { ...traceMetadata, requestedModel },
         },
         { asType: 'generation' },
       ),
   );
 
   try {
-    provider = await getProviderRuntime(key.providerConnectionId, requestId);
-    const transformed = buildUpstreamBody(body, endpoint, provider);
-    model = String(transformed.body.model);
-    const upstreamPath = endpoint === 'responses' ? '/responses' : '/chat/completions';
+    provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
+    const adapter = getProviderAdapter(provider.provider);
+    const prepared = adapter.prepareRequest(endpoint, body, provider);
+    model = String(prepared.body.model);
+    observation.update({
+      model,
+      modelParameters: langfuseModelParameters(prepared.body),
+      metadata: {
+        requestedModel,
+        actualModel: model,
+        provider: provider.provider,
+        providerConnectionId: provider.id,
+      },
+    });
+    const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
+    const upstreamHeaders = {
+      authorization: provider.authorization,
+      'content-type': 'application/json',
+      accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
+      'x-request-id': requestId,
+      ...provider.headers,
+    };
+    upstreamRequest = {
+      method: 'POST',
+      url: upstreamUrl,
+      headers: upstreamHeaders,
+      body: prepared.body,
+    };
+    upstreamCurl = buildCurl({
+      url: upstreamUrl,
+      body: prepared.body,
+      authorization: '<UPSTREAM_CREDENTIAL>',
+      accept: upstreamHeaders.accept,
+      requestId,
+    });
     const abortController = new AbortController();
     reply.raw.once('close', () => {
       if (!reply.raw.writableEnded) abortController.abort();
     });
 
-    const upstream = await fetch(`${provider.baseUrl}${upstreamPath}`, {
+    const upstream = await fetch(upstreamUrl, {
       method: 'POST',
-      headers: {
-        authorization: provider.authorization,
-        'content-type': 'application/json',
-        accept: transformed.body.stream === true ? 'text/event-stream' : 'application/json',
-        'x-request-id': requestId,
-        ...provider.headers,
-      },
-      body: JSON.stringify(transformed.body),
+      headers: upstreamHeaders,
+      body: JSON.stringify(prepared.body),
       signal: abortController.signal,
     });
     statusCode = upstream.status;
     const contentType = upstream.headers.get('content-type') ?? 'application/json';
+    const isEventStream =
+      contentType.toLowerCase().includes('text/event-stream') ||
+      (prepared.expectsSseOnSuccess && upstream.ok);
 
-    if (contentType.toLowerCase().includes('text/event-stream')) {
-      const parser = new SseAccumulator();
-      const chunks: Uint8Array[] = [];
-      if (transformed.clientWantsStream) {
+    if (isEventStream) {
+      const bridge = adapter.createStreamBridge(prepared);
+      const detailCollector = new SseDetailCollector();
+      if (prepared.clientWantsStream) {
         reply.hijack();
         reply.raw.statusCode = upstream.status;
         reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
@@ -202,23 +225,33 @@ async function gatewayHandler(
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (!firstTokenAt && value.byteLength > 0) firstTokenAt = Date.now();
-          parser.feed(value);
-          if (transformed.clientWantsStream) await writeChunk(reply, value);
-          else chunks.push(value);
+          detailCollector.feed(value);
+          const clientChunks = bridge.feed(value);
+          if (!firstTokenAt && bridge.hasOutput) firstTokenAt = Date.now();
+          if (prepared.clientWantsStream) {
+            for (const chunk of clientChunks) await writeChunk(reply, chunk);
+          }
         }
       }
-      parser.feed(new Uint8Array(), true);
-      usage = parser.usage;
-      errorCode = parser.errorCode;
-      traceOutput = parser.completedResponse;
+      detailCollector.feed(new Uint8Array(), true);
+      const finalChunks = bridge.feed(new Uint8Array(), true);
+      if (prepared.clientWantsStream) {
+        for (const chunk of finalChunks) await writeChunk(reply, chunk);
+      }
+      usage = bridge.usage;
+      errorCode = bridge.errorCode;
+      traceOutput = bridge.completedResponse;
+      upstreamResponse = {
+        status: upstream.status,
+        headers: Object.fromEntries(upstream.headers.entries()),
+        body: detailCollector.snapshot(),
+      };
 
-      if (transformed.clientWantsStream) {
+      if (prepared.clientWantsStream) {
         reply.raw.end();
-      } else if (parser.completedResponse) {
-        reply.code(upstream.status).type('application/json').send(parser.completedResponse);
+      } else if (bridge.completedResponse) {
+        reply.code(upstream.status).type('application/json').send(bridge.completedResponse);
       } else {
-        const text = Buffer.concat(chunks).toString('utf8');
         statusCode = upstream.ok ? 502 : upstream.status;
         errorCode = errorCode ?? 'invalid_upstream_response';
         reply.code(statusCode).send({
@@ -227,7 +260,7 @@ async function gatewayHandler(
             code: errorCode,
             message: upstream.ok
               ? 'Upstream stream ended without a completed response.'
-              : text.slice(0, 2_000),
+              : 'Upstream stream ended with an error.',
           },
         });
       }
@@ -239,16 +272,23 @@ async function gatewayHandler(
       } catch {
         payload = { error: { type: 'api_error', message: text || upstream.statusText } };
       }
-      usage = extractTokenUsage(payload);
-      errorCode = errorCodeFromPayload(payload);
-      traceOutput = outputForTrace(payload);
-      reply.code(upstream.status).type('application/json').send(payload);
+      const transformedPayload = adapter.transformJsonResponse(prepared, payload);
+      upstreamResponse = {
+        status: upstream.status,
+        headers: Object.fromEntries(upstream.headers.entries()),
+        body: payload,
+      };
+      usage = extractTokenUsage(transformedPayload);
+      errorCode = errorCodeFromPayload(transformedPayload);
+      traceOutput = outputForTrace(transformedPayload);
+      reply.code(upstream.status).type('application/json').send(transformedPayload);
     }
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
     statusCode = typed.statusCode ?? (typed.name === 'AbortError' ? 499 : 502);
     errorCode =
       typed.code ?? (typed.name === 'AbortError' ? 'client_closed_request' : 'upstream_error');
+    capturedError = { name: typed.name, code: errorCode, message: typed.message };
     if (!reply.sent && !reply.raw.headersSent) {
       await reply.code(statusCode).send({
         error: { type: 'api_error', code: errorCode, message: typed.message },
@@ -261,7 +301,9 @@ async function gatewayHandler(
         requestId,
         virtualApiKeyId: key.id,
         ...(provider ? { providerConnectionId: provider.id } : {}),
+        ...(provider ? { provider: provider.provider } : {}),
         endpoint,
+        requestedModel,
         model: model || 'unknown',
         statusCode,
         usage,
@@ -269,16 +311,35 @@ async function gatewayHandler(
         ...(firstTokenAt ? { timeToFirstTokenMs: firstTokenAt - startedAt } : {}),
         ...(errorCode ? { errorCode } : {}),
         metadata: { providerAuthType: provider?.authType ?? null },
+        details: {
+          gatewayCurl,
+          ...(upstreamCurl ? { upstreamCurl } : {}),
+          clientRequest,
+          ...(upstreamRequest !== undefined ? { upstreamRequest } : {}),
+          ...(upstreamResponse !== undefined ? { upstreamResponse } : {}),
+          ...(capturedError !== undefined ? { error: capturedError } : {}),
+        },
       });
       observation.update({
         output: langfuse.captureOutput ? traceOutput : { statusCode, success: statusCode < 400 },
+        model: model || requestedModel,
+        ...(firstTokenAt ? { completionStartTime: new Date(firstTokenAt) } : {}),
         usageDetails: {
           input: usage.inputTokens,
+          input_cached: usage.cachedInputTokens,
           output: usage.outputTokens,
           total: usage.totalTokens,
         },
         costDetails: { total: recorded.costUsd },
-        metadata: { statusCode, latencyMs, errorCode: errorCode ?? '' },
+        metadata: {
+          statusCode,
+          latencyMs,
+          timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
+          errorCode: errorCode ?? '',
+        },
+        ...(statusCode >= 400
+          ? { level: 'ERROR' as const, statusMessage: errorCode ?? `HTTP ${statusCode}` }
+          : {}),
       });
     } catch (recordError) {
       request.log.error({ err: recordError, requestId }, 'Failed to record gateway usage');

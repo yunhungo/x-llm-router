@@ -10,6 +10,12 @@ export interface KeyLangfuseSettings {
   secretKey: string;
   baseUrl: string;
   environment: string;
+  traceName: string;
+  version: string;
+  tags: string[];
+  metadata: Record<string, string>;
+  userIdHeader: string;
+  sessionIdHeader: string;
   captureInput: boolean;
   captureOutput: boolean;
 }
@@ -30,6 +36,12 @@ export function defaultLangfuseSettings(): KeyLangfuseSettings {
     secretKey: '',
     baseUrl: 'https://cloud.langfuse.com',
     environment: 'production',
+    traceName: '',
+    version: '',
+    tags: [],
+    metadata: {},
+    userIdHeader: 'x-user-id',
+    sessionIdHeader: 'x-session-id',
     captureInput: true,
     captureOutput: true,
   };
@@ -46,8 +58,6 @@ export function decryptLangfuseSettings(
   return {
     ...defaultLangfuseSettings(),
     ...decryptJson<Partial<KeyLangfuseSettings>>(ciphertext),
-    captureInput: true,
-    captureOutput: true,
   };
 }
 
@@ -59,6 +69,14 @@ export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<s
     hasSecretKey: Boolean(value.secretKey),
     baseUrl: value.baseUrl,
     environment: value.environment,
+    traceName: value.traceName,
+    version: value.version,
+    tags: value.tags,
+    metadata: value.metadata,
+    userIdHeader: value.userIdHeader,
+    sessionIdHeader: value.sessionIdHeader,
+    captureInput: value.captureInput,
+    captureOutput: value.captureOutput,
     restartRequiredAfterSave: true,
   };
 }

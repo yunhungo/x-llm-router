@@ -16,7 +16,40 @@ export const langfuseSettingsSchema = z.object({
   publicKey: z.string().trim().max(255),
   secretKey: z.string().trim().max(512).optional(),
   baseUrl: z.string().url(),
-  environment: z.string().trim().min(1).max(40),
+  environment: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(
+      /^(?!langfuse)[a-z0-9][a-z0-9_-]*$/,
+      'Environment 只能包含小写字母、数字、连字符或下划线，且不能以 langfuse 开头。',
+    ),
+  traceName: z.string().trim().max(200).default(''),
+  version: z.string().trim().max(120).default(''),
+  tags: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  metadata: z
+    .record(z.string().trim().min(1).max(120), z.string().max(200))
+    .refine((value) => Object.keys(value).length <= 20, 'Metadata 最多支持 20 个字段。')
+    .default({}),
+  userIdHeader: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .max(120)
+    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]+$/, 'User ID Header 不是有效的 HTTP Header 名称。')
+    .default('x-user-id'),
+  sessionIdHeader: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .max(120)
+    .regex(/^[!#$%&'*+.^_`|~0-9a-z-]+$/, 'Session ID Header 不是有效的 HTTP Header 名称。')
+    .default('x-session-id'),
+  captureInput: z.boolean().default(true),
+  captureOutput: z.boolean().default(true),
 });
 
 export const createApiKeySchema = z.object({
@@ -30,8 +63,10 @@ export const createApiKeySchema = z.object({
 
 export const createProviderApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
+  provider: z.literal('openai').default('openai'),
+  apiMode: z.enum(['responses', 'chat.completions']),
   apiKey: z.string().min(12),
-  baseUrl: z.string().url().optional(),
+  baseUrl: z.string().url(),
   defaultModel: z.string().trim().min(1).max(120).optional(),
   priority: z.number().int().min(0).max(10_000).default(100),
 });

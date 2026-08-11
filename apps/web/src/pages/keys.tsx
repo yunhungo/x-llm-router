@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
+import {
+  BarChart3,
+  Check,
+  Copy,
+  KeyRound,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Waypoints,
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
-import {
-  Badge,
-  Button,
-  EmptyState,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  Skeleton,
-} from '../components/ui';
+import { Button, EmptyState, Field, Input, Modal, PageHeader, Skeleton } from '../components/ui';
 import type { LangfuseConfig, Provider, VirtualKey } from '../types';
 
 interface CreatedKey {
@@ -27,6 +28,14 @@ interface LangfuseDraft {
   secretKey: string;
   baseUrl: string;
   environment: string;
+  traceName: string;
+  version: string;
+  tags: string;
+  metadata: Array<{ key: string; value: string }>;
+  userIdHeader: string;
+  sessionIdHeader: string;
+  captureInput: boolean;
+  captureOutput: boolean;
 }
 
 const emptyLangfuse = (): LangfuseDraft => ({
@@ -35,15 +44,50 @@ const emptyLangfuse = (): LangfuseDraft => ({
   secretKey: '',
   baseUrl: 'https://cloud.langfuse.com',
   environment: 'production',
+  traceName: '',
+  version: '',
+  tags: 'gateway',
+  metadata: [],
+  userIdHeader: 'x-user-id',
+  sessionIdHeader: 'x-session-id',
+  captureInput: true,
+  captureOutput: true,
 });
 
 function langfuseDraft(config: LangfuseConfig): LangfuseDraft {
   return {
-    enabled: config.enabled,
-    publicKey: config.publicKey,
+    enabled: Boolean(config.enabled),
+    publicKey: config.publicKey ?? '',
     secretKey: '',
-    baseUrl: config.baseUrl,
-    environment: config.environment,
+    baseUrl: config.baseUrl ?? 'https://cloud.langfuse.com',
+    environment: config.environment ?? 'production',
+    traceName: config.traceName ?? '',
+    version: config.version ?? '',
+    tags: config.tags?.join(', ') ?? 'gateway',
+    metadata: Object.entries(config.metadata ?? {}).map(([key, value]) => ({ key, value })),
+    userIdHeader: config.userIdHeader ?? 'x-user-id',
+    sessionIdHeader: config.sessionIdHeader ?? 'x-session-id',
+    captureInput: config.captureInput ?? true,
+    captureOutput: config.captureOutput ?? true,
+  };
+}
+
+function langfusePayload(value: LangfuseDraft) {
+  return {
+    ...value,
+    tags: [
+      ...new Set(
+        value.tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      ),
+    ],
+    metadata: Object.fromEntries(
+      value.metadata
+        .map((entry) => [entry.key.trim(), entry.value] as const)
+        .filter(([key]) => Boolean(key)),
+    ),
   };
 }
 
@@ -103,9 +147,128 @@ function LangfuseFields({
             <Input
               value={value.environment}
               onChange={(event) => onChange({ ...value, environment: event.target.value })}
+              placeholder="production"
               required
             />
           </Field>
+          <div className="form-grid">
+            <Field label="Trace Name" hint="留空时按 API 端点命名">
+              <Input
+                value={value.traceName}
+                onChange={(event) => onChange({ ...value, traceName: event.target.value })}
+                placeholder="llm-gateway"
+              />
+            </Field>
+            <Field label="Version" hint="用于比较版本变更">
+              <Input
+                value={value.version}
+                onChange={(event) => onChange({ ...value, version: event.target.value })}
+                placeholder="2026.08.11"
+              />
+            </Field>
+          </div>
+          <Field label="Tags" hint="用逗号分隔，适合低基数业务维度">
+            <Input
+              value={value.tags}
+              onChange={(event) => onChange({ ...value, tags: event.target.value })}
+              placeholder="gateway, production"
+            />
+          </Field>
+          <div className="form-grid">
+            <Field label="User ID Header" hint="映射到 Langfuse userId">
+              <Input
+                value={value.userIdHeader}
+                onChange={(event) => onChange({ ...value, userIdHeader: event.target.value })}
+                placeholder="x-user-id"
+              />
+            </Field>
+            <Field label="Session ID Header" hint="映射到 Langfuse sessionId">
+              <Input
+                value={value.sessionIdHeader}
+                onChange={(event) => onChange({ ...value, sessionIdHeader: event.target.value })}
+                placeholder="x-session-id"
+              />
+            </Field>
+          </div>
+          <div className="langfuse-capture-options">
+            <label>
+              <input
+                type="checkbox"
+                checked={value.captureInput}
+                onChange={(event) => onChange({ ...value, captureInput: event.target.checked })}
+              />
+              <span>记录请求 Input</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={value.captureOutput}
+                onChange={(event) => onChange({ ...value, captureOutput: event.target.checked })}
+              />
+              <span>记录响应 Output</span>
+            </label>
+          </div>
+          <div className="langfuse-metadata-editor">
+            <div className="langfuse-section-heading">
+              <div>
+                <strong>自定义 Metadata</strong>
+                <span>按 Langfuse metadata 字符串键值传入</span>
+              </div>
+              <button
+                type="button"
+                className="button button-secondary langfuse-add-field"
+                onClick={() =>
+                  onChange({ ...value, metadata: [...value.metadata, { key: '', value: '' }] })
+                }
+              >
+                <Plus size={13} /> 添加字段
+              </button>
+            </div>
+            {value.metadata.map((entry, index) => (
+              <div className="langfuse-metadata-row" key={index}>
+                <Input
+                  value={entry.key}
+                  onChange={(event) =>
+                    onChange({
+                      ...value,
+                      metadata: value.metadata.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, key: event.target.value } : item,
+                      ),
+                    })
+                  }
+                  placeholder="字段名，例如 tenant"
+                  aria-label={`Metadata 字段 ${index + 1} 名称`}
+                  required
+                />
+                <Input
+                  value={entry.value}
+                  onChange={(event) =>
+                    onChange({
+                      ...value,
+                      metadata: value.metadata.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, value: event.target.value } : item,
+                      ),
+                    })
+                  }
+                  placeholder="字段值"
+                  aria-label={`Metadata 字段 ${index + 1} 值`}
+                />
+                <button
+                  type="button"
+                  className="icon-button danger-icon"
+                  onClick={() =>
+                    onChange({
+                      ...value,
+                      metadata: value.metadata.filter((_, itemIndex) => itemIndex !== index),
+                    })
+                  }
+                  aria-label={`删除 Metadata 字段 ${index + 1}`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
         </>
       ) : null}
     </div>
@@ -113,6 +276,7 @@ function LangfuseFields({
 }
 
 export function KeysPage() {
+  const navigate = useNavigate();
   const [keys, setKeys] = useState<VirtualKey[]>();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -151,7 +315,7 @@ export function KeysPage() {
           rpmLimit: rpm,
           budgetUsd: budget ? Number(budget) : null,
           providerConnectionId: providerId || null,
-          langfuse,
+          langfuse: langfusePayload(langfuse),
         }),
       });
       setCreated(response);
@@ -172,7 +336,7 @@ export function KeysPage() {
       await api(`/api/admin/keys/${editingKey.id}/langfuse`, {
         method: 'PUT',
         ...jsonBody({
-          ...editingLangfuse,
+          ...langfusePayload(editingLangfuse),
           secretKey: editingLangfuse.secretKey || undefined,
         }),
       });
@@ -231,7 +395,18 @@ export function KeysPage() {
               </thead>
               <tbody>
                 {keys.map((key) => (
-                  <tr key={key.id}>
+                  <tr
+                    key={key.id}
+                    className="clickable-row"
+                    tabIndex={0}
+                    onClick={() => navigate(`/keys/${key.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate(`/keys/${key.id}`);
+                      }
+                    }}
+                  >
                     <td>
                       <strong>{key.name}</strong>
                       <small>{key.status === 'active' ? 'Active' : 'Revoked'}</small>
@@ -241,10 +416,11 @@ export function KeysPage() {
                     </td>
                     <td>{key.providerName ?? '自动路由'}</td>
                     <td>
-                      <Badge tone={key.langfuse.enabled ? 'success' : 'neutral'}>
-                        {key.langfuse.enabled ? 'On' : 'Off'}
-                      </Badge>
-                      {key.langfuse.publicKey ? <small>{key.langfuse.publicKey}</small> : null}
+                      {key.langfuse.enabled && key.langfuse.publicKey ? (
+                        <small>{key.langfuse.publicKey}</small>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td>{key.rpmLimit.toLocaleString()}</td>
                     <td>
@@ -265,7 +441,18 @@ export function KeysPage() {
                       <div className="key-actions">
                         <button
                           className="icon-button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/keys/${key.id}`);
+                          }}
+                          aria-label={`查看 ${key.name} 的调用情况`}
+                        >
+                          <BarChart3 size={15} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
                             setEditingKey(key);
                             setEditingLangfuse(langfuseDraft(key.langfuse));
                             setError('');
@@ -277,7 +464,10 @@ export function KeysPage() {
                         <button
                           className="icon-button danger-icon"
                           disabled={key.status !== 'active'}
-                          onClick={() => void revoke(key)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void revoke(key);
+                          }}
                           aria-label="撤销"
                         >
                           <Trash2 size={15} />

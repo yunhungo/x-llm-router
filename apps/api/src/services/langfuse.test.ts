@@ -23,17 +23,19 @@ describe('per-key Langfuse settings', () => {
       secretKey: 'sk-lf-secret',
       baseUrl: 'https://cloud.langfuse.com',
       environment: 'production',
+      traceName: 'gateway-request',
+      version: '2026.08.11',
+      tags: ['gateway', 'paid'],
+      metadata: { tenant: 'acme' },
+      userIdHeader: 'x-user-id',
+      sessionIdHeader: 'x-session-id',
       captureInput: false,
       captureOutput: true,
     };
     const encrypted = encryptLangfuseSettings(settings);
 
     expect(encrypted).not.toContain(settings.secretKey);
-    expect(decryptLangfuseSettings(encrypted)).toEqual({
-      ...settings,
-      captureInput: true,
-      captureOutput: true,
-    });
+    expect(decryptLangfuseSettings(encrypted)).toEqual(settings);
   });
 
   it('never exposes the secret key to the admin UI', () => {
@@ -44,6 +46,12 @@ describe('per-key Langfuse settings', () => {
         secretKey: 'sk-lf-secret',
         baseUrl: 'https://cloud.langfuse.com',
         environment: 'production',
+        traceName: '',
+        version: '',
+        tags: [],
+        metadata: {},
+        userIdHeader: 'x-user-id',
+        sessionIdHeader: 'x-session-id',
         captureInput: false,
         captureOutput: false,
       }),
@@ -52,6 +60,8 @@ describe('per-key Langfuse settings', () => {
     expect(publicLangfuseSettings(settings)).toMatchObject({
       publicKey: 'pk-lf-project',
       hasSecretKey: true,
+      captureInput: false,
+      captureOutput: false,
     });
     expect(JSON.stringify(publicLangfuseSettings(settings))).not.toContain('sk-lf-secret');
   });

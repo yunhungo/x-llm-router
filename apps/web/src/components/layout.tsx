@@ -13,6 +13,7 @@ import {
 import { NavLink } from 'react-router-dom';
 
 import type { User } from '../types';
+import { BrandMark } from './brand-mark';
 
 const navigation = [
   { to: '/', label: '概览', icon: ChartNoAxesCombined, end: true },
@@ -37,10 +38,7 @@ export function AppLayout({
     <div className={`app-shell ${collapsed ? 'is-collapsed' : ''}`}>
       <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
         <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-          </div>
+          <BrandMark />
           <div className="brand-copy">
             <strong>xRouter</strong>
             <span>Control plane</span>
@@ -90,6 +88,7 @@ export function AppLayout({
           <button className="icon-button" onClick={() => setMobileOpen(true)} aria-label="打开菜单">
             <Menu size={18} />
           </button>
+          <BrandMark />
           <strong>xRouter</strong>
           <span className="live-dot">
             <i /> Online

@@ -208,9 +208,9 @@ export async function pollDeviceFlow(input: {
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO provider_connections(
-        id, name, provider, auth_type, credentials_ciphertext, account_id, base_url,
+        id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
         token_expires_at, created_by
-      ) VALUES ($1,$2,'openai','oauth',$3,$4,$5,$6,$7)`,
+      ) VALUES ($1,$2,'openai','oauth','responses',$3,$4,$5,$6,$7)`,
       [
         providerConnectionId,
         flow.desired_name,
