@@ -83,6 +83,7 @@ export interface UsageLog {
   requestId: string;
   apiKeyId: string | null;
   endpoint: string;
+  requestedModel: string;
   model: string;
   statusCode: number;
   success: boolean;
@@ -97,6 +98,28 @@ export interface UsageLog {
   createdAt: string;
   apiKeyName: string | null;
   providerName: string | null;
+  detailAvailable: boolean;
+}
+
+export interface UsageCallDetail {
+  id: string;
+  requestId: string;
+  endpoint: string;
+  requestedModel: string;
+  upstreamModel: string;
+  gatewayCurl: string;
+  upstreamCurl: string | null;
+  clientRequest: unknown;
+  upstreamRequest: unknown | null;
+  upstreamResponse: unknown | null;
+  error: unknown | null;
+  capturedAt: string;
+  expiresAt: string;
+}
+
+export interface UsageCallDetailResponse {
+  detail: UsageCallDetail | null;
+  expired: boolean;
 }
 
 export type KeyAnalyticsRange = '24h' | '7d' | '30d';

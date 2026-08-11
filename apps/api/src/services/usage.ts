@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getPool } from '../db/client';
+import { prepareStoredJson } from './usage-details';
 
 export interface TokenUsage {
   inputTokens: number;
@@ -53,6 +54,15 @@ export interface ModelPrice {
   outputPerMillion: number;
 }
 
+export interface UsageCallDetails {
+  gatewayCurl: string;
+  upstreamCurl?: string;
+  clientRequest: unknown;
+  upstreamRequest?: unknown;
+  upstreamResponse?: unknown;
+  error?: unknown;
+}
+
 export function computeCost(usage: TokenUsage, price: ModelPrice): number {
   const cachedInputTokens = Math.min(usage.inputTokens, usage.cachedInputTokens);
   const uncachedInputTokens = Math.max(usage.inputTokens - cachedInputTokens, 0);
@@ -97,6 +107,7 @@ export async function recordUsage(input: {
   providerConnectionId?: string;
   provider?: string;
   endpoint: 'responses' | 'chat.completions';
+  requestedModel: string;
   model: string;
   statusCode: number;
   usage: TokenUsage;
@@ -104,24 +115,28 @@ export async function recordUsage(input: {
   timeToFirstTokenMs?: number;
   errorCode?: string;
   metadata?: Record<string, unknown>;
+  details?: UsageCallDetails;
 }): Promise<{ costUsd: number }> {
   const costUsd = await calculateCost(input.provider ?? '*', input.model, input.usage);
+  const usageLogId = randomUUID();
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    await client.query(
+    const inserted = await client.query<{ id: string }>(
       `INSERT INTO usage_logs(
-        id, request_id, virtual_api_key_id, provider_connection_id, endpoint, model,
+        id, request_id, virtual_api_key_id, provider_connection_id, endpoint, requested_model, model,
         status_code, success, input_tokens, cached_input_tokens, output_tokens, total_tokens,
         cost_usd, latency_ms, time_to_first_token_ms, error_code, metadata
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb)
-      ON CONFLICT (request_id) DO NOTHING`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+      ON CONFLICT (request_id) DO NOTHING
+      RETURNING id`,
       [
-        randomUUID(),
+        usageLogId,
         input.requestId,
         input.virtualApiKeyId,
         input.providerConnectionId ?? null,
         input.endpoint,
+        input.requestedModel,
         input.model,
         input.statusCode,
         input.statusCode >= 200 && input.statusCode < 400,
@@ -136,12 +151,35 @@ export async function recordUsage(input: {
         JSON.stringify(input.metadata ?? {}),
       ],
     );
-    if (costUsd > 0) {
+    if (inserted.rowCount && input.details) {
+      await client.query(
+        `INSERT INTO usage_log_details(
+           usage_log_id, gateway_curl, upstream_curl, client_request,
+           upstream_request, upstream_response, error
+         ) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7::jsonb)`,
+        [
+          usageLogId,
+          input.details.gatewayCurl,
+          input.details.upstreamCurl ?? null,
+          JSON.stringify(prepareStoredJson(input.details.clientRequest)),
+          input.details.upstreamRequest === undefined
+            ? null
+            : JSON.stringify(prepareStoredJson(input.details.upstreamRequest)),
+          input.details.upstreamResponse === undefined
+            ? null
+            : JSON.stringify(prepareStoredJson(input.details.upstreamResponse)),
+          input.details.error === undefined
+            ? null
+            : JSON.stringify(prepareStoredJson(input.details.error)),
+        ],
+      );
+    }
+    if (inserted.rowCount && costUsd > 0) {
       await client.query(
         `UPDATE virtual_api_keys SET spend_usd = spend_usd + $2, last_used_at = now() WHERE id = $1`,
         [input.virtualApiKeyId, costUsd],
       );
-    } else {
+    } else if (inserted.rowCount) {
       await client.query('UPDATE virtual_api_keys SET last_used_at = now() WHERE id = $1', [
         input.virtualApiKeyId,
       ]);

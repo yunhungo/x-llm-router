@@ -7,6 +7,7 @@ import { getProviderAdapter } from '../providers/registry';
 import type { GatewayEndpoint } from '../providers/types';
 import { defaultLangfuseSettings } from '../services/langfuse';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
+import { buildCurl, SseDetailCollector } from '../services/usage-details';
 import { requireVirtualApiKey } from '../services/virtual-keys';
 import { emptyUsage, extractTokenUsage, recordUsage, type TokenUsage } from '../services/usage';
 
@@ -50,6 +51,22 @@ async function gatewayHandler(
     request.body && typeof request.body === 'object'
       ? ({ ...request.body } as Record<string, unknown>)
       : {};
+  const requestedModel =
+    typeof body.model === 'string' && body.model ? body.model : '(provider default)';
+  const clientUrl = `${request.protocol}://${request.headers.host ?? request.hostname}${request.url}`;
+  const clientRequest = {
+    method: request.method,
+    url: clientUrl,
+    headers: request.headers,
+    body,
+  };
+  const gatewayCurl = buildCurl({
+    url: clientUrl,
+    body,
+    authorization: '<ROUTER_API_KEY>',
+    accept: body.stream === true ? 'text/event-stream' : 'application/json',
+    requestId,
+  });
   let provider: ProviderRuntime | undefined;
   let model = typeof body.model === 'string' ? body.model : '';
   let usage: TokenUsage = emptyUsage();
@@ -57,6 +74,10 @@ async function gatewayHandler(
   let errorCode: string | undefined;
   let firstTokenAt: number | undefined;
   let traceOutput: unknown;
+  let upstreamCurl: string | undefined;
+  let upstreamRequest: unknown;
+  let upstreamResponse: unknown;
+  let capturedError: unknown;
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
 
   const observation = propagateAttributes(
@@ -85,20 +106,35 @@ async function gatewayHandler(
     const adapter = getProviderAdapter(provider.provider);
     const prepared = adapter.prepareRequest(endpoint, body, provider);
     model = String(prepared.body.model);
+    const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
+    const upstreamHeaders = {
+      authorization: provider.authorization,
+      'content-type': 'application/json',
+      accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
+      'x-request-id': requestId,
+      ...provider.headers,
+    };
+    upstreamRequest = {
+      method: 'POST',
+      url: upstreamUrl,
+      headers: upstreamHeaders,
+      body: prepared.body,
+    };
+    upstreamCurl = buildCurl({
+      url: upstreamUrl,
+      body: prepared.body,
+      authorization: '<UPSTREAM_CREDENTIAL>',
+      accept: upstreamHeaders.accept,
+      requestId,
+    });
     const abortController = new AbortController();
     reply.raw.once('close', () => {
       if (!reply.raw.writableEnded) abortController.abort();
     });
 
-    const upstream = await fetch(`${provider.baseUrl}${prepared.path}`, {
+    const upstream = await fetch(upstreamUrl, {
       method: 'POST',
-      headers: {
-        authorization: provider.authorization,
-        'content-type': 'application/json',
-        accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
-        'x-request-id': requestId,
-        ...provider.headers,
-      },
+      headers: upstreamHeaders,
       body: JSON.stringify(prepared.body),
       signal: abortController.signal,
     });
@@ -110,6 +146,7 @@ async function gatewayHandler(
 
     if (isEventStream) {
       const bridge = adapter.createStreamBridge(prepared);
+      const detailCollector = new SseDetailCollector();
       if (prepared.clientWantsStream) {
         reply.hijack();
         reply.raw.statusCode = upstream.status;
@@ -125,12 +162,14 @@ async function gatewayHandler(
           const { done, value } = await reader.read();
           if (done) break;
           if (!firstTokenAt && value.byteLength > 0) firstTokenAt = Date.now();
+          detailCollector.feed(value);
           const clientChunks = bridge.feed(value);
           if (prepared.clientWantsStream) {
             for (const chunk of clientChunks) await writeChunk(reply, chunk);
           }
         }
       }
+      detailCollector.feed(new Uint8Array(), true);
       const finalChunks = bridge.feed(new Uint8Array(), true);
       if (prepared.clientWantsStream) {
         for (const chunk of finalChunks) await writeChunk(reply, chunk);
@@ -138,6 +177,11 @@ async function gatewayHandler(
       usage = bridge.usage;
       errorCode = bridge.errorCode;
       traceOutput = bridge.completedResponse;
+      upstreamResponse = {
+        status: upstream.status,
+        headers: Object.fromEntries(upstream.headers.entries()),
+        body: detailCollector.snapshot(),
+      };
 
       if (prepared.clientWantsStream) {
         reply.raw.end();
@@ -165,6 +209,11 @@ async function gatewayHandler(
         payload = { error: { type: 'api_error', message: text || upstream.statusText } };
       }
       const transformedPayload = adapter.transformJsonResponse(prepared, payload);
+      upstreamResponse = {
+        status: upstream.status,
+        headers: Object.fromEntries(upstream.headers.entries()),
+        body: payload,
+      };
       usage = extractTokenUsage(transformedPayload);
       errorCode = errorCodeFromPayload(transformedPayload);
       traceOutput = outputForTrace(transformedPayload);
@@ -175,6 +224,7 @@ async function gatewayHandler(
     statusCode = typed.statusCode ?? (typed.name === 'AbortError' ? 499 : 502);
     errorCode =
       typed.code ?? (typed.name === 'AbortError' ? 'client_closed_request' : 'upstream_error');
+    capturedError = { name: typed.name, code: errorCode, message: typed.message };
     if (!reply.sent && !reply.raw.headersSent) {
       await reply.code(statusCode).send({
         error: { type: 'api_error', code: errorCode, message: typed.message },
@@ -189,6 +239,7 @@ async function gatewayHandler(
         ...(provider ? { providerConnectionId: provider.id } : {}),
         ...(provider ? { provider: provider.provider } : {}),
         endpoint,
+        requestedModel,
         model: model || 'unknown',
         statusCode,
         usage,
@@ -196,6 +247,14 @@ async function gatewayHandler(
         ...(firstTokenAt ? { timeToFirstTokenMs: firstTokenAt - startedAt } : {}),
         ...(errorCode ? { errorCode } : {}),
         metadata: { providerAuthType: provider?.authType ?? null },
+        details: {
+          gatewayCurl,
+          ...(upstreamCurl ? { upstreamCurl } : {}),
+          clientRequest,
+          ...(upstreamRequest !== undefined ? { upstreamRequest } : {}),
+          ...(upstreamResponse !== undefined ? { upstreamResponse } : {}),
+          ...(capturedError !== undefined ? { error: capturedError } : {}),
+        },
       });
       observation.update({
         output: langfuse.captureOutput ? traceOutput : { statusCode, success: statusCode < 400 },

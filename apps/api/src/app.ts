@@ -10,6 +10,8 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { gatewayRoutes } from './routes/gateway';
 import { keyAnalyticsRoutes } from './routes/key-analytics';
+import { usageDetailRoutes } from './routes/usage-details';
+import { registerUsageDetailRetention } from './services/usage-details';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const config = getConfig();
@@ -57,7 +59,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(adminRoutes);
   await app.register(keyAnalyticsRoutes);
+  await app.register(usageDetailRoutes);
   await app.register(gatewayRoutes);
+  registerUsageDetailRetention(app);
 
   app.setNotFoundHandler(async (request, reply) => {
     return reply.code(404).send({

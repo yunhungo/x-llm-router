@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CircleDollarSign,
+  ChevronDown,
   Clock3,
   Gauge,
   KeyRound,
@@ -14,8 +15,9 @@ import { Link, useParams } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
 import { Badge, Button, PageHeader, Skeleton } from '../components/ui';
-import type { KeyAnalyticsRange, KeyAnalyticsResponse, ModelPriceMatch } from '../types';
+import type { KeyAnalyticsRange, KeyAnalyticsResponse, ModelPriceMatch, Provider } from '../types';
 import './key-detail.css';
+import { UsageLogDetailPanel } from './usage-log-detail';
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -66,16 +68,23 @@ export function KeyDetailPage() {
   const [notice, setNotice] = useState('');
   const [priceDrafts, setPriceDrafts] = useState<Record<string, PriceDraft>>({});
   const [savingPrice, setSavingPrice] = useState('');
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [providerId, setProviderId] = useState('');
+  const [savingProvider, setSavingProvider] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string>();
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError('');
     try {
-      const response = await api<KeyAnalyticsResponse>(
-        `/api/admin/keys/${id}/analytics?range=${range}&limit=100`,
-      );
+      const [response, providerResponse] = await Promise.all([
+        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`),
+        api<{ providers: Provider[] }>('/api/admin/providers'),
+      ]);
       setData(response);
+      setProviders(providerResponse.providers.filter((provider) => provider.status === 'active'));
+      setProviderId(response.key.providerConnectionId ?? '');
       setPriceDrafts(
         Object.fromEntries(
           response.prices.map((price) => [`${price.provider}:${price.model}`, priceDraft(price)]),
@@ -126,6 +135,25 @@ export function KeyDetailPage() {
       setError(caught instanceof ApiError ? caught.message : '价格保存失败。');
     } finally {
       setSavingPrice('');
+    }
+  };
+
+  const saveProvider = async () => {
+    if (!id) return;
+    setSavingProvider(true);
+    setError('');
+    setNotice('');
+    try {
+      await api(`/api/admin/keys/${id}`, {
+        method: 'PATCH',
+        ...jsonBody({ providerConnectionId: providerId || null }),
+      });
+      setNotice('上游连接已更新，仅影响后续调用。');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : '上游连接保存失败。');
+    } finally {
+      setSavingProvider(false);
     }
   };
 
@@ -387,7 +415,33 @@ export function KeyDetailPage() {
         </section>
         <section className="panel key-config-summary">
           <div className="panel-heading">
-            <h2>限额</h2>
+            <h2>配置</h2>
+          </div>
+          <div className="key-provider-editor">
+            <label htmlFor="key-provider">上游连接</label>
+            <div>
+              <select
+                id="key-provider"
+                className="input"
+                value={providerId}
+                onChange={(event) => setProviderId(event.target.value)}
+              >
+                <option value="">自动路由</option>
+                {providers.map((provider) => (
+                  <option value={provider.id} key={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="secondary"
+                loading={savingProvider}
+                disabled={providerId === (key.providerConnectionId ?? '')}
+                onClick={() => void saveProvider()}
+              >
+                保存
+              </Button>
+            </div>
           </div>
           <dl>
             <div>
@@ -507,47 +561,81 @@ export function KeyDetailPage() {
                 <th>延迟</th>
                 <th>成本</th>
                 <th>时间</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {data.logs.length ? (
                 data.logs.map((log) => (
-                  <tr key={log.id}>
-                    <td>
-                      <Badge tone={log.success ? 'success' : 'danger'}>{log.statusCode}</Badge>
-                    </td>
-                    <td>
-                      <code>{endpointLabel(log.endpoint)}</code>
-                      <small>{log.providerName ?? '—'}</small>
-                    </td>
-                    <td>
-                      <code>{log.model}</code>
-                      {log.errorCode ? <small>{log.errorCode}</small> : null}
-                    </td>
-                    <td>
-                      {integer.format(log.totalTokens)}
-                      <small>
-                        {integer.format(log.inputTokens)} in ·{' '}
-                        {integer.format(log.cachedInputTokens)} cached ·{' '}
-                        {integer.format(log.outputTokens)} out
-                      </small>
-                    </td>
-                    <td>
-                      {log.tps === null ? '—' : decimal.format(log.tps)}
-                      <small>
-                        {log.timeToFirstTokenMs === null
-                          ? 'TTFT —'
-                          : `TTFT ${log.timeToFirstTokenMs} ms`}
-                      </small>
-                    </td>
-                    <td>{integer.format(log.latencyMs)} ms</td>
-                    <td>{money.format(log.costUsd)}</td>
-                    <td>{formatDate(log.createdAt)}</td>
-                  </tr>
+                  <Fragment key={log.id}>
+                    <tr
+                      className="usage-log-row"
+                      aria-expanded={expandedLogId === log.id}
+                      onClick={() =>
+                        setExpandedLogId((current) => (current === log.id ? undefined : log.id))
+                      }
+                    >
+                      <td>
+                        <Badge tone={log.success ? 'success' : 'danger'}>{log.statusCode}</Badge>
+                      </td>
+                      <td>
+                        <code>{endpointLabel(log.endpoint)}</code>
+                        <small>{log.providerName ?? '—'}</small>
+                      </td>
+                      <td>
+                        <code>{log.model}</code>
+                        {log.requestedModel !== log.model ? (
+                          <small>请求 {log.requestedModel}</small>
+                        ) : log.errorCode ? (
+                          <small>{log.errorCode}</small>
+                        ) : null}
+                      </td>
+                      <td>
+                        {integer.format(log.totalTokens)}
+                        <small>
+                          {integer.format(log.inputTokens)} in ·{' '}
+                          {integer.format(log.cachedInputTokens)} cached ·{' '}
+                          {integer.format(log.outputTokens)} out
+                        </small>
+                      </td>
+                      <td>
+                        {log.tps === null ? '—' : decimal.format(log.tps)}
+                        <small>
+                          {log.timeToFirstTokenMs === null
+                            ? 'TTFT —'
+                            : `TTFT ${log.timeToFirstTokenMs} ms`}
+                        </small>
+                      </td>
+                      <td>{integer.format(log.latencyMs)} ms</td>
+                      <td>{money.format(log.costUsd)}</td>
+                      <td>{formatDate(log.createdAt)}</td>
+                      <td>
+                        <button
+                          className="usage-expand-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedLogId((current) =>
+                              current === log.id ? undefined : log.id,
+                            );
+                          }}
+                          aria-label={expandedLogId === log.id ? '收起调用明细' : '展开调用明细'}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedLogId === log.id ? (
+                      <tr className="usage-detail-row">
+                        <td colSpan={9}>
+                          <UsageLogDetailPanel usageLogId={log.id} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="table-empty">
+                  <td colSpan={9} className="table-empty">
                     该时段没有调用记录。
                   </td>
                 </tr>

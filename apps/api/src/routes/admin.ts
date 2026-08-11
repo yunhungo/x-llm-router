@@ -30,6 +30,9 @@ const providerUpdateSchema = z.object({
   defaultModel: z.string().trim().max(120).nullable().optional(),
   priority: z.number().int().min(0).max(10_000).optional(),
 });
+const apiKeyUpdateSchema = z.object({
+  providerConnectionId: z.string().uuid().nullable(),
+});
 const priceSchema = z.object({
   provider: z.string().trim().min(1).max(40).default('*'),
   modelPattern: z.string().trim().min(1).max(120),
@@ -228,6 +231,40 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  app.patch('/api/admin/keys/:id', async (request, reply) => {
+    const parsed = apiKeyUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: { code: 'invalid_request', message: '请选择有效的上游连接。' },
+      });
+    }
+    const id = (request.params as { id: string }).id;
+    if (parsed.data.providerConnectionId) {
+      const provider = await getPool().query(
+        `SELECT id FROM provider_connections WHERE id = $1 AND status = 'active'`,
+        [parsed.data.providerConnectionId],
+      );
+      if (!provider.rowCount) {
+        return reply.code(404).send({
+          error: { code: 'provider_not_found', message: '上游连接不存在或未启用。' },
+        });
+      }
+    }
+    const updated = await getPool().query(
+      `UPDATE virtual_api_keys
+          SET provider_connection_id = $2
+        WHERE id = $1 AND status = 'active'
+        RETURNING id`,
+      [id, parsed.data.providerConnectionId],
+    );
+    if (!updated.rowCount) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: 'API Key 不存在或已撤销。' },
+      });
+    }
+    return { ok: true };
+  });
+
   app.put('/api/admin/keys/:id/langfuse', async (request, reply) => {
     const parsed = langfuseSettingsSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -287,16 +324,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       .object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
       .parse(request.query);
     const result = await getPool().query(
-      `SELECT u.id, u.request_id AS "requestId", u.endpoint, u.model, u.status_code AS "statusCode",
+      `SELECT u.id, u.request_id AS "requestId", u.endpoint,
+              u.requested_model AS "requestedModel", u.model, u.status_code AS "statusCode",
               u.success, u.input_tokens AS "inputTokens",
               u.cached_input_tokens AS "cachedInputTokens", u.output_tokens AS "outputTokens",
               u.total_tokens AS "totalTokens", u.cost_usd::float8 AS "costUsd",
               u.latency_ms AS "latencyMs", u.time_to_first_token_ms AS "timeToFirstTokenMs",
               u.error_code AS "errorCode", u.created_at AS "createdAt",
-              k.id AS "apiKeyId", k.name AS "apiKeyName", p.name AS "providerName"
+              k.id AS "apiKeyId", k.name AS "apiKeyName", p.name AS "providerName",
+              (d.usage_log_id IS NOT NULL) AS "detailAvailable"
          FROM usage_logs u
          LEFT JOIN virtual_api_keys k ON k.id = u.virtual_api_key_id
          LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+         LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
         ORDER BY u.created_at DESC LIMIT $1`,
       [query.limit],
     );

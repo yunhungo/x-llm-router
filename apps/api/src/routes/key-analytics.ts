@@ -150,7 +150,8 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         [id, rangeConfig.interval],
       ),
       pool.query(
-        `SELECT u.id, u.request_id AS "requestId", u.endpoint, u.model,
+        `SELECT u.id, u.request_id AS "requestId", u.endpoint,
+                u.requested_model AS "requestedModel", u.model,
                 u.status_code AS "statusCode", u.success,
                 u.input_tokens AS "inputTokens",
                 u.cached_input_tokens AS "cachedInputTokens",
@@ -158,6 +159,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 u.cost_usd::float8 AS "costUsd", u.latency_ms AS "latencyMs",
                 u.time_to_first_token_ms AS "timeToFirstTokenMs", u.error_code AS "errorCode",
                 u.created_at AS "createdAt", p.name AS "providerName",
+                (d.usage_log_id IS NOT NULL) AS "detailAvailable",
                 CASE WHEN u.output_tokens > 0
                        AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)
                   THEN u.output_tokens * 1000.0 /
@@ -165,6 +167,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                   ELSE NULL END::float8 AS tps
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+           LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
           ORDER BY u.created_at DESC LIMIT $3`,
         [id, rangeConfig.interval, limit],

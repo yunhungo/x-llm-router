@@ -46,7 +46,7 @@
 }
 .key-meta-strip {
   min-height: 42px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   padding: 8px 12px;
   display: flex;
   align-items: center;
@@ -57,6 +57,25 @@
   background: var(--canvas);
   color: var(--body);
   font-size: 12px;
+}
+.key-detail-page .stat-grid {
+  margin-bottom: 14px;
+}
+.key-detail-page .stat-card {
+  min-height: 112px;
+  padding: 16px 18px;
+}
+.key-detail-page .stat-card > strong {
+  font-size: 23px;
+}
+.key-detail-page .stat-card > small {
+  margin-top: 7px;
+}
+.key-detail-page .stat-icon {
+  top: 14px;
+  right: 15px;
+  width: 27px;
+  height: 27px;
 }
 .key-meta-strip > span {
   display: inline-flex;
@@ -71,7 +90,7 @@
   margin: 0 0 18px;
 }
 .key-performance-grid {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--hairline);
@@ -82,7 +101,7 @@
 }
 .metric-card {
   min-width: 0;
-  padding: 16px 18px;
+  padding: 12px 16px;
   border-right: 1px solid var(--hairline);
 }
 .metric-card:last-child {
@@ -96,9 +115,9 @@
 }
 .metric-card strong {
   display: block;
-  margin: 13px 0 7px;
+  margin: 8px 0 5px;
   color: var(--ink);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.4px;
 }
@@ -198,6 +217,21 @@
   margin: 0;
   padding: 7px 18px;
 }
+.key-provider-editor {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.key-provider-editor > label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--mute);
+  font-size: 11px;
+}
+.key-provider-editor > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
 .key-config-summary dl > div {
   min-height: 49px;
   display: flex;
@@ -285,7 +319,7 @@
     grid-template-columns: 1fr 1fr;
   }
   .key-detail-page .stat-card {
-    min-height: 124px;
+    min-height: 108px;
   }
   .key-detail-page .stat-card:nth-child(odd) {
     border-right: 1px solid var(--hairline);
