@@ -62,10 +62,59 @@ type RuntimeSpanProcessor = Pick<
 >;
 
 interface ProcessorState {
+  apiKeyId: string;
   processor: RuntimeSpanProcessor;
   activeSpans: number;
   retired: boolean;
   disposePromise?: Promise<void>;
+}
+
+export function isLangfuseDiagnosticsEnabled(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(
+    environment.LANGFUSE_DIAGNOSTICS?.trim().toLowerCase() ?? '',
+  );
+}
+
+function writeLangfuseDiagnostic(
+  level: 'info' | 'warn' | 'error',
+  event: string,
+  details: Record<string, unknown> = {},
+  always = false,
+): void {
+  if (!always && !isLangfuseDiagnosticsEnabled()) return;
+  const line = JSON.stringify({
+    time: new Date().toISOString(),
+    level,
+    component: 'langfuse',
+    event,
+    ...details,
+  });
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.info(line);
+}
+
+export function safeLangfuseBaseUrlForDiagnostics(baseUrl: string): string {
+  try {
+    const parsed = new URL(normalizeLangfuseBaseUrl(baseUrl));
+    return parsed.origin;
+  } catch {
+    return '<invalid>';
+  }
+}
+
+function projectDiagnosticFields(
+  apiKeyId: string,
+  settings: KeyLangfuseSettings,
+): Record<string, unknown> {
+  return {
+    apiKeyId,
+    publicKeyPrefix: settings.publicKey.slice(0, 12),
+    baseUrl: safeLangfuseBaseUrlForDiagnostics(settings.baseUrl),
+    environment: settings.environment,
+  };
 }
 
 /**
@@ -113,6 +162,25 @@ export class ReloadableLangfuseSpanProcessor {
       state.activeSpans = Math.max(0, state.activeSpans - 1);
       this.disposeWhenIdle(state);
     }
+
+    if (isLangfuseDiagnosticsEnabled()) {
+      const attributes = span.attributes as Record<string, unknown>;
+      const rawApiKeyId = attributes?.[API_KEY_ATTRIBUTE];
+      const apiKeyId = typeof rawApiKeyId === 'string' ? rawApiKeyId : undefined;
+      const matchedProcessorCount = apiKeyId
+        ? states.filter((state) => state.apiKeyId === apiKeyId).length
+        : 0;
+      const spanContext = span.spanContext();
+      writeLangfuseDiagnostic('info', 'span_queued', {
+        apiKeyId: apiKeyId ?? null,
+        spanName: span.name,
+        traceId: spanContext.traceId,
+        spanId: spanContext.spanId,
+        ownerProcessorCount: states.length,
+        matchedProcessorCount,
+        routed: matchedProcessorCount === 1,
+      });
+    }
   }
 
   async forceFlush(): Promise<void> {
@@ -148,7 +216,7 @@ export class ReloadableLangfuseSpanProcessor {
     const previous = this.current.get(apiKeyId);
     const next = new Map(this.current);
     if (processor) {
-      const state: ProcessorState = { processor, activeSpans: 0, retired: false };
+      const state: ProcessorState = { apiKeyId, processor, activeSpans: 0, retired: false };
       this.states.add(state);
       next.set(apiKeyId, state);
     } else {
@@ -168,7 +236,7 @@ export class ReloadableLangfuseSpanProcessor {
     const previous = [...this.current.values()];
     const next = new Map<string, ProcessorState>();
     for (const [apiKeyId, processor] of processors) {
-      const state: ProcessorState = { processor, activeSpans: 0, retired: false };
+      const state: ProcessorState = { apiKeyId, processor, activeSpans: 0, retired: false };
       this.states.add(state);
       next.set(apiKeyId, state);
     }
@@ -288,17 +356,27 @@ export function safeTelemetryDiagnosticValue(value: unknown): unknown {
 }
 
 function logSafeTelemetryWarning(message: string, error: unknown): void {
-  console.warn(message, { details: safeTelemetryDiagnosticValue(error) });
+  writeLangfuseDiagnostic(
+    'warn',
+    'runtime_warning',
+    { message, details: safeTelemetryDiagnosticValue(error) },
+    true,
+  );
 }
 
 const noopDiagnostic = (_message: string, ..._args: unknown[]): void => undefined;
 const safeTelemetryDiagnosticLogger: DiagLogger = {
   error: (message, ...args) => {
     const categories = [message, ...args].map(telemetryDiagnosticCategory);
-    console.error('OpenTelemetry exporter error.', {
-      category: categories.find((category) => category !== 'export_failed') ?? 'export_failed',
-      details: args.map(safeTelemetryDiagnosticValue),
-    });
+    writeLangfuseDiagnostic(
+      'error',
+      'otel_export_error',
+      {
+        category: categories.find((category) => category !== 'export_failed') ?? 'export_failed',
+        details: args.map(safeTelemetryDiagnosticValue),
+      },
+      true,
+    );
   },
   warn: noopDiagnostic,
   info: noopDiagnostic,
@@ -313,6 +391,7 @@ function configureTelemetryDiagnostics(): void {
     suppressOverrideMessage: true,
   });
   telemetryDiagnosticsConfigured = true;
+  writeLangfuseDiagnostic('info', 'otel_diagnostics_configured');
 }
 
 export function normalizeLangfuseBaseUrl(baseUrl: string): string {
@@ -338,6 +417,12 @@ function ensureTelemetryStarted(): void {
   const sdk = new NodeSDK({ spanProcessors: [reloadableSpanProcessor] });
   sdk.start();
   telemetrySdk = sdk;
+  writeLangfuseDiagnostic('info', 'telemetry_sdk_started', {
+    nodeUseEnvProxy: process.env.NODE_USE_ENV_PROXY ?? null,
+    httpProxyConfigured: Boolean(process.env.HTTP_PROXY || process.env.http_proxy),
+    httpsProxyConfigured: Boolean(process.env.HTTPS_PROXY || process.env.https_proxy),
+    noProxyConfigured: Boolean(process.env.NO_PROXY || process.env.no_proxy),
+  });
 }
 
 async function disposeUnusedProcessor(processor: RuntimeSpanProcessor): Promise<void> {
@@ -617,6 +702,11 @@ export async function saveApiKeyLangfuseSettings(
   }
 
   reloadableSpanProcessor.replaceKey(apiKeyId, nextProcessor);
+  writeLangfuseDiagnostic('info', 'project_configuration_applied', {
+    ...projectDiagnosticFields(apiKeyId, settings),
+    source: 'settings_save',
+    registered: Boolean(nextProcessor),
+  });
   return true;
 }
 
@@ -629,14 +719,35 @@ export async function ensureApiKeyLangfuse(
   apiKeyId: string,
   settings: KeyLangfuseSettings,
 ): Promise<boolean> {
-  if (!settings.enabled || !settings.publicKey || !settings.secretKey) return false;
-  if (reloadableSpanProcessor.hasKey(apiKeyId)) return true;
+  if (!settings.enabled || !settings.publicKey || !settings.secretKey) {
+    writeLangfuseDiagnostic('warn', 'project_registration_skipped', {
+      apiKeyId,
+      source: 'gateway_request',
+      enabled: settings.enabled,
+      hasPublicKey: Boolean(settings.publicKey),
+      hasSecretKey: Boolean(settings.secretKey),
+    });
+    return false;
+  }
+  if (reloadableSpanProcessor.hasKey(apiKeyId)) {
+    writeLangfuseDiagnostic('info', 'project_registration_checked', {
+      ...projectDiagnosticFields(apiKeyId, settings),
+      source: 'gateway_request',
+      status: 'ready',
+    });
+    return true;
+  }
 
   let processor: LangfuseSpanProcessor | undefined;
   try {
     processor = createLangfuseSpanProcessor(apiKeyId, settings);
     ensureTelemetryStarted();
     reloadableSpanProcessor.replaceKey(apiKeyId, processor);
+    writeLangfuseDiagnostic('info', 'project_registration_checked', {
+      ...projectDiagnosticFields(apiKeyId, settings),
+      source: 'gateway_request',
+      status: 'registered',
+    });
     return true;
   } catch (error) {
     if (processor) await disposeUnusedProcessor(processor);
@@ -657,9 +768,18 @@ export async function initializeLangfuse(): Promise<number> {
       const settings = decryptLangfuseSettings(row.langfuse_config_ciphertext);
       if (settings?.enabled && settings.publicKey && settings.secretKey) {
         configured.set(row.id, createLangfuseSpanProcessor(row.id, settings));
+        writeLangfuseDiagnostic('info', 'project_loaded', {
+          ...projectDiagnosticFields(row.id, settings),
+          source: 'startup',
+        });
       }
-    } catch {
-      console.warn(`Skipping invalid Langfuse configuration for API key ${row.id}.`);
+    } catch (error) {
+      writeLangfuseDiagnostic(
+        'warn',
+        'project_load_failed',
+        { apiKeyId: row.id, details: safeTelemetryDiagnosticValue(error) },
+        true,
+      );
     }
   }
 
@@ -670,11 +790,18 @@ export async function initializeLangfuse(): Promise<number> {
     await Promise.all([...configured.values()].map(disposeUnusedProcessor));
     throw error;
   }
+  writeLangfuseDiagnostic('info', 'runtime_initialized', {
+    registeredProjectCount: configured.size,
+    configuredRowCount: result.rows.length,
+  });
   return configured.size;
 }
 
 export async function shutdownLangfuse(): Promise<void> {
   const sdk = telemetrySdk;
   telemetrySdk = undefined;
-  if (sdk) await sdk.shutdown();
+  if (!sdk) return;
+  writeLangfuseDiagnostic('info', 'runtime_shutdown_started');
+  await sdk.shutdown();
+  writeLangfuseDiagnostic('info', 'runtime_shutdown_completed');
 }

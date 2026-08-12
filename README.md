@@ -136,6 +136,15 @@ const response = await client.responses.create({
 
 在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存前可点击「测试连接」校验 Base URL、项目凭据和 OTLP traces 接收端；测试只发送一个不含 span 的空 protobuf 请求，不会写入测试 trace，留空 Secret Key 时会复用已保存的密钥，且不会修改当前配置。保存后立即生效，不需要重启容器。
 
+设置 `LANGFUSE_DIAGNOSTICS=1` 后，Docker 会输出脱敏的 Langfuse 诊断日志；未设置或设为 `0` 时默认关闭。Compose 可通过同名环境变量控制该开关。诊断日志会记录 SDK 启动、项目加载、observation 创建与结束、span 是否匹配并进入当前虚拟 Key 的 exporter 队列，以及 OTLP 导出失败；不会记录 Secret Key、Authorization、输入输出、Base URL 路径或 exporter 响应正文。开启后可用下面的命令查看：
+
+```bash
+docker logs --since 30m xrouter-app-1 2>&1 \
+  | grep -Ei '"component":"langfuse"|Langfuse observation|Observability initialized'
+```
+
+一次正常请求应依次出现 `project_registration_checked`、`observation_started`、`span_queued`（`routed:true`）和 `observation_ended`。`span_queued` 表示 span 已交给匹配的 Langfuse processor，SDK 仍按正常批处理策略导出；导出失败会单独出现 `otel_export_error`。排查完成后可将 `LANGFUSE_DIAGNOSTICS=0` 并重建 app 容器；导出错误仍会强制输出。
+
 不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
 
 客户端可以通过配置的请求头提供 `userId` 和 `sessionId`。若未提供用户头，xRouter 优先使用 OpenAI 请求体的 `user`，再回退到当前虚拟 Key 的稳定匿名身份；若未提供会话头则不伪造 Session，避免把每次随机 ID 误当成会话。缺失的 `x-request-id` 会由网关逐请求生成 UUID，用于本地调用记录、上游请求和 Langfuse trace 的关联。

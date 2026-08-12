@@ -10,6 +10,8 @@ import {
   publicLangfuseSettings,
   ReloadableLangfuseSpanProcessor,
   safeTelemetryDiagnosticValue,
+  isLangfuseDiagnosticsEnabled,
+  safeLangfuseBaseUrlForDiagnostics,
   type KeyLangfuseSettings,
 } from './langfuse';
 
@@ -241,6 +243,66 @@ describe('per-key Langfuse settings', () => {
       category: 'authentication',
     });
     expect(JSON.stringify(authorizationError)).not.toContain('c2VjcmV0');
+  });
+
+  it('recognizes explicit Langfuse diagnostic flags only', () => {
+    expect(isLangfuseDiagnosticsEnabled({ LANGFUSE_DIAGNOSTICS: '1' })).toBe(true);
+    expect(isLangfuseDiagnosticsEnabled({ LANGFUSE_DIAGNOSTICS: 'TRUE' })).toBe(true);
+    expect(isLangfuseDiagnosticsEnabled({ LANGFUSE_DIAGNOSTICS: 'off' })).toBe(false);
+    expect(isLangfuseDiagnosticsEnabled({})).toBe(false);
+  });
+
+  it('logs span routing without forcing an exporter flush or exposing secrets', async () => {
+    const previousDiagnostics = process.env.LANGFUSE_DIAGNOSTICS;
+    process.env.LANGFUSE_DIAGNOSTICS = '1';
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const runtime = new ReloadableLangfuseSpanProcessor();
+    const processor = fakeProcessor();
+    const span = {
+      name: 'generate-response',
+      attributes: { 'langfuse.trace.metadata.apiKeyId': 'key-1' },
+      spanContext: () => ({
+        traceId: '11111111111111111111111111111111',
+        spanId: '2222222222222222',
+      }),
+    };
+
+    try {
+      runtime.replaceKey('key-1', processor);
+      runtime.onStart(span as never, {} as never);
+      runtime.onEnd(span as never);
+
+      const logLines = info.mock.calls.map(([line]) => String(line));
+      const events = logLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            component: 'langfuse',
+            event: 'span_queued',
+            apiKeyId: 'key-1',
+            matchedProcessorCount: 1,
+            routed: true,
+          }),
+        ]),
+      );
+      expect(processor.forceFlush).not.toHaveBeenCalled();
+      expect(logLines.join('\n')).not.toContain('sk-lf-secret');
+      expect(logLines.join('\n')).not.toContain('sensitive input');
+    } finally {
+      await runtime.shutdown();
+      info.mockRestore();
+      if (previousDiagnostics === undefined) delete process.env.LANGFUSE_DIAGNOSTICS;
+      else process.env.LANGFUSE_DIAGNOSTICS = previousDiagnostics;
+    }
+  });
+
+  it('keeps only the Langfuse origin in Base URL diagnostics', () => {
+    expect(
+      safeLangfuseBaseUrlForDiagnostics(
+        'https://user:password@langfuse.example.test/langfuse/tenant-token?key=secret#fragment',
+      ),
+    ).toBe('https://langfuse.example.test');
+    expect(safeLangfuseBaseUrlForDiagnostics('not a URL')).toBe('<invalid>');
   });
 
   it('never writes raw processor exceptions to warning logs', async () => {

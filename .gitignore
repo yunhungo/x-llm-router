@@ -12,3 +12,4 @@ coverage/
 .codegraph/
 playwright-report/
 test-results/
+.local/skills/deploy-xrouter-qnap/

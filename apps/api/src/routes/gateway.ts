@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { getProviderAdapter } from '../providers/registry';
 import type { GatewayEndpoint } from '../providers/types';
-import { defaultLangfuseSettings } from '../services/langfuse';
+import { defaultLangfuseSettings, isLangfuseDiagnosticsEnabled } from '../services/langfuse';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
 import { buildCurl, SseDetailCollector } from '../services/usage-details';
 import { requireVirtualApiKey } from '../services/virtual-keys';
@@ -161,6 +161,7 @@ async function gatewayHandler(
   let upstreamResponse: unknown;
   let capturedError: unknown;
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
+  const langfuseDiagnostics = langfuse.enabled && isLangfuseDiagnosticsEnabled();
   const identity = langfuseRequestIdentity(request, body, langfuse, key.id);
   const traceName = langfuse.traceName || `route-${endpoint}`;
   const traceMetadata = {
@@ -196,6 +197,20 @@ async function gatewayHandler(
         { asType: 'generation' },
       ),
   );
+  if (langfuseDiagnostics) {
+    request.log.info(
+      {
+        component: 'langfuse',
+        event: 'observation_started',
+        apiKeyId: key.id,
+        requestId,
+        endpoint,
+        traceId: observation.traceId,
+        observationId: observation.id,
+      },
+      'Langfuse observation started',
+    );
+  }
 
   try {
     provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
@@ -393,6 +408,22 @@ async function gatewayHandler(
       });
     } finally {
       observation.end();
+      if (langfuseDiagnostics) {
+        request.log.info(
+          {
+            component: 'langfuse',
+            event: 'observation_ended',
+            apiKeyId: key.id,
+            requestId,
+            endpoint,
+            traceId: observation.traceId,
+            observationId: observation.id,
+            statusCode,
+            errorCode: errorCode ?? null,
+          },
+          'Langfuse observation ended',
+        );
+      }
     }
   }
 }
