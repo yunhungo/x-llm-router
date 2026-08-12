@@ -19,6 +19,7 @@ const configSchema = z.object({
   OPENAI_API_BASE: z.string().url().default('https://api.openai.com/v1'),
   CHATGPT_API_BASE: z.string().url().default('https://chatgpt.com/backend-api/codex'),
   CHATGPT_AUTH_BASE: z.string().url().default('https://auth.openai.com'),
+  OPENAI_CODEX_CLIENT_VERSION: z.string().trim().min(1).default('0.147.0'),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

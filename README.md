@@ -76,7 +76,7 @@ QNAP/Linux 上若代理运行在 NAS 宿主机，通常填写 NAS 的局域网 I
 
 应用要求 Node.js 22.21+ 并已启用环境代理支持。OAuth 网络失败会返回可识别的 `openai_oauth_unavailable`（502），OpenAI 拒绝授权则返回 `openai_oauth_rejected`（502），不再统一显示为不可诊断的 500。
 
-该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
+该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。授权完成后会同步账号当前可见的模型目录；「上游连接」卡片可查看或手动刷新，任一 Key 的全局「模型价格」表会同时列出所有已启用上游同步的模型与该 Key 的历史调用模型。模型目录同步失败不会撤销已经完成的 OAuth 连接，管理台会保留错误原因供重试。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
 
 ### API Key 上游
 
@@ -169,7 +169,7 @@ pnpm format:check
 - `ENCRYPTION_KEY` 随 PostgreSQL 数据持久化；数据库数据丢失后，现有上游凭据无法恢复。
 - 管理端会话使用 HttpOnly、SameSite=Lax Cookie；合并部署会自动校验当前访问来源，只有前后端分离部署时才需要设置 `WEB_ORIGIN`。
 - 虚拟 Key 的 RPM 校验由 PostgreSQL 调用日志计算，适合首版和中等流量；多副本高吞吐部署应增加 Redis/Valkey 原子限流。
-- 目前价格表内置 GPT-5.6 系列示例，可通过管理 API/数据库更新；未知模型仍记录 Token，但成本显示为 0。
+- 价格表会合并上游同步模型、连接默认模型和历史调用模型；内置 GPT-5.6 系列示例，可通过管理 API/数据库更新。未知模型仍记录 Token，配置价格前成本显示为 0。
 
 ## 参考
 

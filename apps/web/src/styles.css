@@ -389,6 +389,8 @@ select.input {
   width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
   background: var(--canvas);
   border-right: 1px solid var(--hairline);
   transition:
@@ -406,6 +408,7 @@ select.input {
   gap: 11px;
   border-bottom: 1px solid var(--hairline);
   overflow: hidden;
+  flex: 0 0 auto;
 }
 .brand-copy {
   display: grid;
@@ -441,6 +444,14 @@ select.input {
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+.sidebar-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .side-nav {
   display: grid;
@@ -539,6 +550,7 @@ select.input {
   align-items: center;
   gap: 10px;
   border-top: 1px solid var(--hairline);
+  flex: 0 0 auto;
 }
 .user-avatar {
   width: 31px;
@@ -1117,6 +1129,67 @@ td code {
   color: var(--danger-text);
   font-size: 11px;
   line-height: 16px;
+}
+.provider-models {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas-soft);
+}
+.provider-models-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.provider-models-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.provider-models-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.provider-models-heading span,
+.provider-models > p {
+  margin: 0;
+  color: var(--mute);
+  font-size: 10px;
+  line-height: 16px;
+}
+.provider-model-list {
+  max-height: 132px;
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-y: auto;
+}
+.provider-model-list code {
+  max-width: 100%;
+  padding: 4px 7px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--body);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-model-error {
+  margin-top: 9px;
+  display: flex;
+  gap: 6px;
+  color: var(--warning-text);
+  font-size: 10px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+.provider-model-error svg {
+  flex: 0 0 auto;
 }
 .provider-actions {
   margin-top: 16px;

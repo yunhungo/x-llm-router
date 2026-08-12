@@ -34,6 +34,7 @@ services:
       DATABASE_URL: postgresql://xrouter:xrouter@db:5432/xrouter
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: change-me-now
+      OPENAI_CODEX_CLIENT_VERSION: ${OPENAI_CODEX_CLIENT_VERSION:-0.147.0}
       NODE_USE_ENV_PROXY: '1'
       HTTP_PROXY: ${XROUTER_HTTP_PROXY:-}
       HTTPS_PROXY: ${XROUTER_HTTPS_PROXY:-}

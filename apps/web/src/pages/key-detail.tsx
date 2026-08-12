@@ -1356,7 +1356,7 @@ export function KeyDetailPage() {
                   ) : (
                     <tr>
                       <td colSpan={6} className="table-empty">
-                        有模型调用后可配置价格
+                        同步上游模型或产生调用后可配置价格
                       </td>
                     </tr>
                   )}

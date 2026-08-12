@@ -7,6 +7,7 @@ import { decryptJson, encryptJson } from '../lib/crypto';
 export const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const DEFAULT_DEVICE_FLOW_SECONDS = 15 * 60;
 const AUTH_REQUEST_TIMEOUT_MS = 20_000;
+const MAX_DISCOVERED_MODELS = 500;
 
 type PublicOAuthErrorCode =
   'openai_oauth_unavailable' | 'openai_oauth_rejected' | 'openai_oauth_invalid_response';
@@ -32,6 +33,21 @@ export interface OAuthCredentials {
   accessToken: string;
   refreshToken: string;
   idToken: string;
+}
+
+export interface OpenAiModelDiscoveryInput {
+  baseUrl: string;
+  authorization: string;
+  headers?: Record<string, string>;
+}
+
+export function codexClientHeaders(): Record<string, string> {
+  const version = getConfig().OPENAI_CODEX_CLIENT_VERSION;
+  return {
+    originator: 'codex_cli_rs',
+    'user-agent': `x-llm-router/${version}`,
+    version,
+  };
 }
 
 interface DeviceFlowRow {
@@ -127,6 +143,63 @@ function apiError(prefix: string, response: Response, body: unknown): PublicOAut
     code,
     `${prefix} (${response.status}): ${responseErrorDetail(response, body)}`,
   );
+}
+
+function modelSlugs(body: unknown): string[] | undefined {
+  const models = bodyRecord(body)?.models;
+  if (!Array.isArray(models)) return undefined;
+
+  const seen = new Set<string>();
+  const slugs: string[] = [];
+  for (const item of models) {
+    const model = bodyRecord(item);
+    const slug = nonEmptyString(model, 'slug')?.trim();
+    const visibility = nonEmptyString(model, 'visibility');
+    if (!slug || slug.length > 120 || visibility !== 'list' || seen.has(slug)) {
+      continue;
+    }
+    seen.add(slug);
+    slugs.push(slug);
+    if (slugs.length >= MAX_DISCOVERED_MODELS) break;
+  }
+  return slugs;
+}
+
+export async function discoverOpenAiModels(input: OpenAiModelDiscoveryInput): Promise<string[]> {
+  const url = new URL(`${input.baseUrl.replace(/\/+$/, '')}/models`);
+  const clientVersion = getConfig().OPENAI_CODEX_CLIENT_VERSION;
+  url.searchParams.set('client_version', clientVersion);
+
+  let response: Response;
+  let body: unknown;
+  try {
+    response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        ...input.headers,
+        ...codexClientHeaders(),
+        authorization: input.authorization,
+      },
+      signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+    });
+    body = await readJsonOrText(response);
+  } catch (cause) {
+    throw publicOAuthError(
+      'openai_oauth_unavailable',
+      '无法获取 OpenAI OAuth 模型列表。请检查容器代理、DNS 和网络连接。',
+      cause,
+    );
+  }
+
+  if (!response.ok) throw apiError('OpenAI model discovery failed', response, body);
+  const models = modelSlugs(body);
+  if (!models) {
+    throw publicOAuthError(
+      'openai_oauth_invalid_response',
+      'OpenAI 模型列表响应缺少 models 字段。',
+    );
+  }
+  return models;
 }
 
 async function requestOpenAiAuth(
@@ -257,10 +330,12 @@ async function exchangeAuthorizationCode(
   return tokens;
 }
 
-export async function pollDeviceFlow(input: {
-  id: string;
-  requestedBy: string;
-}): Promise<{ status: DeviceFlowRow['status']; providerConnectionId?: string; message?: string }> {
+export async function pollDeviceFlow(input: { id: string; requestedBy: string }): Promise<{
+  status: DeviceFlowRow['status'];
+  providerConnectionId?: string;
+  modelsCount?: number;
+  modelsWarning?: string;
+}> {
   const result = await getPool().query<DeviceFlowRow>(
     `SELECT id, desired_name, device_auth_id_ciphertext, user_code, status, expires_at
        FROM oauth_device_flows WHERE id = $1 AND created_by = $2`,
@@ -312,6 +387,21 @@ export async function pollDeviceFlow(input: {
   const refreshToken = tokens.refresh_token;
   if (!refreshToken) throw new Error('OpenAI token exchange did not return a refresh token.');
   const metadata = tokenMetadata(tokens.id_token || tokens.access_token);
+  const modelHeaders = codexClientHeaders();
+  if (metadata.accountId) modelHeaders['ChatGPT-Account-Id'] = metadata.accountId;
+  let availableModels: string[] = [];
+  let modelsRefreshedAt: Date | null = null;
+  let modelsRefreshError: string | null = null;
+  try {
+    availableModels = await discoverOpenAiModels({
+      baseUrl: getConfig().CHATGPT_API_BASE,
+      authorization: `Bearer ${tokens.access_token}`,
+      headers: modelHeaders,
+    });
+    modelsRefreshedAt = new Date();
+  } catch (error) {
+    modelsRefreshError = (error instanceof Error ? error.message : String(error)).slice(0, 1_000);
+  }
   const providerConnectionId = randomUUID();
   const client = await getPool().connect();
   try {
@@ -319,8 +409,8 @@ export async function pollDeviceFlow(input: {
     await client.query(
       `INSERT INTO provider_connections(
         id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
-        token_expires_at, created_by
-      ) VALUES ($1,$2,'openai','oauth','responses',$3,$4,$5,$6,$7)`,
+        token_expires_at, created_by, available_models, models_refreshed_at, models_refresh_error
+      ) VALUES ($1,$2,'openai','oauth','responses',$3,$4,$5,$6,$7,$8::jsonb,$9,$10)`,
       [
         providerConnectionId,
         flow.desired_name,
@@ -333,6 +423,9 @@ export async function pollDeviceFlow(input: {
         getConfig().CHATGPT_API_BASE,
         metadata.expiresAt,
         input.requestedBy,
+        JSON.stringify(availableModels),
+        modelsRefreshedAt,
+        modelsRefreshError,
       ],
     );
     await client.query(
@@ -346,7 +439,12 @@ export async function pollDeviceFlow(input: {
   } finally {
     client.release();
   }
-  return { status: 'complete', providerConnectionId };
+  return {
+    status: 'complete',
+    providerConnectionId,
+    modelsCount: availableModels.length,
+    ...(modelsRefreshError ? { modelsWarning: modelsRefreshError } : {}),
+  };
 }
 
 export async function refreshOAuthCredentials(

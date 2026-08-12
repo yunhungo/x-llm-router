@@ -8,6 +8,10 @@ const { query } = vi.hoisted(() => ({
   })),
 }));
 
+const { refreshProviderModels } = vi.hoisted(() => ({
+  refreshProviderModels: vi.fn(),
+}));
+
 vi.mock('../db/client', () => ({
   getPool: () => ({ query }),
 }));
@@ -16,6 +20,8 @@ vi.mock('../lib/admin-auth', () => ({
   adminId: () => '00000000-0000-4000-8000-000000000000',
   requireAdmin: async () => undefined,
 }));
+
+vi.mock('../services/providers', () => ({ refreshProviderModels }));
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
 import { adminRoutes } from './admin';
@@ -29,6 +35,7 @@ describe('admin API keys', () => {
   beforeEach(async () => {
     query.mockReset();
     query.mockResolvedValue({ rows: [], rowCount: 0 });
+    refreshProviderModels.mockReset();
     setRuntimeSecretsForTests({
       ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
       JWT_SECRET: 'test-jwt-secret-with-enough-length',
@@ -52,6 +59,58 @@ describe('admin API keys', () => {
     expect(response.statusCode).toBe(201);
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0]?.[1]?.[5]).toBe(0);
+  });
+
+  it('returns persisted provider model discovery state', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: providerId,
+          name: 'OpenAI OAuth',
+          authType: 'oauth',
+          models: ['gpt-5.6-sol'],
+          modelsRefreshedAt: '2026-08-12T00:00:00.000Z',
+          modelsRefreshError: null,
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/admin/providers' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().providers[0]).toMatchObject({
+      models: ['gpt-5.6-sol'],
+      modelsRefreshedAt: '2026-08-12T00:00:00.000Z',
+      modelsRefreshError: null,
+    });
+    expect(query.mock.calls[0]?.[0]).toContain('available_models AS models');
+  });
+
+  it('refreshes models for a valid provider connection', async () => {
+    refreshProviderModels.mockResolvedValueOnce({
+      models: ['gpt-5.6-sol', 'gpt-5.6-terra'],
+      refreshedAt: '2026-08-12T00:00:00.000Z',
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/admin/providers/${providerId}/models/refresh`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ models: ['gpt-5.6-sol', 'gpt-5.6-terra'] });
+    expect(refreshProviderModels).toHaveBeenCalledWith(providerId);
+  });
+
+  it('rejects an invalid provider ID before model refresh', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/admin/providers/not-a-uuid/models/refresh',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(refreshProviderModels).not.toHaveBeenCalled();
   });
 
   it('rejects a negative RPM when creating a key', async () => {

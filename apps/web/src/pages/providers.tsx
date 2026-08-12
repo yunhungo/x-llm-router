@@ -48,6 +48,7 @@ export function ProvidersPage() {
   const [defaultModel, setDefaultModel] = useState('');
   const [flow, setFlow] = useState<DeviceFlow>();
   const [loading, setLoading] = useState(false);
+  const [refreshingModels, setRefreshingModels] = useState('');
   const [message, setMessage] = useState('');
 
   const load = useCallback(async () => {
@@ -70,15 +71,21 @@ export function ProvidersPage() {
 
     const poll = async (): Promise<void> => {
       try {
-        const result = await api<{ status: string; providerConnectionId?: string }>(
-          `/api/admin/providers/oauth/${flow.id}/poll`,
-          { method: 'POST' },
-        );
+        const result = await api<{
+          status: string;
+          providerConnectionId?: string;
+          modelsCount?: number;
+          modelsWarning?: string;
+        }>(`/api/admin/providers/oauth/${flow.id}/poll`, { method: 'POST' });
         if (cancelled) return;
         if (result.status === 'complete') {
           setFlow(undefined);
           setModal(null);
-          setMessage('OpenAI OAuth 连接成功。');
+          setMessage(
+            result.modelsWarning
+              ? `OpenAI OAuth 连接成功，但模型同步失败：${result.modelsWarning}`
+              : `OpenAI OAuth 连接成功，已同步 ${result.modelsCount ?? 0} 个模型。`,
+          );
           void load();
           return;
         }
@@ -186,6 +193,23 @@ export function ProvidersPage() {
     });
     await load();
   };
+  const refreshModels = async (provider: Provider) => {
+    setRefreshingModels(provider.id);
+    setMessage('');
+    try {
+      const result = await api<{ models: string[]; refreshedAt: string }>(
+        `/api/admin/providers/${provider.id}/models/refresh`,
+        { method: 'POST' },
+      );
+      setMessage(`模型同步成功，共 ${result.models.length} 个。`);
+      await load();
+    } catch (error) {
+      setMessage(`模型同步失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`);
+      await load();
+    } finally {
+      setRefreshingModels('');
+    }
+  };
   const remove = async (provider: Provider) => {
     if (!window.confirm(`确定删除连接“${provider.name}”吗？关联 Key 将回退到默认连接。`)) return;
     await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE' });
@@ -205,7 +229,7 @@ export function ProvidersPage() {
       {message ? (
         <div
           className={
-            message.includes('成功') || message.includes('添加')
+            message.includes('成功') && !message.includes('失败')
               ? 'notice success'
               : 'notice warning'
           }
@@ -280,6 +304,42 @@ export function ProvidersPage() {
                   </div>
                 ) : null}
               </div>
+              {provider.authType === 'oauth' ? (
+                <section className="provider-models" aria-label={`${provider.name} 可用模型`}>
+                  <div className="provider-models-heading">
+                    <div>
+                      <strong>可用模型</strong>
+                      <span>
+                        {provider.modelsRefreshedAt
+                          ? `同步于 ${new Date(provider.modelsRefreshedAt).toLocaleString('zh-CN')}`
+                          : '尚未同步'}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      loading={refreshingModels === provider.id}
+                      disabled={provider.status !== 'active'}
+                      onClick={() => void refreshModels(provider)}
+                    >
+                      <RefreshCcw size={13} /> 刷新
+                    </Button>
+                  </div>
+                  {provider.models?.length ? (
+                    <div className="provider-model-list">
+                      {provider.models.map((model) => (
+                        <code key={model}>{model}</code>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>授权成功后会从 OpenAI 同步此账号当前可用的模型。</p>
+                  )}
+                  {provider.modelsRefreshError ? (
+                    <div className="provider-model-error">
+                      <CircleAlert size={13} /> {provider.modelsRefreshError}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
               {provider.lastError ? (
                 <div className="provider-error">
                   <CircleAlert size={14} /> {provider.lastError}

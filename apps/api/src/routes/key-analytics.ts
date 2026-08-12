@@ -258,7 +258,12 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            SELECT DISTINCT COALESCE(p.provider, 'unknown') AS provider, u.model
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
-            WHERE u.virtual_api_key_id = $1
+           WHERE u.virtual_api_key_id = $1
+           UNION
+           SELECT p.provider, available.model
+             FROM provider_connections p
+             CROSS JOIN LATERAL jsonb_array_elements_text(p.available_models) AS available(model)
+            WHERE p.status = 'active'
            UNION
            SELECT p.provider, p.default_model
              FROM virtual_api_keys k

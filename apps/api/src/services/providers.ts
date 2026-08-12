@@ -1,7 +1,12 @@
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
 import type { GatewayEndpoint } from '../providers/types';
-import { type OAuthCredentials, refreshOAuthCredentials } from './openai-oauth';
+import {
+  codexClientHeaders,
+  discoverOpenAiModels,
+  type OAuthCredentials,
+  refreshOAuthCredentials,
+} from './openai-oauth';
 
 interface ProviderRow {
   id: string;
@@ -20,6 +25,61 @@ interface ApiKeyCredentials {
   apiKey: string;
 }
 
+async function getProviderModelRuntime(providerId: string): Promise<ProviderRuntime> {
+  const result = await getPool().query<ProviderRow>(
+    `SELECT id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
+            default_model, token_expires_at
+       FROM provider_connections
+      WHERE id = $1
+      LIMIT 1`,
+    [providerId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw Object.assign(new Error('上游连接不存在。'), {
+      statusCode: 404,
+      code: 'provider_not_found',
+      exposeMessage: true,
+    });
+  }
+  if (row.auth_type !== 'oauth') {
+    throw Object.assign(new Error('只有 OAuth 连接支持自动同步模型列表。'), {
+      statusCode: 400,
+      code: 'provider_model_discovery_unsupported',
+      exposeMessage: true,
+    });
+  }
+
+  let credentials = decryptJson<OAuthCredentials>(row.credentials_ciphertext);
+  const expiresAt = row.token_expires_at ? new Date(row.token_expires_at).getTime() : 0;
+  if (expiresAt <= Date.now() + 60_000) {
+    const refreshed = await refreshOAuthCredentials(credentials);
+    credentials = refreshed.credentials;
+    row.account_id = refreshed.accountId;
+    await getPool().query(
+      `UPDATE provider_connections
+          SET credentials_ciphertext = $2, token_expires_at = $3, account_id = $4,
+              last_error = NULL, updated_at = now()
+        WHERE id = $1`,
+      [row.id, encryptJson(credentials), refreshed.expiresAt, refreshed.accountId],
+    );
+  }
+
+  const headers: Record<string, string> = codexClientHeaders();
+  if (row.account_id) headers['ChatGPT-Account-Id'] = row.account_id;
+  return {
+    id: row.id,
+    name: row.name,
+    provider: row.provider,
+    authType: row.auth_type,
+    apiMode: row.api_mode,
+    baseUrl: row.base_url.replace(/\/$/, ''),
+    defaultModel: row.default_model,
+    authorization: `Bearer ${credentials.accessToken}`,
+    headers,
+  };
+}
+
 export interface ProviderRuntime {
   id: string;
   name: string;
@@ -30,6 +90,42 @@ export interface ProviderRuntime {
   defaultModel: string | null;
   authorization: string;
   headers: Record<string, string>;
+}
+
+export async function refreshProviderModels(providerId: string): Promise<{
+  models: string[];
+  refreshedAt: string;
+}> {
+  const runtime = await getProviderModelRuntime(providerId);
+
+  try {
+    const models = await discoverOpenAiModels({
+      baseUrl: runtime.baseUrl,
+      authorization: runtime.authorization,
+      headers: runtime.headers,
+    });
+    const refreshedAt = new Date();
+    await getPool().query(
+      `UPDATE provider_connections
+          SET available_models = $2::jsonb, models_refreshed_at = $3,
+              models_refresh_error = NULL, updated_at = now()
+        WHERE id = $1`,
+      [providerId, JSON.stringify(models), refreshedAt],
+    );
+    return { models, refreshedAt: refreshedAt.toISOString() };
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 1_000);
+    await getPool().query(
+      `UPDATE provider_connections
+          SET models_refresh_error = $2, updated_at = now()
+        WHERE id = $1`,
+      [providerId, message],
+    );
+    if (error instanceof Error) {
+      Object.assign(error, { exposeMessage: true });
+    }
+    throw error;
+  }
 }
 
 export async function getProviderRuntime(
@@ -101,8 +197,7 @@ export async function getProviderRuntime(
   }
 
   const headers: Record<string, string> = {
-    originator: 'codex_cli_rs',
-    'user-agent': 'x-llm-router/0.1.0',
+    ...codexClientHeaders(),
     session_id: sessionId,
   };
   if (row.account_id) headers['ChatGPT-Account-Id'] = row.account_id;

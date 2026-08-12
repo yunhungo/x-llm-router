@@ -94,5 +94,9 @@ describe('key analytics route', () => {
     expect(modelSeriesCall?.[0]).toContain('GROUP BY bucket, provider, model');
     expect(modelSeriesCall?.[0]).toContain('u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)');
     expect(modelSeriesCall?.[1]).toEqual([keyId, '7 days', '6 hours']);
+    const pricesCall = query.mock.calls[8];
+    expect(pricesCall?.[0]).toContain('jsonb_array_elements_text(p.available_models)');
+    expect(pricesCall?.[0]).toContain('SELECT p.provider, available.model');
+    expect(pricesCall?.[0]).toContain("WHERE p.status = 'active'");
   });
 });

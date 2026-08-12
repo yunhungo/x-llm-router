@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetConfigForTests } from '../config';
-import { startDeviceFlow, tokenMetadata } from './openai-oauth';
+import { discoverOpenAiModels, startDeviceFlow, tokenMetadata } from './openai-oauth';
 
 function jwt(payload: object): string {
   return `${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.`;
@@ -17,6 +17,78 @@ describe('OpenAI OAuth token metadata', () => {
     );
     expect(metadata.accountId).toBe('acct_123');
     expect(metadata.expiresAt?.toISOString()).toBe('2033-05-18T03:33:20.000Z');
+  });
+});
+
+describe('OpenAI OAuth model discovery', () => {
+  const originalEnvironment = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    OPENAI_CODEX_CLIENT_VERSION: process.env.OPENAI_CODEX_CLIENT_VERSION,
+  };
+
+  beforeEach(() => {
+    process.env.DATABASE_URL = 'postgresql://example';
+    process.env.OPENAI_CODEX_CLIENT_VERSION = '0.147.0';
+    resetConfigForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const [name, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    resetConfigForTests();
+  });
+
+  it('returns unique visible model slugs with the account context', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          models: [
+            { slug: 'gpt-5.6-sol', visibility: 'list' },
+            { slug: 'gpt-5.6-sol', visibility: 'list' },
+            { slug: 'gpt-5.6-terra', visibility: 'list' },
+            { slug: 'codex-auto-review', visibility: 'hide' },
+            { visibility: 'list' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      discoverOpenAiModels({
+        baseUrl: 'https://chatgpt.com/backend-api/codex///',
+        authorization: 'Bearer access-token',
+        headers: { 'ChatGPT-Account-Id': 'account-1', version: '0.147.0' },
+      }),
+    ).resolves.toEqual(['gpt-5.6-sol', 'gpt-5.6-terra']);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.147.0');
+    expect(init?.headers).toMatchObject({
+      authorization: 'Bearer access-token',
+      'ChatGPT-Account-Id': 'account-1',
+      originator: 'codex_cli_rs',
+      'user-agent': 'x-llm-router/0.147.0',
+      version: '0.147.0',
+    });
+  });
+
+  it('rejects a successful response without a model collection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('{}', { status: 200 })),
+    );
+
+    await expect(
+      discoverOpenAiModels({
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        authorization: 'Bearer access-token',
+      }),
+    ).rejects.toMatchObject({ code: 'openai_oauth_invalid_response' });
   });
 });
 

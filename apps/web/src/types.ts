@@ -16,6 +16,9 @@ export interface Provider {
   priority: number;
   tokenExpiresAt: string | null;
   lastError: string | null;
+  models: string[];
+  modelsRefreshedAt: string | null;
+  modelsRefreshError: string | null;
   createdAt: string;
 }
 

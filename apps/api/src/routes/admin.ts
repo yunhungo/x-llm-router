@@ -20,9 +20,11 @@ import {
   saveApiKeyLangfuseSettings,
 } from '../services/langfuse';
 import { pollDeviceFlow, startDeviceFlow } from '../services/openai-oauth';
+import { refreshProviderModels } from '../services/providers';
 import { createApiKeyRecord } from '../services/virtual-keys';
 
 const oauthStartSchema = z.object({ name: z.string().trim().min(1).max(120) });
+const providerParamsSchema = z.object({ id: z.string().uuid() });
 const providerUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   status: z.enum(['active', 'disabled']).optional(),
@@ -56,6 +58,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       `SELECT id, name, provider, auth_type AS "authType", status, account_id AS "accountId",
               api_mode AS "apiMode", base_url AS "baseUrl", default_model AS "defaultModel", priority,
               token_expires_at AS "tokenExpiresAt", last_error AS "lastError",
+              available_models AS models, models_refreshed_at AS "modelsRefreshedAt",
+              models_refresh_error AS "modelsRefreshError",
               created_at AS "createdAt", updated_at AS "updatedAt"
          FROM provider_connections ORDER BY priority ASC, created_at ASC`,
     );
@@ -115,6 +119,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const id = (request.params as { id: string }).id;
     const result = await pollDeviceFlow({ id, requestedBy: adminId(request) });
     return reply.code(result.status === 'pending' ? 202 : 200).send(result);
+  });
+
+  app.post('/api/admin/providers/:id/models/refresh', async (request, reply) => {
+    const parsed = providerParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'invalid_request', message: '连接 ID 无效。' } });
+    }
+    return refreshProviderModels(parsed.data.id);
   });
 
   app.patch('/api/admin/providers/:id', async (request, reply) => {

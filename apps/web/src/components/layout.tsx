@@ -52,21 +52,23 @@ export function AppLayout({
             <X size={16} />
           </button>
         </div>
-        <div className="nav-label">Workspace</div>
-        <nav className="side-nav">
-          {navigation.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              {...(end ? { end: true } : {})}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon size={16} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-        <ThemeSelector className="sidebar-theme-selector" />
+        <div className="sidebar-body">
+          <div className="nav-label">Workspace</div>
+          <nav className="side-nav" id="primary-navigation">
+            {navigation.map(({ to, label, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                {...(end ? { end: true } : {})}
+                onClick={() => setMobileOpen(false)}
+              >
+                <Icon size={16} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+          <ThemeSelector className="sidebar-theme-selector" />
+        </div>
         <div className="sidebar-footer">
           <div className="user-avatar">{user.username.slice(0, 1).toUpperCase()}</div>
           <div className="user-copy">
@@ -80,14 +82,20 @@ export function AppLayout({
         <button
           className="collapse-button"
           onClick={() => setCollapsed((value) => !value)}
-          aria-label="收起侧栏"
+          aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
         >
           <ChevronLeft size={15} />
         </button>
       </aside>
       <div className="app-main">
         <header className="mobile-header">
-          <button className="icon-button" onClick={() => setMobileOpen(true)} aria-label="打开菜单">
+          <button
+            className="icon-button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="打开菜单"
+            aria-expanded={mobileOpen}
+            aria-controls="primary-navigation"
+          >
             <Menu size={18} />
           </button>
           <BrandMark />

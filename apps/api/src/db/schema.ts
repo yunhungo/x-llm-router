@@ -1,4 +1,4 @@
-export const schemaVersion = 6;
+export const schemaVersion = 7;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -42,7 +42,10 @@ ALTER TABLE provider_connections
   DROP CONSTRAINT IF EXISTS provider_connections_provider_check;
 
 ALTER TABLE provider_connections
-  ADD COLUMN IF NOT EXISTS api_mode varchar(40);
+  ADD COLUMN IF NOT EXISTS api_mode varchar(40),
+  ADD COLUMN IF NOT EXISTS available_models jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS models_refreshed_at timestamptz,
+  ADD COLUMN IF NOT EXISTS models_refresh_error text;
 
 UPDATE provider_connections
    SET api_mode = CASE WHEN auth_type = 'oauth' THEN 'responses' ELSE 'chat.completions' END
