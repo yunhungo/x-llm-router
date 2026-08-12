@@ -1,8 +1,11 @@
-FROM node:22-alpine AS builder
+ARG BUILDPLATFORM
+# Keep dependency installation and bundling native; the target stage below has no RUN instructions.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+RUN node --help | grep -q -- '--use-env-proxy' \
+  && corepack enable
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -25,20 +28,17 @@ ENV NODE_USE_ENV_PROXY=1
 ENV BUILD_SHA=$BUILD_SHA
 ENV WEB_ROOT=/app/apps/web/dist
 WORKDIR /app
-RUN node --help | grep -q -- '--use-env-proxy' \
-  && addgroup -S xrouter \
-  && adduser -S xrouter -G xrouter
 
-COPY --from=builder --chown=xrouter:xrouter /app/node_modules ./node_modules
-COPY --from=builder --chown=xrouter:xrouter /app/apps/api/node_modules ./apps/api/node_modules
-COPY --from=builder --chown=xrouter:xrouter /app/apps/api/package.json ./apps/api/package.json
-COPY --from=builder --chown=xrouter:xrouter /app/apps/api/dist ./apps/api/dist
-COPY --from=builder --chown=xrouter:xrouter /app/apps/web/dist ./apps/web/dist
-COPY --from=builder --chown=xrouter:xrouter /app/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=builder --chown=xrouter:xrouter /app/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=builder --chown=xrouter:xrouter /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=builder --chown=node:node /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder --chown=node:node /app/apps/api/dist ./apps/api/dist
+COPY --from=builder --chown=node:node /app/apps/web/dist ./apps/web/dist
+COPY --from=builder --chown=node:node /app/packages/contracts/node_modules ./packages/contracts/node_modules
+COPY --from=builder --chown=node:node /app/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=builder --chown=node:node /app/packages/contracts/dist ./packages/contracts/dist
 
-USER xrouter
+USER node
 EXPOSE 4000
 HEALTHCHECK --interval=10s --timeout=5s --retries=10 --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:4000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
