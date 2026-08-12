@@ -18,6 +18,7 @@ import {
   defaultLangfuseSettings,
   publicLangfuseSettings,
   saveApiKeyLangfuseSettings,
+  testApiKeyLangfuseConnection,
 } from '../services/langfuse';
 import { pollDeviceFlow, startDeviceFlow } from '../services/openai-oauth';
 import { refreshProviderModels } from '../services/providers';
@@ -323,6 +324,39 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
     return { ok: true, restartRequired: false };
   });
+
+  app.post(
+    '/api/admin/keys/:id/langfuse/test',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const parsed = langfuseSettingsSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
+      }
+      const id = (request.params as { id: string }).id;
+      const result = await testApiKeyLangfuseConnection(id, {
+        enabled: parsed.data.enabled,
+        publicKey: parsed.data.publicKey,
+        baseUrl: parsed.data.baseUrl,
+        environment: parsed.data.environment,
+        traceName: parsed.data.traceName,
+        version: parsed.data.version,
+        tags: parsed.data.tags,
+        metadata: parsed.data.metadata,
+        userIdHeader: parsed.data.userIdHeader,
+        sessionIdHeader: parsed.data.sessionIdHeader,
+        captureInput: parsed.data.captureInput,
+        captureOutput: parsed.data.captureOutput,
+        ...(parsed.data.secretKey !== undefined ? { secretKey: parsed.data.secretKey } : {}),
+      });
+      if (!result) {
+        return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
+      }
+      return result;
+    },
+  );
 
   app.get('/api/admin/usage/summary', async () => {
     const [summary, series, models] = await Promise.all([

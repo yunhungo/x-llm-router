@@ -22,7 +22,7 @@ async function main(): Promise<void> {
       'Initial administrator created. Change the default password immediately.',
     );
   }
-  app.log.info({ langfuseProjectCount }, 'Observability initialized');
+  app.log.info({ langfuseProjectCount, buildSha: config.BUILD_SHA }, 'Observability initialized');
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'Shutting down');

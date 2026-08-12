@@ -24,6 +24,7 @@ vi.mock('../lib/admin-auth', () => ({
 vi.mock('../services/providers', () => ({ refreshProviderModels }));
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
+import { encryptLangfuseSettings } from '../services/langfuse';
 import { adminRoutes } from './admin';
 
 const keyId = '11111111-1111-4111-8111-111111111111';
@@ -47,6 +48,7 @@ describe('admin API keys', () => {
 
   afterEach(async () => {
     await app.close();
+    vi.unstubAllGlobals();
   });
 
   it('creates an unlimited key when RPM is zero', async () => {
@@ -222,5 +224,62 @@ describe('admin API keys', () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error: { code: 'provider_not_found' } });
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('tests the current Langfuse draft with the previously stored secret key', async () => {
+    const ciphertext = encryptLangfuseSettings({
+      enabled: true,
+      publicKey: 'pk-lf-stored',
+      secretKey: 'sk-lf-stored',
+      baseUrl: 'https://cloud.langfuse.com',
+      environment: 'production',
+      traceName: '',
+      version: '',
+      tags: [],
+      metadata: {},
+      userIdHeader: 'x-user-id',
+      sessionIdHeader: 'x-session-id',
+      captureInput: true,
+      captureOutput: true,
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: keyId, langfuse_config_ciphertext: ciphertext }],
+      rowCount: 1,
+    });
+    const fetchMock = vi.fn(
+      async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) =>
+        new Response('{"data":[]}', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/admin/keys/${keyId}/langfuse/test`,
+      payload: {
+        enabled: true,
+        publicKey: 'pk-lf-current',
+        baseUrl: 'https://us.cloud.langfuse.com',
+        environment: 'production',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      baseUrl: 'https://us.cloud.langfuse.com',
+      statusCode: 200,
+    });
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get('authorization')).toBe(
+      `Basic ${Buffer.from('pk-lf-current:sk-lf-stored').toString('base64')}`,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://us.cloud.langfuse.com/api/public/otel/v1/traces',
+    );
+    expect(response.body).not.toContain('sk-lf-stored');
   });
 });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  BUILD_SHA: z.string().trim().min(1).max(128).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),

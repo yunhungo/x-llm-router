@@ -19,8 +19,10 @@ RUN pnpm --filter @x-router/contracts build \
   && pnpm --filter @x-router/web build
 
 FROM node:22-alpine AS runtime
+ARG BUILD_SHA=development
 ENV NODE_ENV=production
 ENV NODE_USE_ENV_PROXY=1
+ENV BUILD_SHA=$BUILD_SHA
 ENV WEB_ROOT=/app/apps/web/dist
 WORKDIR /app
 RUN node --help | grep -q -- '--use-env-proxy' \

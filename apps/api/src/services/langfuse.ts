@@ -1,4 +1,5 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
+import { diag, DiagLogLevel, type DiagLogger } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 
 import { getPool } from '../db/client';
@@ -30,6 +31,30 @@ interface LangfuseKeyStatusRow extends LangfuseKeyRow {
 }
 
 const API_KEY_ATTRIBUTE = 'langfuse.trace.metadata.apiKeyId';
+const LANGFUSE_AUTH_PATH = '/api/public/projects';
+const LANGFUSE_OTLP_TRACES_PATH = '/api/public/otel/v1/traces';
+const LANGFUSE_CONNECTION_TIMEOUT_MS = 10_000;
+const SAFE_TELEMETRY_ERROR_CODES = new Set([
+  'ABORT_ERR',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+export type EditableLangfuseSettings = Omit<KeyLangfuseSettings, 'secretKey'> & {
+  secretKey?: string;
+};
+
+export interface LangfuseConnectionTestResult {
+  ok: true;
+  baseUrl: string;
+  statusCode: number;
+}
 
 type RuntimeSpanProcessor = Pick<
   LangfuseSpanProcessor,
@@ -65,7 +90,7 @@ export class ReloadableLangfuseSpanProcessor {
       try {
         state.processor.onStart(...args);
       } catch (error) {
-        console.warn('Langfuse span processor failed while starting a span.', error);
+        logSafeTelemetryWarning('Langfuse span processor failed while starting a span.', error);
       }
     }
   }
@@ -80,7 +105,7 @@ export class ReloadableLangfuseSpanProcessor {
       try {
         state.processor.onEnd(...args);
       } catch (error) {
-        console.warn('Langfuse span processor failed while ending a span.', error);
+        logSafeTelemetryWarning('Langfuse span processor failed while ending a span.', error);
       }
     }
 
@@ -94,10 +119,10 @@ export class ReloadableLangfuseSpanProcessor {
     const results = await Promise.allSettled(
       [...this.states].map((state) => state.disposePromise ?? state.processor.forceFlush()),
     );
-    const errors = results
-      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      .map((result) => result.reason);
-    if (errors.length) throw new AggregateError(errors, 'Failed to flush Langfuse processors.');
+    const failureCount = results.filter((result) => result.status === 'rejected').length;
+    if (failureCount) {
+      throw new Error(`Failed to flush ${failureCount} Langfuse processor(s).`);
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -164,12 +189,12 @@ export class ReloadableLangfuseSpanProcessor {
       try {
         await state.processor.forceFlush();
       } catch (error) {
-        console.warn('Failed to flush a retired Langfuse span processor.', error);
+        logSafeTelemetryWarning('Failed to flush a retired Langfuse span processor.', error);
       }
       try {
         await state.processor.shutdown();
       } catch (error) {
-        console.warn('Failed to shut down a retired Langfuse span processor.', error);
+        logSafeTelemetryWarning('Failed to shut down a retired Langfuse span processor.', error);
       }
     })().finally(() => this.states.delete(state));
     return state.disposePromise;
@@ -178,6 +203,117 @@ export class ReloadableLangfuseSpanProcessor {
 
 const reloadableSpanProcessor = new ReloadableLangfuseSpanProcessor();
 let telemetrySdk: NodeSDK | undefined;
+let telemetryDiagnosticsConfigured = false;
+
+type TelemetryDiagnosticCategory =
+  'authentication' | 'connection' | 'dns' | 'export_failed' | 'rate_limit' | 'timeout' | 'upstream';
+
+function telemetryDiagnosticText(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (value instanceof Error) {
+    const error = value as Error & { code?: unknown; statusCode?: unknown };
+    return `${error.name} ${error.message} ${String(error.code ?? '')} ${String(error.statusCode ?? '')}`;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `${String(record.name ?? '')} ${String(record.message ?? '')} ${String(record.code ?? '')} ${String(record.statusCode ?? '')}`;
+  }
+  return '';
+}
+
+function telemetryDiagnosticCategory(value: unknown): TelemetryDiagnosticCategory {
+  const text = telemetryDiagnosticText(value).slice(0, 2_000).toLowerCase();
+  if (/\b(?:401|403)\b|unauthori[sz]ed|forbidden|auth(?:entication|orization)/.test(text)) {
+    return 'authentication';
+  }
+  if (/\b429\b|rate.?limit|too many requests/.test(text)) return 'rate_limit';
+  if (/timeout|timed out|etimedout|abort/.test(text)) return 'timeout';
+  if (/enotfound|eai_again|\bdns\b/.test(text)) return 'dns';
+  if (/econn|enetunreach|socket|connect/.test(text)) return 'connection';
+  if (/\b5\d\d\b|upstream|service unavailable/.test(text)) return 'upstream';
+  return 'export_failed';
+}
+
+function safeTelemetryErrorName(value: unknown): string {
+  const name = typeof value === 'string' ? value.toLowerCase() : '';
+  if (name.includes('otlp')) return 'OTLPExporterError';
+  if (name.includes('abort')) return 'AbortError';
+  if (name.includes('aggregate')) return 'AggregateError';
+  if (name.includes('type')) return 'TypeError';
+  return 'Error';
+}
+
+function safeTelemetryErrorCode(value: unknown): string | number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return undefined;
+  if (/^\d{3}$/.test(value)) return Number(value);
+  const normalized = value.toUpperCase();
+  return SAFE_TELEMETRY_ERROR_CODES.has(normalized) ? normalized : undefined;
+}
+
+/**
+ * Retains only transport-level diagnostics. Response bodies, headers, span
+ * attributes and arbitrary objects are deliberately discarded.
+ */
+export function safeTelemetryDiagnosticValue(value: unknown): unknown {
+  if (typeof value === 'number' || typeof value === 'boolean' || value == null) return value;
+
+  if (value instanceof Error) {
+    const error = value as Error & { code?: unknown; statusCode?: unknown };
+    const code = safeTelemetryErrorCode(error.code);
+    const statusCode = safeTelemetryErrorCode(error.statusCode);
+    return {
+      type: 'Error',
+      name: safeTelemetryErrorName(error.name),
+      category: telemetryDiagnosticCategory(error),
+      ...(code === undefined ? {} : { code }),
+      ...(statusCode === undefined ? {} : { statusCode }),
+    };
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const code = safeTelemetryErrorCode(record.code);
+    const statusCode = safeTelemetryErrorCode(record.statusCode);
+    return {
+      type: 'Object',
+      name: safeTelemetryErrorName(record.name),
+      category: telemetryDiagnosticCategory(record),
+      ...(code === undefined ? {} : { code }),
+      ...(statusCode === undefined ? {} : { statusCode }),
+    };
+  }
+
+  return { type: typeof value, category: telemetryDiagnosticCategory(value) };
+}
+
+function logSafeTelemetryWarning(message: string, error: unknown): void {
+  console.warn(message, { details: safeTelemetryDiagnosticValue(error) });
+}
+
+const noopDiagnostic = (_message: string, ..._args: unknown[]): void => undefined;
+const safeTelemetryDiagnosticLogger: DiagLogger = {
+  error: (message, ...args) => {
+    const categories = [message, ...args].map(telemetryDiagnosticCategory);
+    console.error('OpenTelemetry exporter error.', {
+      category: categories.find((category) => category !== 'export_failed') ?? 'export_failed',
+      details: args.map(safeTelemetryDiagnosticValue),
+    });
+  },
+  warn: noopDiagnostic,
+  info: noopDiagnostic,
+  debug: noopDiagnostic,
+  verbose: noopDiagnostic,
+};
+
+function configureTelemetryDiagnostics(): void {
+  if (telemetryDiagnosticsConfigured) return;
+  diag.setLogger(safeTelemetryDiagnosticLogger, {
+    logLevel: DiagLogLevel.ERROR,
+    suppressOverrideMessage: true,
+  });
+  telemetryDiagnosticsConfigured = true;
+}
 
 export function normalizeLangfuseBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
@@ -198,6 +334,7 @@ function createLangfuseSpanProcessor(
 
 function ensureTelemetryStarted(): void {
   if (telemetrySdk) return;
+  configureTelemetryDiagnostics();
   const sdk = new NodeSDK({ spanProcessors: [reloadableSpanProcessor] });
   sdk.start();
   telemetrySdk = sdk;
@@ -207,12 +344,12 @@ async function disposeUnusedProcessor(processor: RuntimeSpanProcessor): Promise<
   try {
     await processor.forceFlush();
   } catch (error) {
-    console.warn('Failed to flush an unused Langfuse span processor.', error);
+    logSafeTelemetryWarning('Failed to flush an unused Langfuse span processor.', error);
   }
   try {
     await processor.shutdown();
   } catch (error) {
-    console.warn('Failed to shut down an unused Langfuse span processor.', error);
+    logSafeTelemetryWarning('Failed to shut down an unused Langfuse span processor.', error);
   }
 }
 
@@ -269,9 +406,180 @@ export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<s
   };
 }
 
+function langfuseConnectionError(
+  message: string,
+  statusCode: number,
+  code: string,
+): Error & { statusCode: number; code: string; exposeMessage: true } {
+  return Object.assign(new Error(message), { statusCode, code, exposeMessage: true as const });
+}
+
+async function fetchLangfuseConnectionEndpoint(
+  endpoint: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), LANGFUSE_CONNECTION_TIMEOUT_MS);
+  try {
+    return await fetchImpl(endpoint, {
+      ...init,
+      redirect: 'error',
+      signal: abortController.signal,
+    });
+  } catch {
+    if (abortController.signal.aborted) {
+      throw langfuseConnectionError(
+        'Langfuse 连接超时，请检查 Base URL、代理和 NO_PROXY。',
+        504,
+        'langfuse_connection_timeout',
+      );
+    }
+    throw langfuseConnectionError(
+      '无法连接 Langfuse，请检查 Base URL、重定向、DNS、代理和 NO_PROXY。',
+      502,
+      'langfuse_connection_failed',
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function checkLangfuseConnection(
+  settings: KeyLangfuseSettings,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<LangfuseConnectionTestResult> {
+  if (!settings.publicKey || !settings.secretKey) {
+    throw langfuseConnectionError(
+      '测试 Langfuse 连接需要 Public Key 和 Secret Key。',
+      400,
+      'langfuse_credentials_required',
+    );
+  }
+
+  const baseUrl = normalizeLangfuseBaseUrl(settings.baseUrl);
+  let endpointBase: string;
+  try {
+    const parsedBaseUrl = new URL(baseUrl);
+    if (
+      !['http:', 'https:'].includes(parsedBaseUrl.protocol) ||
+      parsedBaseUrl.username ||
+      parsedBaseUrl.password ||
+      parsedBaseUrl.search ||
+      parsedBaseUrl.hash
+    ) {
+      throw new TypeError('Unsupported Langfuse Base URL');
+    }
+    parsedBaseUrl.hash = '';
+    parsedBaseUrl.search = '';
+    endpointBase = parsedBaseUrl.toString().replace(/\/+$/, '');
+  } catch {
+    throw langfuseConnectionError('Langfuse Base URL 无效。', 400, 'langfuse_base_url_invalid');
+  }
+
+  const authorization = `Basic ${Buffer.from(`${settings.publicKey}:${settings.secretKey}`).toString('base64')}`;
+  const response = await fetchLangfuseConnectionEndpoint(
+    `${endpointBase}${LANGFUSE_AUTH_PATH}`,
+    {
+      method: 'GET',
+      headers: { accept: 'application/json', authorization },
+    },
+    fetchImpl,
+  );
+
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  await response.body?.cancel().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    throw langfuseConnectionError(
+      'Langfuse 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。',
+      400,
+      'langfuse_auth_failed',
+    );
+  }
+  if (response.status === 404) {
+    throw langfuseConnectionError(
+      'Langfuse API 路径不存在；Base URL 应只填写实例地址，不要包含 /api/public。',
+      400,
+      'langfuse_endpoint_not_found',
+    );
+  }
+  if (!response.ok) {
+    throw langfuseConnectionError(
+      `Langfuse 返回 HTTP ${response.status}，请检查实例状态或反向代理。`,
+      502,
+      'langfuse_upstream_error',
+    );
+  }
+  if (!contentType.includes('application/json')) {
+    throw langfuseConnectionError(
+      'Langfuse 返回了非 JSON 响应，请确认 Base URL 没有指向登录页或其他服务。',
+      502,
+      'langfuse_invalid_response',
+    );
+  }
+
+  const otlpResponse = await fetchLangfuseConnectionEndpoint(
+    `${endpointBase}${LANGFUSE_OTLP_TRACES_PATH}`,
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/x-protobuf',
+        authorization,
+        'content-type': 'application/x-protobuf',
+      },
+      body: new Uint8Array(),
+    },
+    fetchImpl,
+  );
+  await otlpResponse.body?.cancel().catch(() => undefined);
+  if (otlpResponse.status === 401 || otlpResponse.status === 403) {
+    throw langfuseConnectionError(
+      'Langfuse OTLP 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。',
+      400,
+      'langfuse_otlp_auth_failed',
+    );
+  }
+  if (otlpResponse.status === 404) {
+    throw langfuseConnectionError(
+      'Langfuse OTLP traces 路径不存在，请检查实例版本和反向代理配置。',
+      400,
+      'langfuse_otlp_endpoint_not_found',
+    );
+  }
+  if (!otlpResponse.ok) {
+    throw langfuseConnectionError(
+      `Langfuse OTLP 返回 HTTP ${otlpResponse.status}，请检查实例状态或反向代理。`,
+      502,
+      'langfuse_otlp_upstream_error',
+    );
+  }
+
+  return { ok: true, baseUrl, statusCode: otlpResponse.status };
+}
+
+export async function testApiKeyLangfuseConnection(
+  apiKeyId: string,
+  input: EditableLangfuseSettings,
+): Promise<LangfuseConnectionTestResult | undefined> {
+  const result = await getPool().query<LangfuseKeyRow>(
+    'SELECT id, langfuse_config_ciphertext FROM virtual_api_keys WHERE id = $1',
+    [apiKeyId],
+  );
+  const row = result.rows[0];
+  if (!row) return undefined;
+
+  const existing = decryptLangfuseSettings(row.langfuse_config_ciphertext);
+  const settings: KeyLangfuseSettings = {
+    ...input,
+    baseUrl: normalizeLangfuseBaseUrl(input.baseUrl),
+    secretKey: input.secretKey || existing?.secretKey || '',
+  };
+  return checkLangfuseConnection(settings);
+}
+
 export async function saveApiKeyLangfuseSettings(
   apiKeyId: string,
-  input: Omit<KeyLangfuseSettings, 'secretKey'> & { secretKey?: string },
+  input: EditableLangfuseSettings,
 ): Promise<boolean> {
   const existingResult = await getPool().query<LangfuseKeyStatusRow>(
     'SELECT id, status, langfuse_config_ciphertext FROM virtual_api_keys WHERE id = $1',

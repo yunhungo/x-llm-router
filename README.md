@@ -48,7 +48,7 @@ docker compose -f docker-compose.release.yml ps
 
 - 管理后台：<http://localhost:59051>
 - API：<http://localhost:59051/v1>
-- 健康检查：<http://localhost:59051/readyz>
+- 健康检查：<http://localhost:59051/readyz>（响应中的 `buildSha` 可用于确认当前容器对应的 Git 提交）
 - 默认管理员账号：`admin`
 - 默认管理员密码：`change-me-now`
 
@@ -134,7 +134,7 @@ const response = await client.responses.create({
 
 ## Langfuse
 
-在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存后立即生效，不需要重启容器。
+在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存前可点击「测试连接」校验 Base URL、项目凭据和 OTLP traces 接收端；测试只发送一个不含 span 的空 protobuf 请求，不会写入测试 trace，留空 Secret Key 时会复用已保存的密钥，且不会修改当前配置。保存后立即生效，不需要重启容器。
 
 不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
 

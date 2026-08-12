@@ -21,6 +21,7 @@ describe('embedded web application', () => {
   let app: FastifyInstance;
   let webRoot: string;
   const originalEnvironment = {
+    BUILD_SHA: process.env.BUILD_SHA,
     DATABASE_URL: process.env.DATABASE_URL,
     LOG_LEVEL: process.env.LOG_LEVEL,
     WEB_ROOT: process.env.WEB_ROOT,
@@ -34,6 +35,7 @@ describe('embedded web application', () => {
     await writeFile(join(webRoot, 'assets', 'app.js'), 'globalThis.xRouter = true;');
 
     process.env.DATABASE_URL = 'postgresql://example';
+    process.env.BUILD_SHA = 'test-build-sha';
     process.env.LOG_LEVEL = 'silent';
     process.env.WEB_ROOT = webRoot;
     delete process.env.WEB_ORIGIN;
@@ -70,6 +72,25 @@ describe('embedded web application', () => {
     const assetResponse = await app.inject({ method: 'GET', url: '/assets/app.js' });
     expect(assetResponse.statusCode).toBe(200);
     expect(assetResponse.body).toContain('globalThis.xRouter');
+  });
+
+  it('exposes the running build revision on health endpoints', async () => {
+    const healthResponse = await app.inject({ method: 'GET', url: '/healthz' });
+    expect(healthResponse.statusCode).toBe(200);
+    expect(healthResponse.json()).toEqual({ status: 'ok', buildSha: 'test-build-sha' });
+
+    const readyResponse = await app.inject({ method: 'GET', url: '/readyz' });
+    expect(readyResponse.statusCode).toBe(200);
+    expect(readyResponse.json()).toEqual({ status: 'ready', buildSha: 'test-build-sha' });
+  });
+
+  it('keeps the build revision visible when readiness fails', async () => {
+    query.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const readyResponse = await app.inject({ method: 'GET', url: '/readyz' });
+
+    expect(readyResponse.statusCode).toBe(503);
+    expect(readyResponse.json()).toEqual({ status: 'not_ready', buildSha: 'test-build-sha' });
   });
 
   it('uses the SPA fallback without hiding missing API routes', async () => {

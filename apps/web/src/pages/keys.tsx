@@ -44,6 +44,8 @@ export function KeysPage() {
   const [providerId, setProviderId] = useState('');
   const [langfuse, setLangfuse] = useState<LangfuseDraft>(emptyLangfuse);
   const [loading, setLoading] = useState(false);
+  const [testingLangfuse, setTestingLangfuse] = useState(false);
+  const [langfuseTestResult, setLangfuseTestResult] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
@@ -100,12 +102,37 @@ export function KeysPage() {
       });
       setEditingKey(undefined);
       setEditingLangfuse(undefined);
+      setLangfuseTestResult('');
       setNotice('Langfuse 设置已保存。');
       await load();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : '保存失败。');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const testLangfuseConnection = async () => {
+    if (!editingKey || !editingLangfuse) return;
+    setTestingLangfuse(true);
+    setLangfuseTestResult('');
+    setError('');
+    try {
+      const result = await api<{ ok: true; baseUrl: string; statusCode: number }>(
+        `/api/admin/keys/${editingKey.id}/langfuse/test`,
+        {
+          method: 'POST',
+          ...jsonBody({
+            ...langfusePayload(editingLangfuse),
+            secretKey: editingLangfuse.secretKey || undefined,
+          }),
+        },
+      );
+      setLangfuseTestResult(`凭据与 OTLP 接收端验证成功 · ${result.baseUrl}`);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Langfuse 连接测试失败。');
+    } finally {
+      setTestingLangfuse(false);
     }
   };
 
@@ -213,6 +240,7 @@ export function KeysPage() {
                             event.stopPropagation();
                             setEditingKey(key);
                             setEditingLangfuse(langfuseDraft(key.langfuse));
+                            setLangfuseTestResult('');
                             setError('');
                           }}
                           aria-label={`配置 ${key.name} 的 Langfuse`}
@@ -353,20 +381,43 @@ export function KeysPage() {
           onClose={() => {
             setEditingKey(undefined);
             setEditingLangfuse(undefined);
+            setLangfuseTestResult('');
           }}
         >
           <form className="modal-body" onSubmit={(event) => void saveLangfuse(event)}>
             <LangfuseFields
               value={editingLangfuse}
-              onChange={setEditingLangfuse}
+              onChange={(value) => {
+                setEditingLangfuse(value);
+                setLangfuseTestResult('');
+              }}
               hasSecretKey={editingKey.langfuse.hasSecretKey}
             />
+            {langfuseTestResult ? (
+              <div className="notice compact-notice" role="status">
+                {langfuseTestResult}
+              </div>
+            ) : null}
             {error ? <div className="form-error">{error}</div> : null}
             <div className="modal-actions">
-              <Button type="button" variant="secondary" onClick={() => setEditingKey(undefined)}>
+              <Button
+                type="button"
+                variant="secondary"
+                loading={testingLangfuse}
+                disabled={!editingLangfuse.enabled || loading}
+                onClick={() => void testLangfuseConnection()}
+              >
+                测试连接
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={testingLangfuse}
+                onClick={() => setEditingKey(undefined)}
+              >
                 取消
               </Button>
-              <Button type="submit" loading={loading}>
+              <Button type="submit" loading={loading} disabled={testingLangfuse}>
                 保存
               </Button>
             </div>

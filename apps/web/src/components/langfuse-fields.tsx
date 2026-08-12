@@ -120,7 +120,10 @@ export function LangfuseFields({
               />
             </Field>
           </div>
-          <Field label="Base URL">
+          <Field
+            label="Base URL"
+            hint="必须与项目区域一致：EU cloud.langfuse.com，US us.cloud.langfuse.com"
+          >
             <Input
               type="url"
               value={value.baseUrl}

@@ -98,13 +98,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  app.get('/healthz', async () => ({ status: 'ok' }));
+  app.get('/healthz', async () => ({ status: 'ok', buildSha: config.BUILD_SHA }));
   app.get('/readyz', async (_request, reply) => {
     try {
       await getPool().query('SELECT 1');
-      return { status: 'ready' };
+      return { status: 'ready', buildSha: config.BUILD_SHA };
     } catch {
-      return reply.code(503).send({ status: 'not_ready' });
+      return reply.code(503).send({ status: 'not_ready', buildSha: config.BUILD_SHA });
     }
   });
 
