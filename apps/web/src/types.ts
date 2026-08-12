@@ -244,6 +244,8 @@ export interface KeyUsageLogsResponse {
     threshold: number | null;
     from: string | null;
     to: string | null;
+    model: string | null;
+    provider: string | null;
   };
 }
 

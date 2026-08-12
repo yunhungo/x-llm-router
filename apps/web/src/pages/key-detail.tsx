@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   BarChart3,
   Check,
@@ -55,6 +55,7 @@ const money = new Intl.NumberFormat('en-US', {
 });
 const integer = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+const allModelsValue = '__all_models__';
 
 type DetailTab = 'overview' | 'charts' | 'logs' | 'settings';
 type LogStatusFilter = 'all' | 'success' | 'failed';
@@ -79,6 +80,22 @@ interface LogDrilldown {
   threshold?: number;
   from?: string;
   to?: string;
+  model?: string;
+  provider?: string;
+}
+
+interface AnalyticsModelOption {
+  identity: string;
+  model: string;
+  provider: string;
+  label: string;
+}
+
+interface ModelAnalyticsState {
+  keyId: string;
+  identity: string;
+  range: KeyAnalyticsRange;
+  data: KeyAnalyticsResponse;
 }
 
 const detailTabs: Array<{
@@ -97,6 +114,60 @@ const rangeLabels: Record<KeyAnalyticsRange, string> = {
   '7d': '近 7 天',
   '30d': '近 30 天',
 };
+
+export function modelIdentity(provider: string, model: string) {
+  return JSON.stringify([provider, model]);
+}
+
+export function parseModelIdentity(identity: string) {
+  try {
+    const parsed: unknown = JSON.parse(identity);
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      parsed.every((value) => typeof value === 'string' && value.length > 0)
+    ) {
+      const [provider, model] = parsed as [string, string];
+      return { provider, model };
+    }
+  } catch {
+    // Invalid identities fall back to the aggregate view.
+  }
+  return undefined;
+}
+
+export function analyticsModelOptions(
+  data: KeyAnalyticsResponse,
+  providers: readonly Provider[],
+): AnalyticsModelOption[] {
+  const options: AnalyticsModelOption[] = [];
+  const seen = new Set<string>();
+  const add = (provider: string, model: string) => {
+    const identity = modelIdentity(provider, model);
+    if (!model || seen.has(identity)) return;
+    seen.add(identity);
+    options.push({ identity, provider, model, label: `${model} · ${provider}` });
+  };
+
+  data.models.forEach((item) => add(item.provider, item.model));
+  const matchingProviders = data.key.providerConnectionId
+    ? providers.filter((provider) => provider.id === data.key.providerConnectionId)
+    : providers;
+  const catalogStart = options.length;
+  matchingProviders.forEach((provider) => {
+    if (provider.defaultModel) add(provider.provider, provider.defaultModel);
+    (provider.models ?? []).forEach((model) => add(provider.provider, model));
+  });
+
+  // Automatic routing may draw from the global price catalog. A Key pinned to one
+  // connection must not inherit models from a different connection of the same provider.
+  if (!data.key.providerConnectionId && options.length === catalogStart) {
+    data.prices.forEach((item) => {
+      if (!data.key.provider || item.provider === data.key.provider) add(item.provider, item.model);
+    });
+  }
+  return options;
+}
 
 function priceDraft(price: ModelPriceMatch): PriceDraft {
   return {
@@ -218,6 +289,16 @@ export function KeyDetailPage() {
   const [expandedOverviewLogId, setExpandedOverviewLogId] = useState<string>();
   const [chartMetric, setChartMetric] = useState<PerformanceMetric>('calls');
   const [chartGrouping, setChartGrouping] = useState<ChartGrouping>('total');
+  const [chartModel, setChartModel] = useState(allModelsValue);
+  const [modelAnalytics, setModelAnalytics] = useState<ModelAnalyticsState>();
+  const [modelAnalyticsLoading, setModelAnalyticsLoading] = useState(false);
+  const [modelAnalyticsError, setModelAnalyticsError] = useState('');
+  const [chartRefreshKey, setChartRefreshKey] = useState(0);
+  const modelAnalyticsRequest = useRef(0);
+  const mainLoadRequest = useRef(0);
+  const mainLoadController = useRef<AbortController | undefined>(undefined);
+  const drilldownRequest = useRef(0);
+  const drilldownController = useRef<AbortController | undefined>(undefined);
   const [drilldown, setDrilldown] = useState<LogDrilldown>();
   const [focusedLogs, setFocusedLogs] = useState<KeyUsageLogsResponse>();
   const [logsLoading, setLogsLoading] = useState(false);
@@ -228,7 +309,15 @@ export function KeyDetailPage() {
 
   const load = useCallback(async () => {
     if (!id) return;
+    const requestId = ++mainLoadRequest.current;
+    mainLoadController.current?.abort();
+    const controller = new AbortController();
+    mainLoadController.current = controller;
+    drilldownController.current?.abort();
+    drilldownRequest.current += 1;
     setLoading(true);
+    setData((current) => (current?.key.id === id && current.range === range ? current : undefined));
+    setLogsLoading(false);
     setError('');
     setDrilldown(undefined);
     setFocusedLogs(undefined);
@@ -237,9 +326,12 @@ export function KeyDetailPage() {
     setExpandedOverviewLogId(undefined);
     try {
       const [response, providerResponse] = await Promise.all([
-        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`),
-        api<{ providers: Provider[] }>('/api/admin/providers'),
+        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`, {
+          signal: controller.signal,
+        }),
+        api<{ providers: Provider[] }>('/api/admin/providers', { signal: controller.signal }),
       ]);
+      if (mainLoadRequest.current !== requestId) return;
       setData(response);
       setProviders(providerResponse.providers.filter((provider) => provider.status === 'active'));
       setGeneralSettings(generalDraft(response.key));
@@ -250,56 +342,158 @@ export function KeyDetailPage() {
         ),
       );
     } catch (caught) {
+      if (mainLoadRequest.current !== requestId) return;
+      if (caught instanceof DOMException && caught.name === 'AbortError') return;
       setError(caught instanceof ApiError ? caught.message : '调用数据加载失败。');
     } finally {
-      setLoading(false);
+      if (mainLoadRequest.current === requestId) {
+        if (mainLoadController.current === controller) mainLoadController.current = undefined;
+        setLoading(false);
+      }
     }
   }, [id, range]);
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => {
+    void load();
+    return () => {
+      mainLoadController.current?.abort();
+      mainLoadRequest.current += 1;
+      drilldownController.current?.abort();
+      drilldownRequest.current += 1;
+    };
+  }, [load]);
+
+  const chartModelOptions = useMemo(
+    () => (data && data.key.id === id ? analyticsModelOptions(data, providers) : []),
+    [data, id, providers],
+  );
+
+  useEffect(() => {
+    setChartModel(allModelsValue);
+  }, [id]);
+
+  useEffect(() => {
+    if (!data || data.key.id !== id) return;
+    setChartModel((current) => {
+      if (current === allModelsValue) return current;
+      if (chartModelOptions.some((option) => option.identity === current)) return current;
+      return allModelsValue;
+    });
+  }, [chartModelOptions, data, id]);
+
+  useEffect(() => {
+    if (activeTab !== 'charts' || !id || chartModel === allModelsValue) {
+      setModelAnalyticsError('');
+      setModelAnalyticsLoading(false);
+      return;
+    }
+    const selectedModel = parseModelIdentity(chartModel);
+    if (!selectedModel) return;
+
+    const requestId = ++modelAnalyticsRequest.current;
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      range,
+      limit: '100',
+      model: selectedModel.model,
+      provider: selectedModel.provider,
+    });
+    setModelAnalyticsLoading(true);
+    setModelAnalyticsError('');
+
+    void api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (modelAnalyticsRequest.current !== requestId) return;
+        setModelAnalytics({ keyId: id, identity: chartModel, range, data: response });
+      })
+      .catch((caught: unknown) => {
+        if (modelAnalyticsRequest.current !== requestId) return;
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        setModelAnalyticsError(caught instanceof ApiError ? caught.message : '模型数据加载失败。');
+      })
+      .finally(() => {
+        if (modelAnalyticsRequest.current === requestId) setModelAnalyticsLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (modelAnalyticsRequest.current === requestId) modelAnalyticsRequest.current += 1;
+    };
+  }, [activeTab, chartModel, chartRefreshKey, id, range]);
 
   const loadDrilldown = async (next: LogDrilldown) => {
     if (!id) return;
+    const requestId = ++drilldownRequest.current;
+    drilldownController.current?.abort();
+    const controller = new AbortController();
+    drilldownController.current = controller;
     setActiveTab('logs');
     setLogsLoading(true);
     setError('');
     setDrilldown(next);
+    setFocusedLogs(undefined);
     setExpandedLogId(undefined);
+    setLogSearch('');
+    setLogStatus('all');
+    setLogModel('all');
+    setLogEndpoint('all');
     const params = new URLSearchParams({ range, limit: '100', metric: next.metric });
     if (next.threshold !== undefined) params.set('threshold', String(next.threshold));
     if (next.from) params.set('from', next.from);
     if (next.to) params.set('to', next.to);
+    if (next.model) params.set('model', next.model);
+    if (next.provider) params.set('provider', next.provider);
     try {
       const response = await api<KeyUsageLogsResponse>(
         `/api/admin/keys/${id}/analytics/logs?${params.toString()}`,
+        { signal: controller.signal },
       );
+      if (drilldownRequest.current !== requestId) return;
       setFocusedLogs(response);
-      requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (drilldownRequest.current !== requestId) return;
         document.getElementById('key-usage-logs')?.scrollIntoView({
           behavior: 'smooth',
           block: 'start',
-        }),
-      );
+        });
+      });
     } catch (caught) {
+      if (drilldownRequest.current !== requestId) return;
+      if (caught instanceof DOMException && caught.name === 'AbortError') return;
       setError(caught instanceof ApiError ? caught.message : '调用明细查询失败。');
     } finally {
-      setLogsLoading(false);
+      if (drilldownRequest.current === requestId) {
+        if (drilldownController.current === controller) drilldownController.current = undefined;
+        setLogsLoading(false);
+      }
     }
   };
 
   const clearDrilldown = () => {
+    drilldownController.current?.abort();
+    drilldownRequest.current += 1;
+    setLogsLoading(false);
     setDrilldown(undefined);
     setFocusedLogs(undefined);
     setExpandedLogId(undefined);
   };
 
   const selectBucket = (point: KeyUsagePoint) => {
+    const selectedModel = parseModelIdentity(chartModel);
     void loadDrilldown({
       label: formatDate(point.bucket),
       metric: 'recent',
       from: point.bucket,
       to: point.bucketEnd,
+      ...selectedModel,
     });
+  };
+
+  const loadModelDrilldown = (next: LogDrilldown) => {
+    const selectedModel = parseModelIdentity(chartModel);
+    void loadDrilldown({ ...next, ...selectedModel });
   };
 
   const savePrice = async (price: ModelPriceMatch) => {
@@ -423,22 +617,41 @@ export function KeyDetailPage() {
   }
 
   const { key, summary } = data;
-  const cacheRate = summary.inputTokens
-    ? (summary.cachedInputTokens / summary.inputTokens) * 100
+  const selectedModelOption = chartModelOptions.find((option) => option.identity === chartModel);
+  const activeModelData =
+    chartModel !== allModelsValue
+      ? modelAnalytics &&
+        modelAnalytics.keyId === id &&
+        modelAnalytics.identity === chartModel &&
+        modelAnalytics.range === range
+        ? modelAnalytics.data
+        : undefined
+      : data.key.id === id
+        ? data
+        : undefined;
+  const modelSummary = activeModelData?.summary;
+  const cacheRate = modelSummary?.inputTokens
+    ? (modelSummary.cachedInputTokens / modelSummary.inputTokens) * 100
     : 0;
-  const p50Tps = finiteMetric(summary.p50Tps, finiteMetric(summary.averageTps));
-  const p10Tps = finiteMetric(summary.p10Tps, p50Tps);
+  const p50Tps = finiteMetric(modelSummary?.p50Tps, finiteMetric(modelSummary?.averageTps));
+  const p10Tps = finiteMetric(modelSummary?.p10Tps, p50Tps);
   const streamingCalls = finiteMetric(
-    summary.streamingCalls,
-    data.logs.filter((log) => log.timeToFirstTokenMs !== null).length,
+    modelSummary?.streamingCalls,
+    activeModelData?.logs.filter((log) => log.timeToFirstTokenMs !== null).length ?? 0,
   );
-  const p50TtftMs = finiteMetric(summary.p50TtftMs, finiteMetric(summary.averageTtftMs));
-  const p95TtftMs = finiteMetric(summary.p95TtftMs, p50TtftMs);
-  const p99TtftMs = finiteMetric(summary.p99TtftMs, p95TtftMs);
-  const p50LatencyMs = finiteMetric(summary.p50LatencyMs, finiteMetric(summary.averageLatencyMs));
-  const p95LatencyMs = finiteMetric(summary.p95LatencyMs, p50LatencyMs);
-  const p99LatencyMs = finiteMetric(summary.p99LatencyMs, p95LatencyMs);
-  const visibleLogs = focusedLogs?.logs ?? data.logs;
+  const p50TtftMs = finiteMetric(
+    modelSummary?.p50TtftMs,
+    finiteMetric(modelSummary?.averageTtftMs),
+  );
+  const p95TtftMs = finiteMetric(modelSummary?.p95TtftMs, p50TtftMs);
+  const p99TtftMs = finiteMetric(modelSummary?.p99TtftMs, p95TtftMs);
+  const p50LatencyMs = finiteMetric(
+    modelSummary?.p50LatencyMs,
+    finiteMetric(modelSummary?.averageLatencyMs),
+  );
+  const p95LatencyMs = finiteMetric(modelSummary?.p95LatencyMs, p50LatencyMs);
+  const p99LatencyMs = finiteMetric(modelSummary?.p99LatencyMs, p95LatencyMs);
+  const visibleLogs = drilldown ? (focusedLogs?.logs ?? []) : data.logs;
   const normalizedLogSearch = logSearch.trim().toLowerCase();
   const filteredLogs = visibleLogs.filter((log) => {
     if (logStatus === 'success' && !log.success) return false;
@@ -494,7 +707,14 @@ export function KeyDetailPage() {
             <Badge tone={key.status === 'active' ? 'success' : 'danger'}>
               {key.status === 'active' ? '启用' : '已撤销'}
             </Badge>
-            <Button variant="secondary" loading={loading} onClick={() => void load()}>
+            <Button
+              variant="secondary"
+              loading={loading}
+              onClick={() => {
+                setChartRefreshKey((current) => current + 1);
+                void load();
+              }}
+            >
               <RefreshCcw size={14} /> 刷新
             </Button>
           </div>
@@ -722,223 +942,281 @@ export function KeyDetailPage() {
           role="tabpanel"
           aria-labelledby="key-tab-charts"
         >
-          <div className="tab-toolbar range-toolbar">
-            <span>{rangeLabels[range]}</span>
+          <div className="tab-toolbar range-toolbar chart-filter-toolbar">
+            <label className="chart-model-filter">
+              <span>模型</span>
+              <select
+                className="input"
+                value={chartModel}
+                disabled={!chartModelOptions.length}
+                onChange={(event) => setChartModel(event.target.value)}
+                aria-label="筛选模型"
+              >
+                <option value={allModelsValue}>
+                  {chartModelOptions.length ? '全部模型（汇总）' : '暂无可用模型'}
+                </option>
+                {chartModelOptions.map((option) => (
+                  <option value={option.identity} key={option.identity}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="chart-range-label">{rangeLabels[range]}</span>
             <RangeSwitch value={range} onChange={setRange} />
           </div>
 
-          <section className="stat-grid">
-            <article className="stat-card">
-              <span>调用</span>
-              <div className="stat-icon">
-                <Zap size={14} />
-              </div>
-              <strong>{integer.format(summary.calls)}</strong>
-              <small>{integer.format(summary.failedCalls)} 次失败</small>
-            </article>
-            <article className="stat-card">
-              <span>Token</span>
-              <div className="stat-icon">
-                <Gauge size={14} />
-              </div>
-              <strong>{integer.format(summary.totalTokens)}</strong>
-              <small>{integer.format(summary.cachedInputTokens)} cached</small>
-            </article>
-            <article className="stat-card">
-              <span>成本</span>
-              <div className="stat-icon">
-                <CircleDollarSign size={14} />
-              </div>
-              <strong>{money.format(summary.costUsd)}</strong>
-              <small>平均 {money.format(summary.averageCostUsd)} / 次</small>
-            </article>
-            <article className="stat-card">
-              <span>成功率</span>
-              <div className="stat-icon">
-                <Timer size={14} />
-              </div>
-              <strong>
-                {decimal.format(successRate(summary.calls, summary.successfulCalls))}%
-              </strong>
-              <small>{integer.format(summary.successfulCalls)} 次成功</small>
-            </article>
-          </section>
-
-          <section className="key-performance-grid">
-            <article className="metric-card">
-              <span>缓存命中</span>
-              <strong>{decimal.format(cacheRate)}%</strong>
-              <small>
-                {integer.format(summary.cachedInputTokens)} / {integer.format(summary.inputTokens)}{' '}
-                input
-              </small>
-            </article>
-            <article className="metric-card">
-              <span>TPS</span>
-              <strong>{decimal.format(p50Tps)}</strong>
-              <small>
-                P50 · 平均 {decimal.format(summary.averageTps)}
-                <button
-                  type="button"
-                  disabled={p10Tps <= 0}
-                  onClick={() =>
-                    void loadDrilldown({
-                      label: `TPS ≤ P10 (${decimal.format(p10Tps)} token/s)`,
-                      metric: 'tps',
-                      threshold: p10Tps,
-                    })
-                  }
-                >
-                  查看慢尾
-                </button>
-              </small>
-            </article>
-            <article className="metric-card">
-              <span>TTFT</span>
-              <strong>{decimal.format(p50TtftMs)} ms</strong>
-              <small>
-                P50 · {integer.format(streamingCalls)} 次流式
-                <span className="metric-query-links">
-                  <button
-                    type="button"
-                    disabled={streamingCalls === 0}
-                    onClick={() =>
-                      void loadDrilldown({
-                        label: `TTFT ≥ P95 (${decimal.format(p95TtftMs)} ms)`,
-                        metric: 'ttft',
-                        threshold: p95TtftMs,
-                      })
-                    }
-                  >
-                    P95
-                  </button>
-                  <button
-                    type="button"
-                    disabled={streamingCalls === 0}
-                    onClick={() =>
-                      void loadDrilldown({
-                        label: `TTFT ≥ P99 (${decimal.format(p99TtftMs)} ms)`,
-                        metric: 'ttft',
-                        threshold: p99TtftMs,
-                      })
-                    }
-                  >
-                    P99
-                  </button>
+          {modelAnalyticsError ? (
+            <section className="panel chart-model-error">
+              <span>{modelAnalyticsError}</span>
+              <Button variant="secondary" onClick={() => setChartRefreshKey((value) => value + 1)}>
+                重试
+              </Button>
+            </section>
+          ) : modelAnalyticsLoading || !modelSummary || !activeModelData ? (
+            <Skeleton height={610} />
+          ) : (
+            <>
+              <div className="selected-model-heading">
+                <div>
+                  <strong>{selectedModelOption?.model ?? '全部模型'}</strong>
+                  <span>
+                    {selectedModelOption?.provider ?? `${activeModelData.models.length} 个有调用`}
+                  </span>
+                </div>
+                <span>
+                  {modelSummary.calls ? `${integer.format(modelSummary.calls)} 次调用` : '暂无调用'}
                 </span>
-              </small>
-            </article>
-            <article className="metric-card">
-              <span>端到端延迟</span>
-              <strong>{decimal.format(p50LatencyMs)} ms</strong>
-              <small>
-                P50 · 平均 {decimal.format(summary.averageLatencyMs)} ms
-                <span className="metric-query-links">
-                  <button
-                    type="button"
-                    disabled={summary.calls === 0}
-                    onClick={() =>
-                      void loadDrilldown({
-                        label: `延迟 ≥ P95 (${decimal.format(p95LatencyMs)} ms)`,
-                        metric: 'latency',
-                        threshold: p95LatencyMs,
-                      })
-                    }
-                  >
-                    P95
-                  </button>
-                  <button
-                    type="button"
-                    disabled={summary.calls === 0}
-                    onClick={() =>
-                      void loadDrilldown({
-                        label: `延迟 ≥ P99 (${decimal.format(p99LatencyMs)} ms)`,
-                        metric: 'latency',
-                        threshold: p99LatencyMs,
-                      })
-                    }
-                  >
-                    P99
-                  </button>
-                </span>
-              </small>
-            </article>
-            <article className="metric-card">
-              <span>峰值 RPM</span>
-              <strong>{integer.format(summary.peakRpm)}</strong>
-              <small>
-                {key.rpmLimit === 0 ? '不限流' : `限额 ${integer.format(key.rpmLimit)}`}
-              </small>
-            </article>
-          </section>
+              </div>
 
-          <KeyPerformanceChart
-            points={data.series}
-            modelPoints={data.modelSeries ?? []}
-            models={data.models}
-            range={range}
-            metric={chartMetric}
-            grouping={chartGrouping}
-            onMetricChange={setChartMetric}
-            onGroupingChange={setChartGrouping}
-            onBucketSelect={selectBucket}
-          />
+              <section className="stat-grid">
+                <article className="stat-card">
+                  <span>调用</span>
+                  <div className="stat-icon">
+                    <Zap size={14} />
+                  </div>
+                  <strong>{integer.format(modelSummary.calls)}</strong>
+                  <small>{integer.format(modelSummary.failedCalls)} 次失败</small>
+                </article>
+                <article className="stat-card">
+                  <span>Token</span>
+                  <div className="stat-icon">
+                    <Gauge size={14} />
+                  </div>
+                  <strong>{integer.format(modelSummary.totalTokens)}</strong>
+                  <small>{integer.format(modelSummary.cachedInputTokens)} cached</small>
+                </article>
+                <article className="stat-card">
+                  <span>成本</span>
+                  <div className="stat-icon">
+                    <CircleDollarSign size={14} />
+                  </div>
+                  <strong>{money.format(modelSummary.costUsd)}</strong>
+                  <small>平均 {money.format(modelSummary.averageCostUsd)} / 次</small>
+                </article>
+                <article className="stat-card">
+                  <span>成功率</span>
+                  <div className="stat-icon">
+                    <Timer size={14} />
+                  </div>
+                  <strong>
+                    {modelSummary.calls
+                      ? `${decimal.format(successRate(modelSummary.calls, modelSummary.successfulCalls))}%`
+                      : '—'}
+                  </strong>
+                  <small>{integer.format(modelSummary.successfulCalls)} 次成功</small>
+                </article>
+              </section>
 
-          <section className="panel flush-panel model-breakdown-panel">
-            <div className="panel-heading compact-panel-heading">
-              <h2>模型明细</h2>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Provider / 模型</th>
-                    <th>调用</th>
-                    <th>Token</th>
-                    <th>缓存</th>
-                    <th>TPS</th>
-                    <th>延迟</th>
-                    <th>成本</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.models.length ? (
-                    data.models.map((model) => (
-                      <tr key={`${model.provider}:${model.model}`}>
-                        <td>
-                          <strong>{model.model}</strong>
-                          <small>{model.provider}</small>
-                        </td>
-                        <td>
-                          {integer.format(model.calls)}
-                          <small>
-                            {decimal.format(successRate(model.calls, model.successfulCalls))}% 成功
-                          </small>
-                        </td>
-                        <td>
-                          {integer.format(model.totalTokens)}
-                          <small>
-                            {integer.format(model.inputTokens)} in ·{' '}
-                            {integer.format(model.outputTokens)} out
-                          </small>
-                        </td>
-                        <td>{integer.format(model.cachedInputTokens)}</td>
-                        <td>{decimal.format(model.averageTps)}</td>
-                        <td>{decimal.format(model.averageLatencyMs)} ms</td>
-                        <td>{money.format(model.costUsd)}</td>
+              <section className="key-performance-grid">
+                <article className="metric-card">
+                  <span>缓存命中</span>
+                  <strong>
+                    {modelSummary.inputTokens ? `${decimal.format(cacheRate)}%` : '—'}
+                  </strong>
+                  <small>
+                    {integer.format(modelSummary.cachedInputTokens)} /{' '}
+                    {integer.format(modelSummary.inputTokens)} input
+                  </small>
+                </article>
+                <article className="metric-card">
+                  <span>TPS</span>
+                  <strong>{p50Tps > 0 ? decimal.format(p50Tps) : '—'}</strong>
+                  <small>
+                    P50 · 平均 {p50Tps > 0 ? decimal.format(modelSummary.averageTps) : '—'}
+                    <button
+                      type="button"
+                      disabled={p10Tps <= 0}
+                      onClick={() =>
+                        loadModelDrilldown({
+                          label: `TPS ≤ P10 (${decimal.format(p10Tps)} token/s)`,
+                          metric: 'tps',
+                          threshold: p10Tps,
+                        })
+                      }
+                    >
+                      查看慢尾
+                    </button>
+                  </small>
+                </article>
+                <article className="metric-card">
+                  <span>TTFT</span>
+                  <strong>{streamingCalls ? `${decimal.format(p50TtftMs)} ms` : '—'}</strong>
+                  <small>
+                    P50 · {integer.format(streamingCalls)} 次流式
+                    <span className="metric-query-links">
+                      <button
+                        type="button"
+                        disabled={streamingCalls === 0}
+                        onClick={() =>
+                          loadModelDrilldown({
+                            label: `TTFT ≥ P95 (${decimal.format(p95TtftMs)} ms)`,
+                            metric: 'ttft',
+                            threshold: p95TtftMs,
+                          })
+                        }
+                      >
+                        P95
+                      </button>
+                      <button
+                        type="button"
+                        disabled={streamingCalls === 0}
+                        onClick={() =>
+                          loadModelDrilldown({
+                            label: `TTFT ≥ P99 (${decimal.format(p99TtftMs)} ms)`,
+                            metric: 'ttft',
+                            threshold: p99TtftMs,
+                          })
+                        }
+                      >
+                        P99
+                      </button>
+                    </span>
+                  </small>
+                </article>
+                <article className="metric-card">
+                  <span>端到端延迟</span>
+                  <strong>{modelSummary.calls ? `${decimal.format(p50LatencyMs)} ms` : '—'}</strong>
+                  <small>
+                    P50 · 平均{' '}
+                    {modelSummary.calls
+                      ? `${decimal.format(modelSummary.averageLatencyMs)} ms`
+                      : '—'}
+                    <span className="metric-query-links">
+                      <button
+                        type="button"
+                        disabled={modelSummary.calls === 0}
+                        onClick={() =>
+                          loadModelDrilldown({
+                            label: `延迟 ≥ P95 (${decimal.format(p95LatencyMs)} ms)`,
+                            metric: 'latency',
+                            threshold: p95LatencyMs,
+                          })
+                        }
+                      >
+                        P95
+                      </button>
+                      <button
+                        type="button"
+                        disabled={modelSummary.calls === 0}
+                        onClick={() =>
+                          loadModelDrilldown({
+                            label: `延迟 ≥ P99 (${decimal.format(p99LatencyMs)} ms)`,
+                            metric: 'latency',
+                            threshold: p99LatencyMs,
+                          })
+                        }
+                      >
+                        P99
+                      </button>
+                    </span>
+                  </small>
+                </article>
+                <article className="metric-card">
+                  <span>峰值 RPM</span>
+                  <strong>{integer.format(modelSummary.peakRpm)}</strong>
+                  <small>
+                    {key.rpmLimit === 0 ? '不限流' : `限额 ${integer.format(key.rpmLimit)}`}
+                  </small>
+                </article>
+              </section>
+
+              <KeyPerformanceChart
+                points={activeModelData.series}
+                modelPoints={activeModelData.modelSeries ?? []}
+                models={activeModelData.models}
+                range={range}
+                metric={chartMetric}
+                grouping={chartGrouping}
+                onMetricChange={setChartMetric}
+                onGroupingChange={setChartGrouping}
+                onBucketSelect={selectBucket}
+                emptyLabel={
+                  selectedModelOption
+                    ? `该模型在${rangeLabels[range]}暂无调用数据`
+                    : `${rangeLabels[range]}暂无调用数据`
+                }
+              />
+
+              <section className="panel flush-panel model-breakdown-panel">
+                <div className="panel-heading compact-panel-heading">
+                  <h2>{selectedModelOption ? '模型信息' : '模型明细'}</h2>
+                  <span>{selectedModelOption?.label ?? '全部模型'}</span>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Provider / 模型</th>
+                        <th>调用</th>
+                        <th>Token</th>
+                        <th>缓存</th>
+                        <th>TPS</th>
+                        <th>延迟</th>
+                        <th>成本</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={7} className="table-empty">
-                        暂无模型调用
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                    </thead>
+                    <tbody>
+                      {activeModelData.models.length ? (
+                        activeModelData.models.map((model) => (
+                          <tr key={`${model.provider}:${model.model}`}>
+                            <td>
+                              <strong>{model.model}</strong>
+                              <small>{model.provider}</small>
+                            </td>
+                            <td>
+                              {integer.format(model.calls)}
+                              <small>
+                                {decimal.format(successRate(model.calls, model.successfulCalls))}%
+                                成功
+                              </small>
+                            </td>
+                            <td>
+                              {integer.format(model.totalTokens)}
+                              <small>
+                                {integer.format(model.inputTokens)} in ·{' '}
+                                {integer.format(model.outputTokens)} out
+                              </small>
+                            </td>
+                            <td>{integer.format(model.cachedInputTokens)}</td>
+                            <td>{decimal.format(model.averageTps)}</td>
+                            <td>{decimal.format(model.averageLatencyMs)} ms</td>
+                            <td>{money.format(model.costUsd)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="table-empty">
+                            该模型在{rangeLabels[range]}暂无调用数据
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
         </div>
       ) : null}
 

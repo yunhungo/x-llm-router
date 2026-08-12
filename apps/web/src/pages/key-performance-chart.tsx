@@ -264,6 +264,7 @@ export function KeyPerformanceChart({
   onMetricChange,
   onGroupingChange,
   onBucketSelect,
+  emptyLabel = '暂无调用',
 }: {
   points: KeyUsagePoint[];
   modelPoints: KeyModelUsagePoint[];
@@ -274,6 +275,7 @@ export function KeyPerformanceChart({
   onMetricChange: (metric: PerformanceMetric) => void;
   onGroupingChange: (grouping: ChartGrouping) => void;
   onBucketSelect: (point: KeyUsagePoint) => void;
+  emptyLabel?: string;
 }) {
   const totalChartData = points.map(normalizePerformancePoint);
   const groupedSeries = modelChartSeries(models);
@@ -518,7 +520,7 @@ export function KeyPerformanceChart({
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="analytics-empty performance-empty">暂无调用</div>
+        <div className="analytics-empty performance-empty">{emptyLabel}</div>
       )}
     </section>
   );

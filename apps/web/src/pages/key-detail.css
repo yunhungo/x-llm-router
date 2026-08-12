@@ -351,6 +351,85 @@
   font-size: 11px;
 }
 
+.chart-filter-toolbar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.chart-model-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-model-filter > span,
+.chart-range-label {
+  color: var(--mute);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chart-model-filter .input {
+  width: min(320px, 52vw);
+  height: 36px;
+  padding-right: 34px;
+  font-size: 12px;
+  background-position:
+    calc(100% - 17px) 15px,
+    calc(100% - 12px) 15px;
+}
+
+.selected-model-heading {
+  margin: 2px 0 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.selected-model-heading > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.selected-model-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-model-heading span,
+.model-breakdown-panel .panel-heading > span {
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.chart-model-empty,
+.chart-model-error {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.chart-model-empty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.chart-model-error .button {
+  margin-top: 4px;
+}
+
 .range-switch {
   height: 36px;
   padding: 3px;
@@ -855,6 +934,21 @@
     align-items: stretch;
   }
 
+  .chart-filter-toolbar {
+    align-items: flex-start;
+  }
+
+  .chart-model-filter {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .chart-model-filter .input {
+    min-width: 0;
+    width: auto;
+    flex: 1 1 auto;
+  }
+
   .metric-tabs {
     width: 100%;
     overflow-x: auto;
@@ -862,6 +956,10 @@
 
   .metric-tabs button {
     flex: 1 0 auto;
+  }
+
+  .chart-grouping button {
+    flex: 1;
   }
 
   .logs-range-control {
@@ -1004,10 +1102,6 @@
   .key-detail-tabs button svg {
     width: 13px;
     height: 13px;
-  }
-
-  .chart-grouping button {
-    flex: 1;
   }
 
   .clear-filter-button {

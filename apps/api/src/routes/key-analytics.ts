@@ -9,6 +9,8 @@ const paramsSchema = z.object({ id: z.string().uuid() });
 const querySchema = z.object({
   range: z.enum(['24h', '7d', '30d']).default('24h'),
   limit: z.coerce.number().int().min(10).max(200).default(100),
+  model: z.string().trim().min(1).max(120).optional(),
+  provider: z.string().trim().min(1).max(40).optional(),
 });
 const logQuerySchema = z
   .object({
@@ -18,6 +20,8 @@ const logQuerySchema = z
     threshold: z.coerce.number().nonnegative().optional(),
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
+    model: z.string().trim().min(1).max(120).optional(),
+    provider: z.string().trim().min(1).max(40).optional(),
   })
   .refine(
     (value) => !['latency', 'ttft', 'tps'].includes(value.metric) || value.threshold !== undefined,
@@ -52,7 +56,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const { id } = parsedParams.data;
-    const { range, limit } = parsedQuery.data;
+    const { range, limit, model, provider } = parsedQuery.data;
     const rangeConfig = ranges[range];
     const pool = getPool();
     const keyResult = await pool.query(
@@ -75,8 +79,12 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
     const analytics = await Promise.all([
       pool.query(
         `WITH scope AS (
-           SELECT * FROM usage_logs
-            WHERE virtual_api_key_id = $1 AND created_at >= now() - $2::interval
+           SELECT u.*
+             FROM usage_logs u
+             LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+            WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND ($3::text IS NULL OR u.model = $3::text)
+              AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          ), per_minute AS (
            SELECT date_trunc('minute', created_at), count(*)::int AS calls
              FROM scope GROUP BY 1
@@ -116,21 +124,24 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 count(*) FILTER (WHERE time_to_first_token_ms IS NOT NULL)::int AS "streamingCalls",
                 COALESCE((SELECT max(calls) FROM per_minute), 0)::int AS "peakRpm"
            FROM scope`,
-        [id, rangeConfig.interval],
+        [id, rangeConfig.interval, model ?? null, provider ?? null],
       ),
       pool.query(
         `WITH bounds AS (
-           SELECT date_bin($3::interval, now() - $2::interval, timestamptz '2000-01-01') AS start_at,
-                  date_bin($3::interval, now(), timestamptz '2000-01-01') AS end_at
+           SELECT date_bin($5::interval, now() - $2::interval, timestamptz '2000-01-01') AS start_at,
+                  date_bin($5::interval, now(), timestamptz '2000-01-01') AS end_at
          ), buckets AS (
-           SELECT generate_series(start_at, end_at, $3::interval) AS bucket FROM bounds
+           SELECT generate_series(start_at, end_at, $5::interval) AS bucket FROM bounds
          ), scope AS (
-           SELECT *, output_tokens * 1000.0 /
-             NULLIF(latency_ms - COALESCE(time_to_first_token_ms, 0), 0) AS tps
-             FROM usage_logs
-            WHERE virtual_api_key_id = $1 AND created_at >= now() - $2::interval
+           SELECT u.*, u.output_tokens * 1000.0 /
+             NULLIF(u.latency_ms - COALESCE(u.time_to_first_token_ms, 0), 0) AS tps
+             FROM usage_logs u
+             LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+            WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND ($3::text IS NULL OR u.model = $3::text)
+              AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          )
-         SELECT b.bucket, b.bucket + $3::interval AS "bucketEnd",
+         SELECT b.bucket, b.bucket + $5::interval AS "bucketEnd",
                 count(s.id)::int AS calls,
                 count(s.id) FILTER (WHERE s.success)::int AS "successfulCalls",
                 count(s.id) FILTER (WHERE NOT s.success)::int AS "failedCalls",
@@ -157,13 +168,13 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY s.tps)
                   FILTER (WHERE s.tps > 0), 0)::float8 AS "p50Tps"
            FROM buckets b
-           LEFT JOIN scope s ON s.created_at >= b.bucket AND s.created_at < b.bucket + $3::interval
+           LEFT JOIN scope s ON s.created_at >= b.bucket AND s.created_at < b.bucket + $5::interval
           GROUP BY b.bucket ORDER BY b.bucket`,
-        [id, rangeConfig.interval, rangeConfig.bucket],
+        [id, rangeConfig.interval, model ?? null, provider ?? null, rangeConfig.bucket],
       ),
       pool.query(
         `WITH scoped AS (
-           SELECT date_bin($3::interval, u.created_at, timestamptz '2000-01-01') AS bucket,
+           SELECT date_bin($5::interval, u.created_at, timestamptz '2000-01-01') AS bucket,
                   COALESCE(p.provider, 'unknown') AS provider, u.model, u.success,
                   u.input_tokens, u.output_tokens, u.cached_input_tokens, u.cost_usd,
                   u.time_to_first_token_ms, u.latency_ms,
@@ -175,8 +186,10 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
             WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND ($3::text IS NULL OR u.model = $3::text)
+              AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          )
-         SELECT bucket, bucket + $3::interval AS "bucketEnd", provider, model,
+         SELECT bucket, bucket + $5::interval AS "bucketEnd", provider, model,
                 count(*)::int AS calls,
                 count(*) FILTER (WHERE success)::int AS "successfulCalls",
                 count(*) FILTER (WHERE NOT success)::int AS "failedCalls",
@@ -191,7 +204,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM scoped
           GROUP BY bucket, provider, model
           ORDER BY bucket, provider, model`,
-        [id, rangeConfig.interval, rangeConfig.bucket],
+        [id, rangeConfig.interval, model ?? null, provider ?? null, rangeConfig.bucket],
       ),
       pool.query(
         `SELECT u.model, COALESCE(p.provider, 'unknown') AS provider,
@@ -209,26 +222,34 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND ($3::text IS NULL OR u.model = $3::text)
+            AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
           GROUP BY u.model, p.provider ORDER BY calls DESC, u.model`,
-        [id, rangeConfig.interval],
+        [id, rangeConfig.interval, model ?? null, provider ?? null],
       ),
       pool.query(
-        `SELECT endpoint, count(*)::int AS calls,
-                count(*) FILTER (WHERE success)::int AS "successfulCalls",
-                COALESCE(sum(total_tokens), 0)::float8 AS tokens,
-                COALESCE(sum(cost_usd), 0)::float8 AS "costUsd"
-           FROM usage_logs
-          WHERE virtual_api_key_id = $1 AND created_at >= now() - $2::interval
-          GROUP BY endpoint ORDER BY calls DESC`,
-        [id, rangeConfig.interval],
+        `SELECT u.endpoint, count(*)::int AS calls,
+                count(*) FILTER (WHERE u.success)::int AS "successfulCalls",
+                COALESCE(sum(u.total_tokens), 0)::float8 AS tokens,
+                COALESCE(sum(u.cost_usd), 0)::float8 AS "costUsd"
+           FROM usage_logs u
+           LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+          WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND ($3::text IS NULL OR u.model = $3::text)
+            AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
+          GROUP BY u.endpoint ORDER BY calls DESC`,
+        [id, rangeConfig.interval, model ?? null, provider ?? null],
       ),
       pool.query(
-        `SELECT COALESCE(error_code, status_code::text) AS code, count(*)::int AS calls
-           FROM usage_logs
-          WHERE virtual_api_key_id = $1 AND created_at >= now() - $2::interval
-            AND NOT success
+        `SELECT COALESCE(u.error_code, u.status_code::text) AS code, count(*)::int AS calls
+           FROM usage_logs u
+           LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+          WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND ($3::text IS NULL OR u.model = $3::text)
+            AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
+            AND NOT u.success
           GROUP BY 1 ORDER BY calls DESC LIMIT 8`,
-        [id, rangeConfig.interval],
+        [id, rangeConfig.interval, model ?? null, provider ?? null],
       ),
       pool.query(
         `SELECT u.id, u.request_id AS "requestId", u.endpoint,
@@ -247,11 +268,13 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                        (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
                   ELSE NULL END::float8 AS tps
            FROM usage_logs u
-           LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
-           LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
+          LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+          LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
-          ORDER BY u.created_at DESC LIMIT $3`,
-        [id, rangeConfig.interval, limit],
+            AND ($3::text IS NULL OR u.model = $3::text)
+            AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
+          ORDER BY u.created_at DESC LIMIT $5`,
+        [id, rangeConfig.interval, model ?? null, provider ?? null, limit],
       ),
       pool.query(
         `WITH used_models AS (
@@ -322,7 +345,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const { id } = parsedParams.data;
-    const { range, limit, metric, threshold, from, to } = parsedQuery.data;
+    const { range, limit, metric, threshold, from, to, model, provider } = parsedQuery.data;
     const pool = getPool();
     const exists = await pool.query('SELECT id FROM virtual_api_keys WHERE id = $1', [id]);
     if (!exists.rowCount) {
@@ -338,10 +361,13 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                        (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
                   ELSE NULL END::float8 AS tps
            FROM usage_logs u
+           LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1
             AND u.created_at >= now() - $2::interval
             AND ($3::timestamptz IS NULL OR u.created_at >= $3::timestamptz)
             AND ($4::timestamptz IS NULL OR u.created_at < $4::timestamptz)
+            AND ($7::text IS NULL OR u.model = $7::text)
+            AND ($8::text IS NULL OR COALESCE(p.provider, 'unknown') = $8::text)
        ), filtered AS (
          SELECT s.*, count(*) OVER()::int AS "filteredCount"
            FROM scoped s
@@ -369,8 +395,18 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
           CASE WHEN $5 = 'ttft' THEN f.time_to_first_token_ms END DESC NULLS LAST,
           CASE WHEN $5 = 'tps' THEN f.tps END ASC NULLS LAST,
           f.created_at DESC
-        LIMIT $7`,
-      [id, ranges[range].interval, from ?? null, to ?? null, metric, threshold ?? null, limit],
+        LIMIT $9`,
+      [
+        id,
+        ranges[range].interval,
+        from ?? null,
+        to ?? null,
+        metric,
+        threshold ?? null,
+        model ?? null,
+        provider ?? null,
+        limit,
+      ],
     );
 
     const total = Number(result.rows[0]?.filteredCount ?? 0);
@@ -383,6 +419,8 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         threshold: threshold ?? null,
         from: from ?? null,
         to: to ?? null,
+        model: model ?? null,
+        provider: provider ?? null,
       },
     };
   });
