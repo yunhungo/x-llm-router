@@ -144,6 +144,8 @@ async function gatewayHandler(
     url: clientUrl,
     body,
     authorization: '<ROUTER_API_KEY>',
+    method: request.method,
+    headers: request.headers,
     accept: body.stream === true ? 'text/event-stream' : 'application/json',
     requestId,
   });
@@ -228,6 +230,8 @@ async function gatewayHandler(
       url: upstreamUrl,
       body: prepared.body,
       authorization: '<UPSTREAM_CREDENTIAL>',
+      method: 'POST',
+      headers: upstreamHeaders,
       accept: upstreamHeaders.accept,
       requestId,
     });

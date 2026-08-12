@@ -16,7 +16,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../api';
 import {
@@ -39,12 +39,7 @@ import type {
   VirtualKey,
 } from '../types';
 import './key-detail.css';
-import {
-  KeyPerformanceChart,
-  type ChartGrouping,
-  type PerformanceMetric,
-} from './key-performance-chart';
-import { groupKeyErrors } from './key-error-summary';
+import { KeyPerformanceChart, type PerformanceMetric } from './key-performance-chart';
 import { UsageLogDetailPanel } from './usage-log-detail';
 
 const money = new Intl.NumberFormat('en-US', {
@@ -59,6 +54,17 @@ const allModelsValue = '__all_models__';
 
 type DetailTab = 'overview' | 'charts' | 'logs' | 'settings';
 type LogStatusFilter = 'all' | 'success' | 'failed';
+const detailTabValues: DetailTab[] = ['overview', 'charts', 'logs', 'settings'];
+
+export function parseDetailTab(value: string | null): DetailTab {
+  return detailTabValues.includes(value as DetailTab) ? (value as DetailTab) : 'overview';
+}
+
+export function detailTabSearchParams(current: URLSearchParams, nextTab: DetailTab) {
+  const next = new URLSearchParams(current);
+  next.set('tab', nextTab);
+  return next;
+}
 
 interface PriceDraft {
   inputPerMillion: string;
@@ -270,7 +276,14 @@ function RangeSwitch({
 
 export function KeyDetailPage() {
   const { id } = useParams();
-  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = parseDetailTab(searchParams.get('tab'));
+  const setActiveTab = useCallback(
+    (nextTab: DetailTab) => {
+      setSearchParams((current) => detailTabSearchParams(current, nextTab));
+    },
+    [setSearchParams],
+  );
   const [range, setRange] = useState<KeyAnalyticsRange>('24h');
   const [data, setData] = useState<KeyAnalyticsResponse>();
   const [loading, setLoading] = useState(false);
@@ -285,10 +298,7 @@ export function KeyDetailPage() {
   const [savingLangfuse, setSavingLangfuse] = useState(false);
   const [savedSettings, setSavedSettings] = useState<'general' | 'langfuse'>();
   const [expandedLogId, setExpandedLogId] = useState<string>();
-  const [expandedErrorCode, setExpandedErrorCode] = useState<string>();
-  const [expandedOverviewLogId, setExpandedOverviewLogId] = useState<string>();
   const [chartMetric, setChartMetric] = useState<PerformanceMetric>('calls');
-  const [chartGrouping, setChartGrouping] = useState<ChartGrouping>('total');
   const [chartModel, setChartModel] = useState(allModelsValue);
   const [modelAnalytics, setModelAnalytics] = useState<ModelAnalyticsState>();
   const [modelAnalyticsLoading, setModelAnalyticsLoading] = useState(false);
@@ -322,8 +332,6 @@ export function KeyDetailPage() {
     setDrilldown(undefined);
     setFocusedLogs(undefined);
     setExpandedLogId(undefined);
-    setExpandedErrorCode(undefined);
-    setExpandedOverviewLogId(undefined);
     try {
       const [response, providerResponse] = await Promise.all([
         api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`, {
@@ -382,7 +390,11 @@ export function KeyDetailPage() {
   }, [chartModelOptions, data, id]);
 
   useEffect(() => {
-    if (activeTab !== 'charts' || !id || chartModel === allModelsValue) {
+    if (
+      (activeTab !== 'overview' && activeTab !== 'charts') ||
+      !id ||
+      chartModel === allModelsValue
+    ) {
       setModelAnalyticsError('');
       setModelAnalyticsLoading(false);
       return;
@@ -616,7 +628,7 @@ export function KeyDetailPage() {
     );
   }
 
-  const { key, summary } = data;
+  const { key } = data;
   const selectedModelOption = chartModelOptions.find((option) => option.identity === chartModel);
   const activeModelData =
     chartModel !== allModelsValue
@@ -678,7 +690,6 @@ export function KeyDetailPage() {
     setLogModel('all');
     setLogEndpoint('all');
   };
-  const errorGroups = groupKeyErrors(data.errors, data.logs);
   const initialGeneral = generalDraft(key);
   const currentGeneral = generalSettings ?? generalDraft(key);
   const generalChanged = !sameGeneralDraft(currentGeneral, initialGeneral);
@@ -733,7 +744,8 @@ export function KeyDetailPage() {
               aria-selected={activeTab === tab.value}
               aria-controls={`key-panel-${tab.value}`}
               onClick={() => {
-                if (activeTab !== tab.value) setNotice('');
+                if (activeTab === tab.value) return;
+                setNotice('');
                 setActiveTab(tab.value);
               }}
             >
@@ -792,146 +804,73 @@ export function KeyDetailPage() {
 
           <div className="overview-section-heading">
             <h2>使用概览</h2>
-            <span>{rangeLabels[range]}</span>
-          </div>
-          <section className="stat-grid overview-stat-grid">
-            <article className="stat-card">
-              <span>调用</span>
-              <div className="stat-icon">
-                <Zap size={14} />
-              </div>
-              <strong>{integer.format(summary.calls)}</strong>
-              <small>{integer.format(summary.failedCalls)} 次失败</small>
-            </article>
-            <article className="stat-card">
-              <span>Token</span>
-              <div className="stat-icon">
-                <Gauge size={14} />
-              </div>
-              <strong>{integer.format(summary.totalTokens)}</strong>
-              <small>{integer.format(summary.cachedInputTokens)} cached</small>
-            </article>
-            <article className="stat-card">
-              <span>成本</span>
-              <div className="stat-icon">
-                <CircleDollarSign size={14} />
-              </div>
-              <strong>{money.format(summary.costUsd)}</strong>
-              <small>平均 {money.format(summary.averageCostUsd)} / 次</small>
-            </article>
-            <article className="stat-card">
-              <span>成功率</span>
-              <div className="stat-icon">
-                <Timer size={14} />
-              </div>
-              <strong>
-                {decimal.format(successRate(summary.calls, summary.successfulCalls))}%
-              </strong>
-              <small>{integer.format(summary.successfulCalls)} 次成功</small>
-            </article>
-          </section>
-
-          <section className="panel overview-errors-panel">
-            <div className="panel-heading compact-panel-heading overview-errors-heading">
-              <h2>错误</h2>
-              <span>{integer.format(summary.failedCalls)} 次</span>
+            <div className="overview-section-controls">
+              <select
+                className="input overview-model-filter"
+                value={chartModel}
+                disabled={!chartModelOptions.length}
+                onChange={(event) => setChartModel(event.target.value)}
+                aria-label="使用概览模型筛选"
+              >
+                <option value={allModelsValue}>
+                  {chartModelOptions.length ? '全部模型（汇总）' : '暂无可用模型'}
+                </option>
+                {chartModelOptions.map((option) => (
+                  <option value={option.identity} key={option.identity}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span>{rangeLabels[range]}</span>
             </div>
-            {errorGroups.length ? (
-              <div className="overview-error-groups">
-                {errorGroups.map((group, index) => {
-                  const groupExpanded = expandedErrorCode === group.code;
-                  const groupId = `key-error-group-${index}`;
-                  return (
-                    <div className="overview-error-group" key={group.code}>
-                      <button
-                        type="button"
-                        className="overview-error-summary"
-                        aria-expanded={groupExpanded}
-                        aria-controls={groupId}
-                        onClick={() => {
-                          setExpandedErrorCode(groupExpanded ? undefined : group.code);
-                          setExpandedOverviewLogId(undefined);
-                        }}
-                      >
-                        <code>{group.code}</code>
-                        <strong>{integer.format(group.calls)} 次</strong>
-                        <ChevronDown size={15} />
-                      </button>
-                      {groupExpanded ? (
-                        <div className="overview-error-calls" id={groupId}>
-                          {group.logs.length ? (
-                            group.logs.map((log) => {
-                              const logExpanded = expandedOverviewLogId === log.id;
-                              const errorLabel = log.errorCode ?? `HTTP ${log.statusCode}`;
-                              return (
-                                <Fragment key={log.id}>
-                                  <button
-                                    type="button"
-                                    className="overview-error-call"
-                                    aria-expanded={logExpanded}
-                                    onClick={() =>
-                                      setExpandedOverviewLogId((current) =>
-                                        current === log.id ? undefined : log.id,
-                                      )
-                                    }
-                                  >
-                                    <span className="overview-error-call-primary">
-                                      <Badge tone="danger">{log.statusCode}</Badge>
-                                      <code>{errorLabel}</code>
-                                    </span>
-                                    <span className="overview-error-call-route">
-                                      <code>{endpointLabel(log.endpoint)}</code>
-                                      <span>{log.model}</span>
-                                    </span>
-                                    <span className="overview-error-call-meta">
-                                      <time dateTime={log.createdAt}>
-                                        {formatDate(log.createdAt)}
-                                      </time>
-                                      <code title={log.requestId}>
-                                        {log.requestId.slice(0, 14)}…
-                                      </code>
-                                    </span>
-                                    <ChevronDown size={15} />
-                                  </button>
-                                  {logExpanded ? (
-                                    <div className="overview-error-detail">
-                                      <UsageLogDetailPanel usageLogId={log.id} initialTab="error" />
-                                    </div>
-                                  ) : null}
-                                </Fragment>
-                              );
-                            })
-                          ) : (
-                            <div className="overview-error-empty">最近调用中无对应记录</div>
-                          )}
-                          {group.hiddenCalls > 0 ? (
-                            <button
-                              type="button"
-                              className="overview-error-more"
-                              onClick={() => {
-                                setLogSearch(group.code);
-                                setLogStatus('failed');
-                                setLogModel('all');
-                                setLogEndpoint('all');
-                                void loadDrilldown({
-                                  label: `错误 ${group.code}`,
-                                  metric: 'errors',
-                                });
-                              }}
-                            >
-                              查看其余 {integer.format(group.hiddenCalls)} 条
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="analytics-empty">无错误</div>
-            )}
-          </section>
+          </div>
+          {modelAnalyticsError ? (
+            <section className="panel overview-model-error">
+              <span>{modelAnalyticsError}</span>
+              <Button variant="secondary" onClick={() => setChartRefreshKey((value) => value + 1)}>
+                重试
+              </Button>
+            </section>
+          ) : modelAnalyticsLoading || !modelSummary ? (
+            <Skeleton height={112} />
+          ) : (
+            <section className="stat-grid overview-stat-grid">
+              <article className="stat-card">
+                <span>调用</span>
+                <div className="stat-icon">
+                  <Zap size={14} />
+                </div>
+                <strong>{integer.format(modelSummary.calls)}</strong>
+                <small>{integer.format(modelSummary.failedCalls)} 次失败</small>
+              </article>
+              <article className="stat-card">
+                <span>Token</span>
+                <div className="stat-icon">
+                  <Gauge size={14} />
+                </div>
+                <strong>{integer.format(modelSummary.totalTokens)}</strong>
+                <small>{integer.format(modelSummary.cachedInputTokens)} cached</small>
+              </article>
+              <article className="stat-card">
+                <span>成本</span>
+                <div className="stat-icon">
+                  <CircleDollarSign size={14} />
+                </div>
+                <strong>{money.format(modelSummary.costUsd)}</strong>
+                <small>平均 {money.format(modelSummary.averageCostUsd)} / 次</small>
+              </article>
+              <article className="stat-card">
+                <span>成功率</span>
+                <div className="stat-icon">
+                  <Timer size={14} />
+                </div>
+                <strong>
+                  {decimal.format(successRate(modelSummary.calls, modelSummary.successfulCalls))}%
+                </strong>
+                <small>{integer.format(modelSummary.successfulCalls)} 次成功</small>
+              </article>
+            </section>
+          )}
         </div>
       ) : null}
 
@@ -977,18 +916,6 @@ export function KeyDetailPage() {
             <Skeleton height={610} />
           ) : (
             <>
-              <div className="selected-model-heading">
-                <div>
-                  <strong>{selectedModelOption?.model ?? '全部模型'}</strong>
-                  <span>
-                    {selectedModelOption?.provider ?? `${activeModelData.models.length} 个有调用`}
-                  </span>
-                </div>
-                <span>
-                  {modelSummary.calls ? `${integer.format(modelSummary.calls)} 次调用` : '暂无调用'}
-                </span>
-              </div>
-
               <section className="stat-grid">
                 <article className="stat-card">
                   <span>调用</span>
@@ -1143,13 +1070,9 @@ export function KeyDetailPage() {
 
               <KeyPerformanceChart
                 points={activeModelData.series}
-                modelPoints={activeModelData.modelSeries ?? []}
-                models={activeModelData.models}
                 range={range}
                 metric={chartMetric}
-                grouping={chartGrouping}
                 onMetricChange={setChartMetric}
-                onGroupingChange={setChartGrouping}
                 onBucketSelect={selectBucket}
                 emptyLabel={
                   selectedModelOption

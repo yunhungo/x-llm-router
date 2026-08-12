@@ -1534,14 +1534,14 @@ td code {
   accent-color: var(--blue);
 }
 .langfuse-metadata-editor {
+  margin-top: 4px;
   display: grid;
-  gap: 9px;
+  gap: 12px;
 }
 .langfuse-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  justify-items: start;
+  gap: 10px;
 }
 .langfuse-section-heading > div {
   display: grid;
@@ -1555,6 +1555,7 @@ td code {
   font-size: 10px;
 }
 .langfuse-add-field {
+  justify-self: start;
   min-height: 32px;
   padding: 0 10px;
   font-size: 11px;

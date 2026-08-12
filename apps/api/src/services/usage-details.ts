@@ -47,6 +47,19 @@ function isSensitiveKey(value: string): boolean {
   return sensitiveKeys.has(key) || sensitiveKeySuffixes.some((suffix) => key.endsWith(suffix));
 }
 
+function isSensitiveHeaderName(value: string): boolean {
+  const key = normalizedKey(value);
+  return (
+    key === 'authorization' ||
+    key === 'proxyauthorization' ||
+    key === 'cookie' ||
+    key === 'setcookie' ||
+    key === 'auth' ||
+    key.endsWith('auth') ||
+    ['apikey', 'token', 'secret', 'credential', 'signature'].some((marker) => key.includes(marker))
+  );
+}
+
 export function redactSensitive(value: unknown, depth = 0): unknown {
   if (depth > 16) return '[MAX_DEPTH]';
   if (Array.isArray(value)) return value.map((item) => redactSensitive(item, depth + 1));
@@ -59,8 +72,7 @@ export function redactSensitive(value: unknown, depth = 0): unknown {
   );
 }
 
-export function prepareStoredJson(value: unknown, maxBytes = MAX_STORED_JSON_BYTES): unknown {
-  const sanitized = redactSensitive(value);
+function capStoredJson(sanitized: unknown, maxBytes: number): unknown {
   const serialized = JSON.stringify(sanitized);
   const byteLength = Buffer.byteLength(serialized);
   if (byteLength <= maxBytes) return sanitized;
@@ -71,27 +83,164 @@ export function prepareStoredJson(value: unknown, maxBytes = MAX_STORED_JSON_BYT
   };
 }
 
+export function prepareStoredJson(value: unknown, maxBytes = MAX_STORED_JSON_BYTES): unknown {
+  return capStoredJson(redactSensitive(value), maxBytes);
+}
+
+export function prepareStoredRequest(value: unknown, maxBytes = MAX_STORED_JSON_BYTES): unknown {
+  const sanitized = redactSensitive(value);
+  if (!sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
+    return capStoredJson(sanitized, maxBytes);
+  }
+  const request = { ...(sanitized as Record<string, unknown>) };
+  if (request.headers && typeof request.headers === 'object' && !Array.isArray(request.headers)) {
+    request.headers = Object.fromEntries(
+      Object.entries(request.headers as Record<string, unknown>).map(([name, item]) => [
+        name,
+        isSensitiveHeaderName(name) ? REDACTED : item,
+      ]),
+    );
+  }
+  return capStoredJson(request, maxBytes);
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+type CurlHeaderValue = string | readonly string[] | undefined;
+
+const bodyManagedHeaders = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'content-md5',
+  'digest',
+  'keep-alive',
+  'proxy-connection',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+const preferredHeaderOrder = ['authorization', 'content-type', 'accept', 'x-request-id'];
+const canonicalHeaderNames = new Map([
+  ['authorization', 'Authorization'],
+  ['content-type', 'Content-Type'],
+  ['accept', 'Accept'],
+  ['x-request-id', 'X-Request-Id'],
+]);
+
+function curlHeaders(
+  source: Record<string, CurlHeaderValue> | undefined,
+  authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>',
+  accept?: string,
+  requestId?: string,
+): Array<[name: string, value: string]> {
+  const headers = new Map<string, { name: string; values: string[] }>();
+  for (const [name, rawValue] of Object.entries(source ?? {})) {
+    const normalizedName = name.toLowerCase();
+    if (!normalizedName || bodyManagedHeaders.has(normalizedName) || rawValue === undefined) {
+      continue;
+    }
+    const values = (Array.isArray(rawValue) ? rawValue : [rawValue])
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!values.length) continue;
+    headers.set(normalizedName, {
+      name: canonicalHeaderNames.get(normalizedName) ?? name,
+      values: isSensitiveHeaderName(name) ? [REDACTED] : values,
+    });
+  }
+
+  headers.set('authorization', {
+    name: 'Authorization',
+    values: [`Bearer ${authorization}`],
+  });
+  if (!headers.has('content-type')) {
+    headers.set('content-type', {
+      name: 'Content-Type',
+      values: ['application/json'],
+    });
+  }
+  if (accept && !headers.has('accept')) {
+    headers.set('accept', { name: 'Accept', values: [accept] });
+  }
+  if (requestId) {
+    headers.set('x-request-id', { name: 'X-Request-Id', values: [requestId] });
+  }
+
+  const rank = (name: string) => {
+    const index = preferredHeaderOrder.indexOf(name);
+    return index === -1 ? preferredHeaderOrder.length : index;
+  };
+  return [...headers.entries()]
+    .sort(([left], [right]) => rank(left) - rank(right) || left.localeCompare(right))
+    .flatMap(([, header]) =>
+      header.values.map((value): [name: string, value: string] => [header.name, value]),
+    );
 }
 
 export function buildCurl(input: {
   url: string;
   body: unknown;
   authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>';
+  method?: string;
+  headers?: Record<string, CurlHeaderValue>;
   accept?: string;
   requestId?: string;
 }): string {
   const body = JSON.stringify(redactSensitive(input.body), null, 2);
-  const lines = [
-    `curl ${shellQuote(input.url)} \\`,
-    `  -H ${shellQuote(`Authorization: Bearer ${input.authorization}`)} \\`,
-    `  -H ${shellQuote('Content-Type: application/json')} \\`,
-  ];
-  if (input.accept) lines.push(`  -H ${shellQuote(`Accept: ${input.accept}`)} \\`);
-  if (input.requestId) lines.push(`  -H ${shellQuote(`X-Request-Id: ${input.requestId}`)} \\`);
+  const method = input.method?.trim().toUpperCase();
+  const lines = [`curl${method ? ` -X ${shellQuote(method)}` : ''} ${shellQuote(input.url)} \\`];
+  for (const [name, value] of curlHeaders(
+    input.headers,
+    input.authorization,
+    input.accept,
+    input.requestId,
+  )) {
+    lines.push(`  -H ${shellQuote(`${name}: ${value}`)} \\`);
+  }
   lines.push(`  --data-raw ${shellQuote(body)}`);
   return lines.join('\n');
+}
+
+function storedCurlHeaders(value: unknown): Record<string, CurlHeaderValue> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const headers: Record<string, CurlHeaderValue> = {};
+  for (const [name, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === 'string') {
+      headers[name] = item;
+    } else if (Array.isArray(item) && item.every((entry) => typeof entry === 'string')) {
+      headers[name] = item as string[];
+    }
+  }
+  return headers;
+}
+
+export function buildStoredRequestCurl(
+  value: unknown,
+  authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>',
+  requestId?: string,
+): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const request = value as Record<string, unknown>;
+  if (typeof request.url !== 'string' || !request.url) return undefined;
+  const body = request.body;
+  const bodyRecord =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : undefined;
+  const headers = storedCurlHeaders(request.headers);
+  return buildCurl({
+    url: request.url,
+    body,
+    authorization,
+    ...(typeof request.method === 'string' ? { method: request.method } : {}),
+    ...(headers ? { headers } : {}),
+    accept: bodyRecord?.stream === true ? 'text/event-stream' : 'application/json',
+    ...(requestId ? { requestId } : {}),
+  });
 }
 
 export class SseDetailCollector {

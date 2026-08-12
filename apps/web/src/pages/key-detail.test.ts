@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { analyticsModelOptions, modelIdentity, parseModelIdentity } from './key-detail';
+import {
+  analyticsModelOptions,
+  detailTabSearchParams,
+  modelIdentity,
+  parseDetailTab,
+  parseModelIdentity,
+} from './key-detail';
+
+describe('key detail tab URL state', () => {
+  it('restores valid tabs and falls back to overview for invalid values', () => {
+    expect(parseDetailTab('charts')).toBe('charts');
+    expect(parseDetailTab('logs')).toBe('logs');
+    expect(parseDetailTab('settings')).toBe('settings');
+    expect(parseDetailTab('unknown')).toBe('overview');
+    expect(parseDetailTab(null)).toBe('overview');
+  });
+
+  it('writes the selected tab without dropping other query parameters', () => {
+    const next = detailTabSearchParams(new URLSearchParams('range=7d&tab=overview'), 'logs');
+
+    expect(next.get('tab')).toBe('logs');
+    expect(next.get('range')).toBe('7d');
+  });
+});
 
 describe('key detail model filter', () => {
   it('round-trips provider and model identities without delimiter collisions', () => {

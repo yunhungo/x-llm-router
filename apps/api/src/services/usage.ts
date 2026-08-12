@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getPool } from '../db/client';
-import { prepareStoredJson } from './usage-details';
+import { prepareStoredJson, prepareStoredRequest } from './usage-details';
 
 export interface TokenUsage {
   inputTokens: number;
@@ -161,10 +161,10 @@ export async function recordUsage(input: {
           usageLogId,
           input.details.gatewayCurl,
           input.details.upstreamCurl ?? null,
-          JSON.stringify(prepareStoredJson(input.details.clientRequest)),
+          JSON.stringify(prepareStoredRequest(input.details.clientRequest)),
           input.details.upstreamRequest === undefined
             ? null
-            : JSON.stringify(prepareStoredJson(input.details.upstreamRequest)),
+            : JSON.stringify(prepareStoredRequest(input.details.upstreamRequest)),
           input.details.upstreamResponse === undefined
             ? null
             : JSON.stringify(prepareStoredJson(input.details.upstreamResponse)),

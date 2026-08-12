@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { getPool } from '../db/client';
 import { requireAdmin } from '../lib/admin-auth';
+import { buildStoredRequestCurl, prepareStoredRequest } from '../services/usage-details';
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 
@@ -42,6 +43,21 @@ export async function usageDetailRoutes(app: FastifyInstance): Promise<void> {
         expired: new Date(row.createdAt).getTime() <= Date.now() - 30 * 24 * 60 * 60 * 1_000,
       };
     }
-    return { detail: row, expired: false };
+    const clientRequest = prepareStoredRequest(row.clientRequest);
+    const upstreamRequest = prepareStoredRequest(row.upstreamRequest);
+    return {
+      detail: {
+        ...row,
+        clientRequest,
+        upstreamRequest,
+        gatewayCurl:
+          buildStoredRequestCurl(clientRequest, '<ROUTER_API_KEY>', row.requestId) ??
+          row.gatewayCurl,
+        upstreamCurl:
+          buildStoredRequestCurl(upstreamRequest, '<UPSTREAM_CREDENTIAL>', row.requestId) ??
+          row.upstreamCurl,
+      },
+      expired: false,
+    };
   });
 }
