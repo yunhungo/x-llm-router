@@ -266,6 +266,7 @@ select.input {
 .field-label {
   font-size: 13px;
   font-weight: 500;
+  line-height: 18px;
 }
 .field-hint {
   color: var(--mute);
@@ -275,6 +276,7 @@ select.input {
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 14px;
 }
 .form-error {

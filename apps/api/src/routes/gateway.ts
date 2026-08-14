@@ -263,11 +263,11 @@ async function gatewayHandler(
     });
     statusCode = upstream.status;
     const contentType = upstream.headers.get('content-type') ?? 'application/json';
-    const isEventStream =
+    const upstreamIsEventStream =
       contentType.toLowerCase().includes('text/event-stream') ||
       (prepared.expectsSseOnSuccess && upstream.ok);
 
-    if (isEventStream) {
+    if (upstreamIsEventStream) {
       const bridge = adapter.createStreamBridge(prepared);
       const detailCollector = new SseDetailCollector();
       if (prepared.clientWantsStream) {
