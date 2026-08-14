@@ -7,6 +7,7 @@ import {
   createApiKeySchema,
   createProviderApiKeySchema,
   langfuseSettingsSchema,
+  updateProviderSchema,
 } from '@x-router/contracts';
 
 import { getPool } from '../db/client';
@@ -26,12 +27,6 @@ import { createApiKeyRecord } from '../services/virtual-keys';
 
 const oauthStartSchema = z.object({ name: z.string().trim().min(1).max(120) });
 const providerParamsSchema = z.object({ id: z.string().uuid() });
-const providerUpdateSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  status: z.enum(['active', 'disabled']).optional(),
-  defaultModel: z.string().trim().max(120).nullable().optional(),
-  priority: z.number().int().min(0).max(10_000).optional(),
-});
 const apiKeyUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -133,28 +128,68 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/api/admin/providers/:id', async (request, reply) => {
-    const parsed = providerUpdateSchema.safeParse(request.body);
+    const params = providerParamsSchema.safeParse(request.params);
+    const parsed = updateProviderSchema.safeParse(request.body);
+    if (!params.success) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'invalid_request', message: '连接 ID 无效。' } });
+    }
     if (!parsed.success) {
       return reply
         .code(400)
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
-    const id = (request.params as { id: string }).id;
+    const id = params.data.id;
+    const existing = await getPool().query<{ auth_type: 'oauth' | 'api_key' }>(
+      'SELECT auth_type FROM provider_connections WHERE id = $1',
+      [id],
+    );
+    const connection = existing.rows[0];
+    if (!connection) {
+      return reply.code(404).send({ error: { code: 'not_found', message: '连接不存在。' } });
+    }
+    const hasApiKeyOnlyFields = ['apiMode', 'apiKey', 'baseUrl'].some((field) =>
+      Object.hasOwn(parsed.data, field),
+    );
+    if (connection.auth_type !== 'api_key' && hasApiKeyOnlyFields) {
+      return reply.code(400).send({
+        error: {
+          code: 'provider_auth_type_mismatch',
+          message: 'OAuth 连接不能修改 API 方式、Base URL 或 API Key。',
+        },
+      });
+    }
+    const encryptedApiKey = parsed.data.apiKey ? encryptJson({ apiKey: parsed.data.apiKey }) : null;
     const result = await getPool().query(
       `UPDATE provider_connections SET
-         name = COALESCE($2, name),
-         status = COALESCE($3, status),
-         default_model = CASE WHEN $4::boolean THEN $5 ELSE default_model END,
-         priority = COALESCE($6, priority),
+         name = CASE WHEN $2::boolean THEN $3::text ELSE name END,
+         status = CASE WHEN $4::boolean THEN $5::text ELSE status END,
+         api_mode = CASE WHEN $6::boolean THEN $7::text ELSE api_mode END,
+         base_url = CASE WHEN $8::boolean THEN $9::text ELSE base_url END,
+         credentials_ciphertext = CASE
+           WHEN $10::boolean THEN $11::text ELSE credentials_ciphertext
+         END,
+         default_model = CASE WHEN $12::boolean THEN $13::text ELSE default_model END,
+         priority = CASE WHEN $14::boolean THEN $15::integer ELSE priority END,
          updated_at = now()
        WHERE id = $1
        RETURNING id`,
       [
         id,
+        Object.hasOwn(parsed.data, 'name'),
         parsed.data.name ?? null,
+        Object.hasOwn(parsed.data, 'status'),
         parsed.data.status ?? null,
+        Object.hasOwn(parsed.data, 'apiMode'),
+        parsed.data.apiMode ?? null,
+        Object.hasOwn(parsed.data, 'baseUrl'),
+        parsed.data.baseUrl ?? null,
+        Object.hasOwn(parsed.data, 'apiKey'),
+        encryptedApiKey,
         Object.hasOwn(parsed.data, 'defaultModel'),
         parsed.data.defaultModel ?? null,
+        Object.hasOwn(parsed.data, 'priority'),
         parsed.data.priority ?? null,
       ],
     );

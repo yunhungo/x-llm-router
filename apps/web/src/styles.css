@@ -1205,6 +1205,55 @@ td code {
   padding: 0 11px;
   font-size: 12px;
 }
+.provider-edit-summary {
+  margin: -4px 0 2px;
+  padding: 13px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas-soft);
+}
+.provider-edit-summary .provider-logo {
+  width: 36px;
+  height: 36px;
+}
+.provider-edit-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 3px;
+}
+.provider-edit-copy strong,
+.provider-edit-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-edit-copy strong {
+  font-size: 13px;
+}
+.provider-edit-copy span {
+  color: var(--mute);
+  font-size: 11px;
+}
+.modal-section-label {
+  margin: 2px 0 -5px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+  color: var(--mute);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.provider-credential-note {
+  padding: 11px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas-soft);
+}
 .danger-icon:hover:not(:disabled) {
   color: var(--red);
   background: var(--danger-bg);

@@ -69,10 +69,25 @@ export const createProviderApiKeySchema = z.object({
   priority: z.number().int().min(0).max(10_000).default(100),
 });
 
+export const updateProviderSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    status: z.enum(['active', 'disabled']).optional(),
+    apiMode: z.enum(['responses', 'chat.completions']).optional(),
+    apiKey: z.string().min(12).optional(),
+    baseUrl: z.string().url().optional(),
+    defaultModel: z.string().trim().max(120).nullable().optional(),
+    priority: z.number().int().min(0).max(10_000).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: '至少提供一个可更新字段。',
+  });
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type CreateProviderApiKeyInput = z.infer<typeof createProviderApiKeySchema>;
+export type UpdateProviderInput = z.infer<typeof updateProviderSchema>;
 export type LangfuseSettingsInput = z.infer<typeof langfuseSettingsSchema>;
 
 export interface SessionUser {

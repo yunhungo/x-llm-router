@@ -24,6 +24,7 @@ vi.mock('../lib/admin-auth', () => ({
 vi.mock('../services/providers', () => ({ refreshProviderModels }));
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
+import { decryptJson } from '../lib/crypto';
 import { encryptLangfuseSettings } from '../services/langfuse';
 import { adminRoutes } from './admin';
 
@@ -113,6 +114,105 @@ describe('admin API keys', () => {
 
     expect(response.statusCode).toBe(400);
     expect(refreshProviderModels).not.toHaveBeenCalled();
+  });
+
+  it('updates API Key connection settings and encrypts a replacement credential', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ auth_type: 'api_key' }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: providerId }], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/providers/${providerId}`,
+      payload: {
+        name: '  DeepSeek  ',
+        apiMode: 'responses',
+        apiKey: 'sk-replacement-key',
+        baseUrl: 'https://api.deepseek.com/v1',
+        defaultModel: 'deepseek-chat',
+        priority: 20,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(query).toHaveBeenCalledTimes(2);
+    const params = query.mock.calls[1]?.[1] as unknown[];
+    expect(params.slice(0, 10)).toEqual([
+      providerId,
+      true,
+      'DeepSeek',
+      false,
+      null,
+      true,
+      'responses',
+      true,
+      'https://api.deepseek.com/v1',
+      true,
+    ]);
+    expect(decryptJson<{ apiKey: string }>(String(params[10]))).toEqual({
+      apiKey: 'sk-replacement-key',
+    });
+    expect(params.slice(11)).toEqual([true, 'deepseek-chat', true, 20]);
+  });
+
+  it('allows common routing fields on an OAuth connection', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ auth_type: 'oauth' }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: providerId }], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/providers/${providerId}`,
+      payload: { name: 'ChatGPT OAuth', defaultModel: null, priority: 5 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(query.mock.calls[1]?.[1]).toEqual([
+      providerId,
+      true,
+      'ChatGPT OAuth',
+      false,
+      null,
+      false,
+      null,
+      false,
+      null,
+      false,
+      null,
+      true,
+      null,
+      true,
+      5,
+    ]);
+  });
+
+  it('rejects API Key-only fields on an OAuth connection', async () => {
+    query.mockResolvedValueOnce({ rows: [{ auth_type: 'oauth' }], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/providers/${providerId}`,
+      payload: { baseUrl: 'https://api.example.com/v1' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: 'provider_auth_type_mismatch' },
+    });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an empty provider update before querying the database', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/providers/${providerId}`,
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'invalid_request' } });
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('rejects a negative RPM when creating a key', async () => {

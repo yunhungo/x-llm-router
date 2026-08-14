@@ -5,10 +5,11 @@ import {
   Copy,
   KeyRound,
   Link2,
-  MoreHorizontal,
+  Pencil,
   PlugZap,
   Plus,
   RefreshCcw,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 
@@ -39,17 +40,20 @@ type ApiMode = 'responses' | 'chat.completions';
 
 export function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>();
-  const [modal, setModal] = useState<'add' | null>(null);
+  const [modal, setModal] = useState<'add' | 'edit' | null>(null);
+  const [editingProvider, setEditingProvider] = useState<Provider>();
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod>('api-key');
   const [apiMode, setApiMode] = useState<ApiMode>('chat.completions');
   const [name, setName] = useState('OpenAI API');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
   const [defaultModel, setDefaultModel] = useState('');
+  const [priority, setPriority] = useState('100');
   const [flow, setFlow] = useState<DeviceFlow>();
   const [loading, setLoading] = useState(false);
   const [refreshingModels, setRefreshingModels] = useState('');
   const [message, setMessage] = useState('');
+  const [modalError, setModalError] = useState('');
 
   const load = useCallback(async () => {
     const result = await api<{ providers: Provider[] }>('/api/admin/providers');
@@ -182,8 +186,59 @@ export function ProvidersPage() {
     setApiKey('');
     setBaseUrl('https://api.openai.com/v1');
     setDefaultModel('');
+    setPriority('100');
     setFlow(undefined);
+    setEditingProvider(undefined);
+    setModalError('');
     setModal('add');
+  };
+
+  const openEditProviderModal = (provider: Provider) => {
+    setEditingProvider(provider);
+    setConnectionMethod(provider.authType === 'oauth' ? 'oauth' : 'api-key');
+    setApiMode(provider.apiMode);
+    setName(provider.name);
+    setApiKey('');
+    setBaseUrl(provider.baseUrl);
+    setDefaultModel(provider.defaultModel ?? '');
+    setPriority(String(provider.priority));
+    setFlow(undefined);
+    setModalError('');
+    setModal('edit');
+  };
+
+  const saveProvider = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingProvider) return;
+    setLoading(true);
+    setModalError('');
+    try {
+      const nextApiKey = apiKey.trim();
+      await api(`/api/admin/providers/${editingProvider.id}`, {
+        method: 'PATCH',
+        ...jsonBody({
+          name,
+          defaultModel: defaultModel.trim() || null,
+          priority: Number(priority),
+          ...(editingProvider.authType === 'api_key'
+            ? {
+                apiMode,
+                baseUrl,
+                ...(nextApiKey ? { apiKey: nextApiKey } : {}),
+              }
+            : {}),
+        }),
+      });
+      setModal(null);
+      setEditingProvider(undefined);
+      setApiKey('');
+      setMessage(`连接“${name.trim()}”已更新。`);
+      await load();
+    } catch (error) {
+      setModalError(error instanceof ApiError ? error.message : '保存失败，请稍后重试。');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggle = async (provider: Provider) => {
@@ -256,8 +311,14 @@ export function ProvidersPage() {
                   </div>
                   <span>OpenAI · 优先级 {provider.priority}</span>
                 </div>
-                <button className="icon-button">
-                  <MoreHorizontal size={17} />
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => openEditProviderModal(provider)}
+                  aria-label={`编辑 ${provider.name}`}
+                  title="编辑连接"
+                >
+                  <Pencil size={15} />
                 </button>
               </div>
               <div className="provider-meta">
@@ -534,6 +595,137 @@ export function ProvidersPage() {
               </div>
             </form>
           )}
+        </Modal>
+      ) : null}
+
+      {modal === 'edit' && editingProvider ? (
+        <Modal
+          title="编辑上游连接"
+          onClose={() => {
+            setModal(null);
+            setEditingProvider(undefined);
+            setModalError('');
+          }}
+        >
+          <form className="modal-body" onSubmit={(event) => void saveProvider(event)}>
+            <div className="provider-edit-summary">
+              <div className="provider-logo">
+                {editingProvider.authType === 'oauth' ? (
+                  <PlugZap size={18} />
+                ) : (
+                  <KeyRound size={18} />
+                )}
+              </div>
+              <div className="provider-edit-copy">
+                <strong>{editingProvider.name}</strong>
+                <span>
+                  {editingProvider.authType === 'oauth' ? 'OpenAI OAuth' : 'OpenAI Compatible'}
+                  {' · '}
+                  {editingProvider.status === 'active' ? '已启用' : '未启用'}
+                </span>
+              </div>
+              <Badge tone={editingProvider.authType === 'oauth' ? 'blue' : 'neutral'}>
+                {editingProvider.authType === 'oauth' ? 'OAuth' : 'API Key'}
+              </Badge>
+            </div>
+
+            <div className="form-grid">
+              <Field label="连接名称">
+                <Input value={name} onChange={(event) => setName(event.target.value)} required />
+              </Field>
+              <Field label="优先级" hint="数字越小越优先。">
+                <Input
+                  type="number"
+                  min="0"
+                  max="10000"
+                  step="1"
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+
+            <Field
+              label="默认模型（可选）"
+              hint="请求未传 model 时使用；留空则要求调用方指定模型。"
+            >
+              <Input
+                value={defaultModel}
+                list={`provider-models-${editingProvider.id}`}
+                onChange={(event) => setDefaultModel(event.target.value)}
+                placeholder="Request model"
+              />
+              {editingProvider.models.length ? (
+                <datalist id={`provider-models-${editingProvider.id}`}>
+                  {editingProvider.models.map((model) => (
+                    <option value={model} key={model} />
+                  ))}
+                </datalist>
+              ) : null}
+            </Field>
+
+            {editingProvider.authType === 'api_key' ? (
+              <>
+                <div className="modal-section-label">上游 API</div>
+                <Field
+                  label="API 方式"
+                  hint={`请求会发送到 ${
+                    apiMode === 'responses' ? '/responses' : '/chat/completions'
+                  }。`}
+                >
+                  <select
+                    className="input"
+                    value={apiMode}
+                    onChange={(event) => setApiMode(event.target.value as ApiMode)}
+                  >
+                    <option value="responses">Responses API</option>
+                    <option value="chat.completions">Chat Completions API</option>
+                  </select>
+                </Field>
+                <Field label="Base URL" hint="不包含 /responses 或 /chat/completions 路径。">
+                  <Input
+                    type="url"
+                    list="openai-compatible-base-urls"
+                    value={baseUrl}
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    required
+                  />
+                </Field>
+                <Field label="替换 API Key（可选）" hint="留空会保留当前加密凭据。">
+                  <Input
+                    type="password"
+                    value={apiKey}
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder="输入新密钥以替换当前凭据"
+                    minLength={12}
+                  />
+                </Field>
+              </>
+            ) : (
+              <div className="security-note provider-credential-note">
+                <ShieldCheck size={14} /> OAuth 凭据由系统自动续期；此处只编辑路由配置。
+              </div>
+            )}
+
+            {modalError ? <div className="form-error">{modalError}</div> : null}
+            <div className="modal-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setModal(null);
+                  setEditingProvider(undefined);
+                  setModalError('');
+                }}
+              >
+                取消
+              </Button>
+              <Button type="submit" loading={loading}>
+                保存更改
+              </Button>
+            </div>
+          </form>
         </Modal>
       ) : null}
     </div>
