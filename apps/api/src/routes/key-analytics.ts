@@ -39,9 +39,23 @@ export function tokensPerSecond(
   latencyMs: number,
   timeToFirstTokenMs: number | null,
 ): number | null {
-  const generationMs = latencyMs - (timeToFirstTokenMs ?? 0);
+  if (timeToFirstTokenMs === null) return null;
+  const generationMs = latencyMs - timeToFirstTokenMs;
   if (outputTokens <= 0 || generationMs <= 0) return null;
   return (outputTokens * 1_000) / generationMs;
+}
+
+export function visibleTokensPerSecond(
+  outputTokens: number,
+  reasoningTokens: number | null,
+  latencyMs: number,
+  timeToFirstVisibleTokenMs: number | null,
+): number | null {
+  if (reasoningTokens === null || timeToFirstVisibleTokenMs === null) return null;
+  const visibleTokens = Math.max(outputTokens - reasoningTokens, 0);
+  const visibleGenerationMs = latencyMs - timeToFirstVisibleTokenMs;
+  if (visibleTokens <= 0 || visibleGenerationMs <= 0) return null;
+  return (visibleTokens * 1_000) / visibleGenerationMs;
 }
 
 export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
@@ -95,6 +109,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 COALESCE(sum(input_tokens), 0)::float8 AS "inputTokens",
                 COALESCE(sum(cached_input_tokens), 0)::float8 AS "cachedInputTokens",
                 COALESCE(sum(output_tokens), 0)::float8 AS "outputTokens",
+                COALESCE(sum(reasoning_tokens), 0)::float8 AS "reasoningTokens",
                 COALESCE(sum(total_tokens), 0)::float8 AS "totalTokens",
                 COALESCE(sum(cost_usd), 0)::float8 AS "costUsd",
                 COALESCE(avg(cost_usd), 0)::float8 AS "averageCostUsd",
@@ -109,18 +124,32 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                   FILTER (WHERE time_to_first_token_ms IS NOT NULL), 0)::float8 AS "p95TtftMs",
                 COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY time_to_first_token_ms)
                   FILTER (WHERE time_to_first_token_ms IS NOT NULL), 0)::float8 AS "p99TtftMs",
+                COALESCE(avg(time_to_first_visible_token_ms)
+                  FILTER (WHERE time_to_first_visible_token_ms IS NOT NULL), 0)::float8 AS "averageFirstVisibleMs",
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY time_to_first_visible_token_ms)
+                  FILTER (WHERE time_to_first_visible_token_ms IS NOT NULL), 0)::float8 AS "p50FirstVisibleMs",
                 COALESCE(avg(output_tokens * 1000.0 /
-                  NULLIF(latency_ms - COALESCE(time_to_first_token_ms, 0), 0))
-                  FILTER (WHERE output_tokens > 0 AND latency_ms > COALESCE(time_to_first_token_ms, 0)), 0)::float8 AS "averageTps",
+                  NULLIF(latency_ms - time_to_first_token_ms, 0))
+                  FILTER (WHERE output_tokens > 0 AND time_to_first_token_ms IS NOT NULL
+                    AND latency_ms > time_to_first_token_ms), 0)::float8 AS "averageTps",
                 COALESCE(percentile_cont(0.1) WITHIN GROUP (ORDER BY output_tokens * 1000.0 /
-                  NULLIF(latency_ms - COALESCE(time_to_first_token_ms, 0), 0))
-                  FILTER (WHERE output_tokens > 0 AND latency_ms > COALESCE(time_to_first_token_ms, 0)), 0)::float8 AS "p10Tps",
+                  NULLIF(latency_ms - time_to_first_token_ms, 0))
+                  FILTER (WHERE output_tokens > 0 AND time_to_first_token_ms IS NOT NULL
+                    AND latency_ms > time_to_first_token_ms), 0)::float8 AS "p10Tps",
                 COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY output_tokens * 1000.0 /
-                  NULLIF(latency_ms - COALESCE(time_to_first_token_ms, 0), 0))
-                  FILTER (WHERE output_tokens > 0 AND latency_ms > COALESCE(time_to_first_token_ms, 0)), 0)::float8 AS "p50Tps",
+                  NULLIF(latency_ms - time_to_first_token_ms, 0))
+                  FILTER (WHERE output_tokens > 0 AND time_to_first_token_ms IS NOT NULL
+                    AND latency_ms > time_to_first_token_ms), 0)::float8 AS "p50Tps",
                 COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY output_tokens * 1000.0 /
-                  NULLIF(latency_ms - COALESCE(time_to_first_token_ms, 0), 0))
-                  FILTER (WHERE output_tokens > 0 AND latency_ms > COALESCE(time_to_first_token_ms, 0)), 0)::float8 AS "p95Tps",
+                  NULLIF(latency_ms - time_to_first_token_ms, 0))
+                  FILTER (WHERE output_tokens > 0 AND time_to_first_token_ms IS NOT NULL
+                    AND latency_ms > time_to_first_token_ms), 0)::float8 AS "p95Tps",
+                COALESCE(avg((output_tokens - reasoning_tokens) * 1000.0 /
+                  NULLIF(latency_ms - time_to_first_visible_token_ms, 0))
+                  FILTER (WHERE reasoning_tokens IS NOT NULL
+                    AND output_tokens > reasoning_tokens
+                    AND time_to_first_visible_token_ms IS NOT NULL
+                    AND latency_ms > time_to_first_visible_token_ms), 0)::float8 AS "averageVisibleTps",
                 count(*) FILTER (WHERE time_to_first_token_ms IS NOT NULL)::int AS "streamingCalls",
                 COALESCE((SELECT max(calls) FROM per_minute), 0)::int AS "peakRpm"
            FROM scope`,
@@ -134,7 +163,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            SELECT generate_series(start_at, end_at, $5::interval) AS bucket FROM bounds
          ), scope AS (
            SELECT u.*, u.output_tokens * 1000.0 /
-             NULLIF(u.latency_ms - COALESCE(u.time_to_first_token_ms, 0), 0) AS tps
+             NULLIF(u.latency_ms - u.time_to_first_token_ms, 0) AS tps
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
             WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
@@ -176,12 +205,14 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         `WITH scoped AS (
            SELECT date_bin($5::interval, u.created_at, timestamptz '2000-01-01') AS bucket,
                   COALESCE(p.provider, 'unknown') AS provider, u.model, u.success,
-                  u.input_tokens, u.output_tokens, u.cached_input_tokens, u.cost_usd,
+                  u.input_tokens, u.output_tokens, u.reasoning_tokens,
+                  u.cached_input_tokens, u.cost_usd,
                   u.time_to_first_token_ms, u.latency_ms,
                   CASE WHEN u.output_tokens > 0
-                         AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)
+                         AND u.time_to_first_token_ms IS NOT NULL
+                         AND u.latency_ms > u.time_to_first_token_ms
                     THEN u.output_tokens * 1000.0 /
-                         (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
+                         (u.latency_ms - u.time_to_first_token_ms)
                     ELSE NULL END AS tps
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
@@ -213,12 +244,14 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 COALESCE(sum(u.input_tokens), 0)::float8 AS "inputTokens",
                 COALESCE(sum(u.cached_input_tokens), 0)::float8 AS "cachedInputTokens",
                 COALESCE(sum(u.output_tokens), 0)::float8 AS "outputTokens",
+                COALESCE(sum(u.reasoning_tokens), 0)::float8 AS "reasoningTokens",
                 COALESCE(sum(u.total_tokens), 0)::float8 AS "totalTokens",
                 COALESCE(sum(u.cost_usd), 0)::float8 AS "costUsd",
                 COALESCE(avg(u.latency_ms), 0)::float8 AS "averageLatencyMs",
                 COALESCE(avg(u.output_tokens * 1000.0 /
-                  NULLIF(u.latency_ms - COALESCE(u.time_to_first_token_ms, 0), 0))
-                  FILTER (WHERE u.output_tokens > 0 AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)), 0)::float8 AS "averageTps"
+                  NULLIF(u.latency_ms - u.time_to_first_token_ms, 0))
+                  FILTER (WHERE u.output_tokens > 0 AND u.time_to_first_token_ms IS NOT NULL
+                    AND u.latency_ms > u.time_to_first_token_ms), 0)::float8 AS "averageTps"
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
@@ -257,16 +290,29 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 u.status_code AS "statusCode", u.success,
                 u.input_tokens AS "inputTokens",
                 u.cached_input_tokens AS "cachedInputTokens",
-                u.output_tokens AS "outputTokens", u.total_tokens AS "totalTokens",
+                u.output_tokens AS "outputTokens", u.reasoning_tokens AS "reasoningTokens",
+                CASE WHEN u.reasoning_tokens IS NULL THEN NULL
+                  ELSE GREATEST(u.output_tokens - u.reasoning_tokens, 0) END AS "visibleOutputTokens",
+                u.total_tokens AS "totalTokens",
                 u.cost_usd::float8 AS "costUsd", u.latency_ms AS "latencyMs",
-                u.time_to_first_token_ms AS "timeToFirstTokenMs", u.error_code AS "errorCode",
+                u.time_to_first_token_ms AS "timeToFirstTokenMs",
+                u.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
+                u.error_code AS "errorCode",
                 u.created_at AS "createdAt", p.name AS "providerName",
                 (d.usage_log_id IS NOT NULL) AS "detailAvailable",
                 CASE WHEN u.output_tokens > 0
-                       AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)
+                       AND u.time_to_first_token_ms IS NOT NULL
+                       AND u.latency_ms > u.time_to_first_token_ms
                   THEN u.output_tokens * 1000.0 /
-                       (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
-                  ELSE NULL END::float8 AS tps
+                       (u.latency_ms - u.time_to_first_token_ms)
+                  ELSE NULL END::float8 AS tps,
+                CASE WHEN u.reasoning_tokens IS NOT NULL
+                       AND u.output_tokens > u.reasoning_tokens
+                       AND u.time_to_first_visible_token_ms IS NOT NULL
+                       AND u.latency_ms > u.time_to_first_visible_token_ms
+                  THEN (u.output_tokens - u.reasoning_tokens) * 1000.0 /
+                       (u.latency_ms - u.time_to_first_visible_token_ms)
+                  ELSE NULL END::float8 AS "visibleTps"
            FROM usage_logs u
           LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
@@ -356,10 +402,18 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       `WITH scoped AS (
          SELECT u.*,
                 CASE WHEN u.output_tokens > 0
-                           AND u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)
+                           AND u.time_to_first_token_ms IS NOT NULL
+                           AND u.latency_ms > u.time_to_first_token_ms
                   THEN u.output_tokens * 1000.0 /
-                       (u.latency_ms - COALESCE(u.time_to_first_token_ms, 0))
-                  ELSE NULL END::float8 AS tps
+                       (u.latency_ms - u.time_to_first_token_ms)
+                  ELSE NULL END::float8 AS tps,
+                CASE WHEN u.reasoning_tokens IS NOT NULL
+                           AND u.output_tokens > u.reasoning_tokens
+                           AND u.time_to_first_visible_token_ms IS NOT NULL
+                           AND u.latency_ms > u.time_to_first_visible_token_ms
+                  THEN (u.output_tokens - u.reasoning_tokens) * 1000.0 /
+                       (u.latency_ms - u.time_to_first_visible_token_ms)
+                  ELSE NULL END::float8 AS "visibleTps"
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1
@@ -382,11 +436,17 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
               f.requested_model AS "requestedModel", f.model,
               f.status_code AS "statusCode", f.success,
               f.input_tokens AS "inputTokens", f.cached_input_tokens AS "cachedInputTokens",
-              f.output_tokens AS "outputTokens", f.total_tokens AS "totalTokens",
+              f.output_tokens AS "outputTokens", f.reasoning_tokens AS "reasoningTokens",
+              CASE WHEN f.reasoning_tokens IS NULL THEN NULL
+                ELSE GREATEST(f.output_tokens - f.reasoning_tokens, 0) END AS "visibleOutputTokens",
+              f.total_tokens AS "totalTokens",
               f.cost_usd::float8 AS "costUsd", f.latency_ms AS "latencyMs",
-              f.time_to_first_token_ms AS "timeToFirstTokenMs", f.error_code AS "errorCode",
+              f.time_to_first_token_ms AS "timeToFirstTokenMs",
+              f.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
+              f.error_code AS "errorCode",
               f.created_at AS "createdAt", p.name AS "providerName",
-              (d.usage_log_id IS NOT NULL) AS "detailAvailable", f.tps, f."filteredCount"
+              (d.usage_log_id IS NOT NULL) AS "detailAvailable", f.tps,
+              f."visibleTps", f."filteredCount"
          FROM filtered f
          LEFT JOIN provider_connections p ON p.id = f.provider_connection_id
          LEFT JOIN usage_log_details d ON d.usage_log_id = f.id AND d.expires_at > now()

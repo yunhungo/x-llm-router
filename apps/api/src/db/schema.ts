@@ -1,4 +1,4 @@
-export const schemaVersion = 7;
+export const schemaVersion = 8;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -117,10 +117,12 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   input_tokens integer NOT NULL DEFAULT 0,
   cached_input_tokens integer NOT NULL DEFAULT 0,
   output_tokens integer NOT NULL DEFAULT 0,
+  reasoning_tokens integer,
   total_tokens integer NOT NULL DEFAULT 0,
   cost_usd numeric(14, 8) NOT NULL DEFAULT 0,
   latency_ms integer NOT NULL DEFAULT 0,
   time_to_first_token_ms integer,
+  time_to_first_visible_token_ms integer,
   error_code varchar(120),
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -128,7 +130,20 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 
 ALTER TABLE usage_logs
   ADD COLUMN IF NOT EXISTS cached_input_tokens integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS requested_model varchar(120);
+  ADD COLUMN IF NOT EXISTS requested_model varchar(120),
+  ADD COLUMN IF NOT EXISTS reasoning_tokens integer,
+  ADD COLUMN IF NOT EXISTS time_to_first_visible_token_ms integer;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 8) THEN
+    UPDATE usage_logs
+       SET time_to_first_visible_token_ms = time_to_first_token_ms,
+           time_to_first_token_ms = NULL
+     WHERE time_to_first_visible_token_ms IS NULL
+       AND time_to_first_token_ms IS NOT NULL;
+  END IF;
+END $$;
 
 UPDATE usage_logs
    SET requested_model = model
@@ -159,6 +174,31 @@ CREATE TABLE IF NOT EXISTS usage_log_details (
 );
 
 CREATE INDEX IF NOT EXISTS usage_log_details_expires_idx ON usage_log_details(expires_at);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 8) THEN
+    UPDATE usage_logs u
+       SET reasoning_tokens =
+         (d.upstream_response #>> '{body,usage,output_tokens_details,reasoning_tokens}')::integer
+      FROM usage_log_details d
+     WHERE d.usage_log_id = u.id
+       AND u.reasoning_tokens IS NULL
+       AND jsonb_typeof(
+         d.upstream_response #> '{body,usage,output_tokens_details,reasoning_tokens}'
+       ) = 'number';
+
+    UPDATE usage_logs u
+       SET reasoning_tokens =
+         (d.upstream_response #>> '{body,usage,completion_tokens_details,reasoning_tokens}')::integer
+      FROM usage_log_details d
+     WHERE d.usage_log_id = u.id
+       AND u.reasoning_tokens IS NULL
+       AND jsonb_typeof(
+         d.upstream_response #> '{body,usage,completion_tokens_details,reasoning_tokens}'
+       ) = 'number';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS platform_settings (
   key varchar(120) PRIMARY KEY,

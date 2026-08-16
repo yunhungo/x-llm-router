@@ -102,10 +102,13 @@ export interface UsageLog {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  reasoningTokens: number | null;
+  visibleOutputTokens: number | null;
   totalTokens: number;
   costUsd: number;
   latencyMs: number;
   timeToFirstTokenMs: number | null;
+  timeToFirstVisibleTokenMs: number | null;
   errorCode: string | null;
   createdAt: string;
   apiKeyName: string | null;
@@ -143,6 +146,7 @@ export interface KeyAnalyticsSummary {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   totalTokens: number;
   costUsd: number;
   averageCostUsd: number;
@@ -154,7 +158,10 @@ export interface KeyAnalyticsSummary {
   p50TtftMs: number;
   p95TtftMs: number;
   p99TtftMs: number;
+  averageFirstVisibleMs: number;
+  p50FirstVisibleMs: number;
   averageTps: number;
+  averageVisibleTps: number;
   p10Tps: number;
   p50Tps: number;
   p95Tps: number;
@@ -232,6 +239,7 @@ export interface KeyErrorUsage {
 
 export interface KeyUsageLog extends Omit<UsageLog, 'apiKeyId' | 'apiKeyName'> {
   tps: number | null;
+  visibleTps: number | null;
 }
 
 export type KeyLogMetric = 'recent' | 'errors' | 'latency' | 'ttft' | 'tps';

@@ -7,6 +7,7 @@ export interface TokenUsage {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   totalTokens: number;
 }
 
@@ -14,6 +15,7 @@ export const emptyUsage = (): TokenUsage => ({
   inputTokens: 0,
   cachedInputTokens: 0,
   outputTokens: 0,
+  reasoningTokens: 0,
   totalTokens: 0,
 });
 
@@ -44,8 +46,16 @@ export function extractTokenUsage(payload: unknown): TokenUsage {
     inputDetails.cached_tokens ?? usage.prompt_cache_hit_tokens,
   );
   const outputTokens = numberValue(usage.output_tokens ?? usage.completion_tokens);
+  const outputDetails = (
+    usage.output_tokens_details && typeof usage.output_tokens_details === 'object'
+      ? usage.output_tokens_details
+      : usage.completion_tokens_details && typeof usage.completion_tokens_details === 'object'
+        ? usage.completion_tokens_details
+        : {}
+  ) as Record<string, unknown>;
+  const reasoningTokens = numberValue(outputDetails.reasoning_tokens);
   const totalTokens = numberValue(usage.total_tokens) || inputTokens + outputTokens;
-  return { inputTokens, cachedInputTokens, outputTokens, totalTokens };
+  return { inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens };
 }
 
 export interface ModelPrice {
@@ -113,6 +123,7 @@ export async function recordUsage(input: {
   usage: TokenUsage;
   latencyMs: number;
   timeToFirstTokenMs?: number;
+  timeToFirstVisibleTokenMs?: number;
   errorCode?: string;
   metadata?: Record<string, unknown>;
   details?: UsageCallDetails;
@@ -125,9 +136,10 @@ export async function recordUsage(input: {
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO usage_logs(
         id, request_id, virtual_api_key_id, provider_connection_id, endpoint, requested_model, model,
-        status_code, success, input_tokens, cached_input_tokens, output_tokens, total_tokens,
-        cost_usd, latency_ms, time_to_first_token_ms, error_code, metadata
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+        status_code, success, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
+        total_tokens, cost_usd, latency_ms, time_to_first_token_ms,
+        time_to_first_visible_token_ms, error_code, metadata
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb)
       ON CONFLICT (request_id) DO NOTHING
       RETURNING id`,
       [
@@ -143,10 +155,12 @@ export async function recordUsage(input: {
         input.usage.inputTokens,
         input.usage.cachedInputTokens,
         input.usage.outputTokens,
+        input.usage.reasoningTokens,
         input.usage.totalTokens,
         costUsd,
         input.latencyMs,
         input.timeToFirstTokenMs ?? null,
+        input.timeToFirstVisibleTokenMs ?? null,
         input.errorCode ?? null,
         JSON.stringify(input.metadata ?? {}),
       ],

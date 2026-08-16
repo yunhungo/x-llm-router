@@ -16,9 +16,23 @@ const money = new Intl.NumberFormat('en-US', {
 const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
 function tokensPerSecond(log: UsageLog) {
-  const generationMs = log.latencyMs - (log.timeToFirstTokenMs ?? 0);
+  if (log.timeToFirstTokenMs === null) return null;
+  const generationMs = log.latencyMs - log.timeToFirstTokenMs;
   if (log.outputTokens <= 0 || generationMs <= 0) return null;
   return (log.outputTokens * 1_000) / generationMs;
+}
+
+function visibleTokensPerSecond(log: UsageLog) {
+  if (
+    log.visibleOutputTokens === null ||
+    log.timeToFirstVisibleTokenMs === null ||
+    log.visibleOutputTokens <= 0
+  ) {
+    return null;
+  }
+  const generationMs = log.latencyMs - log.timeToFirstVisibleTokenMs;
+  if (generationMs <= 0) return null;
+  return (log.visibleOutputTokens * 1_000) / generationMs;
 }
 
 export function UsagePage() {
@@ -111,16 +125,27 @@ export function UsagePage() {
                           <small>
                             {log.inputTokens} in · {log.cachedInputTokens} cached ·{' '}
                             {log.outputTokens} out
+                            {log.reasoningTokens === null
+                              ? ''
+                              : ` · ${log.reasoningTokens} reasoning`}
                           </small>
                         </td>
                         <td>
                           {log.latencyMs.toLocaleString()} ms
-                          {log.timeToFirstTokenMs ? (
+                          {log.timeToFirstTokenMs !== null ? (
                             <small>
-                              TTFT {log.timeToFirstTokenMs} ms · TPS{' '}
+                              首生成 {log.timeToFirstTokenMs} ms · 整体 TPS{' '}
                               {tokensPerSecond(log) === null
                                 ? '—'
                                 : decimal.format(tokensPerSecond(log) ?? 0)}
+                            </small>
+                          ) : null}
+                          {log.timeToFirstVisibleTokenMs !== null ? (
+                            <small>
+                              首可见 {log.timeToFirstVisibleTokenMs} ms · 可见 TPS{' '}
+                              {visibleTokensPerSecond(log) === null
+                                ? '—'
+                                : decimal.format(visibleTokensPerSecond(log) ?? 0)}
                             </small>
                           ) : null}
                         </td>

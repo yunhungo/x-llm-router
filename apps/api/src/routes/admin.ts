@@ -434,8 +434,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               u.requested_model AS "requestedModel", u.model, u.status_code AS "statusCode",
               u.success, u.input_tokens AS "inputTokens",
               u.cached_input_tokens AS "cachedInputTokens", u.output_tokens AS "outputTokens",
+              u.reasoning_tokens AS "reasoningTokens",
+              CASE WHEN u.reasoning_tokens IS NULL THEN NULL
+                ELSE GREATEST(u.output_tokens - u.reasoning_tokens, 0) END AS "visibleOutputTokens",
               u.total_tokens AS "totalTokens", u.cost_usd::float8 AS "costUsd",
               u.latency_ms AS "latencyMs", u.time_to_first_token_ms AS "timeToFirstTokenMs",
+              u.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
               u.error_code AS "errorCode", u.created_at AS "createdAt",
               k.id AS "apiKeyId", k.name AS "apiKeyName", p.name AS "providerName",
               (d.usage_log_id IS NOT NULL) AS "detailAvailable"

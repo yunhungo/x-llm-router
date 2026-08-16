@@ -16,12 +16,18 @@ describe('SSE accumulator', () => {
     expect(parser.usage.totalTokens).toBe(5);
   });
 
-  it('marks output only after a semantic token rather than any SSE frame', () => {
+  it('separates first generated reasoning from first visible output', () => {
     const parser = new SseAccumulator();
     parser.feed(Buffer.from('data: {"type":"response.created","response":{"id":"resp_1"}}\n\n'));
-    expect(parser.hasOutput).toBe(false);
+    expect(parser.hasGeneratedOutput).toBe(false);
+    expect(parser.hasVisibleOutput).toBe(false);
+
+    parser.feed(Buffer.from('data: {"type":"response.reasoning_text.delta","delta":"Think"}\n\n'));
+    expect(parser.hasGeneratedOutput).toBe(true);
+    expect(parser.hasVisibleOutput).toBe(false);
 
     parser.feed(Buffer.from('data: {"type":"response.output_text.delta","delta":"Hi"}\n\n'));
-    expect(parser.hasOutput).toBe(true);
+    expect(parser.hasGeneratedOutput).toBe(true);
+    expect(parser.hasVisibleOutput).toBe(true);
   });
 });

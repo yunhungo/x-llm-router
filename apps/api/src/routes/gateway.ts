@@ -155,6 +155,7 @@ async function gatewayHandler(
   let statusCode = 500;
   let errorCode: string | undefined;
   let firstTokenAt: number | undefined;
+  let firstVisibleTokenAt: number | undefined;
   let traceOutput: unknown;
   let upstreamCurl: string | undefined;
   let upstreamRequest: unknown;
@@ -286,7 +287,8 @@ async function gatewayHandler(
           if (done) break;
           detailCollector.feed(value);
           const clientChunks = bridge.feed(value);
-          if (!firstTokenAt && bridge.hasOutput) firstTokenAt = Date.now();
+          if (!firstTokenAt && bridge.hasGeneratedOutput) firstTokenAt = Date.now();
+          if (!firstVisibleTokenAt && bridge.hasVisibleOutput) firstVisibleTokenAt = Date.now();
           if (prepared.clientWantsStream) {
             for (const chunk of clientChunks) await writeChunk(reply, chunk);
           }
@@ -368,6 +370,9 @@ async function gatewayHandler(
         usage,
         latencyMs,
         ...(firstTokenAt ? { timeToFirstTokenMs: firstTokenAt - startedAt } : {}),
+        ...(firstVisibleTokenAt
+          ? { timeToFirstVisibleTokenMs: firstVisibleTokenAt - startedAt }
+          : {}),
         ...(errorCode ? { errorCode } : {}),
         metadata: { providerAuthType: provider?.authType ?? null },
         details: {
@@ -387,6 +392,7 @@ async function gatewayHandler(
           input: usage.inputTokens,
           input_cached: usage.cachedInputTokens,
           output: usage.outputTokens,
+          output_reasoning: usage.reasoningTokens,
           total: usage.totalTokens,
         },
         costDetails: { total: recorded.costUsd },
@@ -394,6 +400,7 @@ async function gatewayHandler(
           statusCode,
           latencyMs,
           timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
+          timeToFirstVisibleTokenMs: firstVisibleTokenAt ? firstVisibleTokenAt - startedAt : null,
           errorCode: errorCode ?? '',
         },
         ...(statusCode >= 400

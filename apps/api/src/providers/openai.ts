@@ -72,8 +72,12 @@ class PassthroughStreamBridge implements GatewayStreamBridge {
     return this.accumulator.errorCode;
   }
 
-  get hasOutput() {
-    return this.accumulator.hasOutput;
+  get hasGeneratedOutput() {
+    return this.accumulator.hasGeneratedOutput;
+  }
+
+  get hasVisibleOutput() {
+    return this.accumulator.hasVisibleOutput;
   }
 
   feed(chunk: Uint8Array, final = false): Uint8Array[] {

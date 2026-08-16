@@ -657,6 +657,10 @@ export function KeyDetailPage() {
   );
   const p95TtftMs = finiteMetric(modelSummary?.p95TtftMs, p50TtftMs);
   const p99TtftMs = finiteMetric(modelSummary?.p99TtftMs, p95TtftMs);
+  const p50FirstVisibleMs = finiteMetric(
+    modelSummary?.p50FirstVisibleMs,
+    finiteMetric(modelSummary?.averageFirstVisibleMs),
+  );
   const p50LatencyMs = finiteMetric(
     modelSummary?.p50LatencyMs,
     finiteMetric(modelSummary?.averageLatencyMs),
@@ -967,10 +971,14 @@ export function KeyDetailPage() {
                   </small>
                 </article>
                 <article className="metric-card">
-                  <span>TPS</span>
+                  <span>整体 TPS</span>
                   <strong>{p50Tps > 0 ? decimal.format(p50Tps) : '—'}</strong>
                   <small>
                     P50 · 平均 {p50Tps > 0 ? decimal.format(modelSummary.averageTps) : '—'}
+                    {' · '}可见平均{' '}
+                    {modelSummary.averageVisibleTps > 0
+                      ? decimal.format(modelSummary.averageVisibleTps)
+                      : '—'}
                     <button
                       type="button"
                       disabled={p10Tps <= 0}
@@ -987,10 +995,12 @@ export function KeyDetailPage() {
                   </small>
                 </article>
                 <article className="metric-card">
-                  <span>TTFT</span>
+                  <span>首生成 / 首可见</span>
                   <strong>{streamingCalls ? `${decimal.format(p50TtftMs)} ms` : '—'}</strong>
                   <small>
-                    P50 · {integer.format(streamingCalls)} 次流式
+                    P50 TTFT · 首可见{' '}
+                    {p50FirstVisibleMs > 0 ? `${decimal.format(p50FirstVisibleMs)} ms` : '—'} ·{' '}
+                    {integer.format(streamingCalls)} 次流式
                     <span className="metric-query-links">
                       <button
                         type="button"
@@ -1228,7 +1238,7 @@ export function KeyDetailPage() {
                     <th>请求</th>
                     <th>模型</th>
                     <th>Token</th>
-                    <th>TPS / TTFT</th>
+                    <th>TPS / 首 Token</th>
                     <th>延迟</th>
                     <th>成本</th>
                     <th>时间</th>
@@ -1269,14 +1279,24 @@ export function KeyDetailPage() {
                               {integer.format(log.inputTokens)} in ·{' '}
                               {integer.format(log.cachedInputTokens)} cached ·{' '}
                               {integer.format(log.outputTokens)} out
+                              {log.reasoningTokens === null
+                                ? ''
+                                : ` · ${integer.format(log.reasoningTokens)} reasoning`}
                             </small>
                           </td>
                           <td>
-                            {log.tps === null ? '—' : decimal.format(log.tps)}
+                            {log.tps === null ? '—' : decimal.format(log.tps)} 整体
                             <small>
                               {log.timeToFirstTokenMs === null
-                                ? 'TTFT —'
-                                : `TTFT ${log.timeToFirstTokenMs} ms`}
+                                ? '首生成 —'
+                                : `首生成 ${log.timeToFirstTokenMs} ms`}
+                            </small>
+                            <small>
+                              {log.visibleTps === null ? '—' : decimal.format(log.visibleTps)} 可见
+                              {' · '}
+                              {log.timeToFirstVisibleTokenMs === null
+                                ? '首可见 —'
+                                : `首可见 ${log.timeToFirstVisibleTokenMs} ms`}
                             </small>
                           </td>
                           <td>{integer.format(log.latencyMs)} ms</td>

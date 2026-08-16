@@ -16,7 +16,7 @@ vi.mock('../lib/admin-auth', () => ({
   requireAdmin: async () => undefined,
 }));
 
-import { keyAnalyticsRoutes, tokensPerSecond } from './key-analytics';
+import { keyAnalyticsRoutes, tokensPerSecond, visibleTokensPerSecond } from './key-analytics';
 
 describe('key analytics metrics', () => {
   it('calculates generation TPS after TTFT', () => {
@@ -26,6 +26,12 @@ describe('key analytics metrics', () => {
   it('returns null when generation duration is unavailable', () => {
     expect(tokensPerSecond(0, 1_000, 200)).toBeNull();
     expect(tokensPerSecond(20, 200, 200)).toBeNull();
+    expect(tokensPerSecond(20, 1_000, null)).toBeNull();
+  });
+
+  it('calculates visible TPS without reasoning tokens', () => {
+    expect(visibleTokensPerSecond(200, 150, 3_000, 2_000)).toBe(50);
+    expect(visibleTokensPerSecond(200, null, 3_000, 2_000)).toBeNull();
   });
 });
 
@@ -92,7 +98,7 @@ describe('key analytics route', () => {
     expect(response.json().modelSeries).toEqual([modelPoint]);
     const modelSeriesCall = query.mock.calls[3];
     expect(modelSeriesCall?.[0]).toContain('GROUP BY bucket, provider, model');
-    expect(modelSeriesCall?.[0]).toContain('u.latency_ms > COALESCE(u.time_to_first_token_ms, 0)');
+    expect(modelSeriesCall?.[0]).toContain('u.latency_ms > u.time_to_first_token_ms');
     expect(modelSeriesCall?.[0]).toContain('($3::text IS NULL OR u.model = $3::text)');
     expect(modelSeriesCall?.[0]).toContain(
       "($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)",

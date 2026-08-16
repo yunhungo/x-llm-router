@@ -7,7 +7,8 @@ export class SseAccumulator {
   usage: TokenUsage = emptyUsage();
   completedResponse: Record<string, unknown> | null = null;
   errorCode: string | undefined;
-  hasOutput = false;
+  hasGeneratedOutput = false;
+  hasVisibleOutput = false;
 
   feed(chunk: Uint8Array, final = false): void {
     this.buffer += this.decoder.decode(chunk, { stream: !final });
@@ -27,29 +28,40 @@ export class SseAccumulator {
     if (!data || data === '[DONE]') return;
     try {
       const payload = JSON.parse(data) as Record<string, unknown>;
-      if (
+      const hasVisibleResponsesDelta =
         (payload.type === 'response.output_text.delta' ||
           payload.type === 'response.function_call_arguments.delta') &&
         typeof payload.delta === 'string' &&
-        payload.delta.length > 0
-      ) {
-        this.hasOutput = true;
+        payload.delta.length > 0;
+      const hasReasoningResponsesDelta =
+        (payload.type === 'response.reasoning_text.delta' ||
+          payload.type === 'response.reasoning_summary_text.delta') &&
+        typeof payload.delta === 'string' &&
+        payload.delta.length > 0;
+      if (hasVisibleResponsesDelta) this.hasVisibleOutput = true;
+      if (hasVisibleResponsesDelta || hasReasoningResponsesDelta) {
+        this.hasGeneratedOutput = true;
       }
       const choices = Array.isArray(payload.choices) ? payload.choices : [];
-      if (
-        choices.some((choice) => {
-          if (!choice || typeof choice !== 'object') return false;
-          const delta = (choice as Record<string, unknown>).delta;
-          if (!delta || typeof delta !== 'object') return false;
-          const value = delta as Record<string, unknown>;
-          return (
-            (typeof value.content === 'string' && value.content.length > 0) ||
-            (Array.isArray(value.tool_calls) && value.tool_calls.length > 0)
-          );
-        })
-      ) {
-        this.hasOutput = true;
-      }
+      const hasVisibleChoice = choices.some((choice) => {
+        if (!choice || typeof choice !== 'object') return false;
+        const delta = (choice as Record<string, unknown>).delta;
+        if (!delta || typeof delta !== 'object') return false;
+        const value = delta as Record<string, unknown>;
+        return (
+          (typeof value.content === 'string' && value.content.length > 0) ||
+          (Array.isArray(value.tool_calls) && value.tool_calls.length > 0)
+        );
+      });
+      const hasReasoningChoice = choices.some((choice) => {
+        if (!choice || typeof choice !== 'object') return false;
+        const delta = (choice as Record<string, unknown>).delta;
+        if (!delta || typeof delta !== 'object') return false;
+        const reasoningContent = (delta as Record<string, unknown>).reasoning_content;
+        return typeof reasoningContent === 'string' && reasoningContent.length > 0;
+      });
+      if (hasVisibleChoice) this.hasVisibleOutput = true;
+      if (hasVisibleChoice || hasReasoningChoice) this.hasGeneratedOutput = true;
       const nextUsage = extractTokenUsage(payload);
       if (nextUsage.totalTokens > 0) this.usage = nextUsage;
       if (

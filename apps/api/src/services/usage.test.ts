@@ -10,6 +10,7 @@ describe('token usage extraction', () => {
       inputTokens: 10,
       cachedInputTokens: 0,
       outputTokens: 4,
+      reasoningTokens: 0,
       totalTokens: 14,
     });
   });
@@ -21,6 +22,7 @@ describe('token usage extraction', () => {
       inputTokens: 8,
       cachedInputTokens: 0,
       outputTokens: 2,
+      reasoningTokens: 0,
       totalTokens: 10,
     });
   });
@@ -39,6 +41,7 @@ describe('token usage extraction', () => {
       inputTokens: 12,
       cachedInputTokens: 7,
       outputTokens: 3,
+      reasoningTokens: 0,
       totalTokens: 15,
     });
   });
@@ -50,7 +53,27 @@ describe('token usage extraction', () => {
       inputTokens: 7,
       cachedInputTokens: 0,
       outputTokens: 3,
+      reasoningTokens: 0,
       totalTokens: 10,
+    });
+  });
+
+  it('extracts reasoning tokens from Responses usage details', () => {
+    expect(
+      extractTokenUsage({
+        usage: {
+          input_tokens: 10,
+          output_tokens: 20,
+          output_tokens_details: { reasoning_tokens: 15 },
+          total_tokens: 30,
+        },
+      }),
+    ).toEqual({
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 20,
+      reasoningTokens: 15,
+      totalTokens: 30,
     });
   });
 
@@ -61,6 +84,7 @@ describe('token usage extraction', () => {
           inputTokens: 1_000_000,
           cachedInputTokens: 400_000,
           outputTokens: 100_000,
+          reasoningTokens: 0,
           totalTokens: 1_100_000,
         },
         { inputPerMillion: 2, cachedInputPerMillion: 0.2, outputPerMillion: 12 },

@@ -18,7 +18,8 @@ export interface GatewayStreamBridge {
   readonly usage: TokenUsage;
   readonly completedResponse: Record<string, unknown> | null;
   readonly errorCode: string | undefined;
-  readonly hasOutput: boolean;
+  readonly hasGeneratedOutput: boolean;
+  readonly hasVisibleOutput: boolean;
   feed(chunk: Uint8Array, final?: boolean): Uint8Array[];
 }
 
