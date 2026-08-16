@@ -288,9 +288,9 @@ export function KeyDetailPage() {
   const [data, setData] = useState<KeyAnalyticsResponse>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [priceDrafts, setPriceDrafts] = useState<Record<string, PriceDraft>>({});
   const [savingPrice, setSavingPrice] = useState('');
+  const [savedPrice, setSavedPrice] = useState('');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [generalSettings, setGeneralSettings] = useState<GeneralDraft>();
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -523,8 +523,8 @@ export function KeyDetailPage() {
       return;
     }
     setSavingPrice(key);
+    setSavedPrice('');
     setError('');
-    setNotice('');
     try {
       await api('/api/admin/settings/model-prices', {
         method: 'PUT',
@@ -536,8 +536,8 @@ export function KeyDetailPage() {
           outputPerMillion: values[2],
         }),
       });
-      setNotice(`已保存 ${price.model} 的价格。`);
       await load();
+      setSavedPrice(key);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : '价格保存失败。');
     } finally {
@@ -564,7 +564,6 @@ export function KeyDetailPage() {
     }
     setSavingGeneral(true);
     setError('');
-    setNotice('');
     try {
       await api(`/api/admin/keys/${id}`, {
         method: 'PATCH',
@@ -578,7 +577,6 @@ export function KeyDetailPage() {
           providerConnectionId: generalSettings.providerConnectionId || null,
         }),
       });
-      setNotice('基本设置已保存。');
       setSavedSettings('general');
       await load();
     } catch (caught) {
@@ -593,7 +591,6 @@ export function KeyDetailPage() {
     if (!id) return;
     setSavingLangfuse(true);
     setError('');
-    setNotice('');
     try {
       await api(`/api/admin/keys/${id}/langfuse`, {
         method: 'PUT',
@@ -602,7 +599,6 @@ export function KeyDetailPage() {
           secretKey: langfuseSettings.secretKey || undefined,
         }),
       });
-      setNotice('Langfuse 设置已保存。');
       setSavedSettings('langfuse');
       await load();
     } catch (caught) {
@@ -701,12 +697,10 @@ export function KeyDetailPage() {
   const langfuseChanged = !sameLangfuseDraft(langfuseSettings, initialLangfuse);
   const updateGeneralSettings = (next: GeneralDraft) => {
     setGeneralSettings(next);
-    setNotice('');
     setSavedSettings((current) => (current === 'general' ? undefined : current));
   };
   const updateLangfuseSettings = (next: LangfuseDraft) => {
     setLangfuseSettings(next);
-    setNotice('');
     setSavedSettings((current) => (current === 'langfuse' ? undefined : current));
   };
 
@@ -749,7 +743,6 @@ export function KeyDetailPage() {
               aria-controls={`key-panel-${tab.value}`}
               onClick={() => {
                 if (activeTab === tab.value) return;
-                setNotice('');
                 setActiveTab(tab.value);
               }}
             >
@@ -761,7 +754,6 @@ export function KeyDetailPage() {
       </nav>
 
       {error ? <div className="form-error detail-message">{error}</div> : null}
-      {notice ? <div className="notice success detail-message">{notice}</div> : null}
 
       {activeTab === 'overview' ? (
         <div
@@ -1388,7 +1380,7 @@ export function KeyDetailPage() {
                       />
                     </Field>
                   </div>
-                  <Field label="RPM" hint="0 表示不限制">
+                  <Field label="RPM" helpText="0 表示不限制">
                     <Input
                       type="number"
                       min={0}
@@ -1440,7 +1432,7 @@ export function KeyDetailPage() {
                     </Field>
                   </div>
                   <div className="general-setting-wide">
-                    <Field label="到期时间" hint="留空表示永不过期">
+                    <Field label="到期时间" helpText="留空表示永不过期">
                       <Input
                         type="datetime-local"
                         value={currentGeneral.expiresAt}
@@ -1540,12 +1532,13 @@ export function KeyDetailPage() {
                                 step="0.000001"
                                 value={draft[field]}
                                 required
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  setSavedPrice((current) => (current === draftKey ? '' : current));
                                   setPriceDrafts((current) => ({
                                     ...current,
                                     [draftKey]: { ...draft, [field]: event.target.value },
-                                  }))
-                                }
+                                  }));
+                                }}
                                 aria-label={`${price.model} ${field}`}
                               />
                             </td>
@@ -1568,7 +1561,12 @@ export function KeyDetailPage() {
                               aria-label={`保存 ${price.model} 价格`}
                               onClick={() => void savePrice(price)}
                             >
-                              <Save size={13} /> 保存
+                              {savedPrice === draftKey && !changed ? (
+                                <Check size={13} />
+                              ) : (
+                                <Save size={13} />
+                              )}
+                              {savedPrice === draftKey && !changed ? '已保存' : '保存'}
                             </Button>
                           </td>
                         </tr>

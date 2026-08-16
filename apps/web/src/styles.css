@@ -264,9 +264,50 @@ select.input {
   gap: 7px;
 }
 .field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
+}
+.field-help {
+  position: relative;
+  display: inline-flex;
+  color: var(--mute);
+  cursor: help;
+  outline: none;
+}
+.field-help:focus-visible {
+  color: var(--text);
+}
+.field-help-tooltip {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 17px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+.field-help:hover .field-help-tooltip,
+.field-help:focus-visible .field-help-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 .field-hint {
   color: var(--mute);

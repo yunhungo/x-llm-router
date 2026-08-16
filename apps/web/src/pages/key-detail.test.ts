@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { Field, Input } from '../components/ui';
 
 import {
   analyticsModelOptions,
@@ -22,6 +26,19 @@ describe('key detail tab URL state', () => {
 
     expect(next.get('tab')).toBe('logs');
     expect(next.get('range')).toBe('7d');
+  });
+});
+
+describe('key settings feedback', () => {
+  it('renders field help as a focusable tooltip instead of a layout row', () => {
+    const markup = renderToStaticMarkup(
+      createElement(Field, { label: 'RPM', helpText: '0 表示不限制' }, createElement(Input)),
+    );
+
+    expect(markup).toContain('class="field-help"');
+    expect(markup).toContain('aria-label="0 表示不限制"');
+    expect(markup).toContain('class="field-help-tooltip"');
+    expect(markup).not.toContain('class="field-hint"');
   });
 });
 

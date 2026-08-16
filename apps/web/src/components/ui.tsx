@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
-import { LoaderCircle, X } from 'lucide-react';
+import { CircleHelp, LoaderCircle, X } from 'lucide-react';
 
 export function Button({
   children,
@@ -29,16 +29,28 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 
 export function Field({
   label,
+  helpText,
   hint,
   children,
 }: {
   label: string;
+  helpText?: string;
   hint?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <label className="field">
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {helpText ? (
+          <span className="field-help" tabIndex={0} aria-label={helpText}>
+            <CircleHelp size={14} aria-hidden="true" />
+            <span className="field-help-tooltip" role="tooltip">
+              {helpText}
+            </span>
+          </span>
+        ) : null}
+      </span>
       {children}
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
