@@ -1,9 +1,27 @@
 import { emptyUsage, extractTokenUsage, type TokenUsage } from './usage';
 
+interface ChatToolCallAccumulator {
+  id?: string;
+  type?: string;
+  name?: string;
+  arguments: string;
+}
+
+interface ChatChoiceAccumulator {
+  role: string;
+  content: string;
+  reasoningContent: string;
+  toolCalls: Map<number, ChatToolCallAccumulator>;
+  finishReason: unknown;
+  logprobs: unknown;
+}
+
 export class SseAccumulator {
   private readonly decoder = new TextDecoder();
   private buffer = '';
   private readonly outputItems = new Map<number, Record<string, unknown>>();
+  private readonly chatChoices = new Map<number, ChatChoiceAccumulator>();
+  private chatCompletionMetadata: Record<string, unknown> = {};
   usage: TokenUsage = emptyUsage();
   completedResponse: Record<string, unknown> | null = null;
   errorCode: string | undefined;
@@ -64,6 +82,7 @@ export class SseAccumulator {
       if (hasVisibleChoice || hasReasoningChoice) this.hasGeneratedOutput = true;
       const nextUsage = extractTokenUsage(payload);
       if (nextUsage.totalTokens > 0) this.usage = nextUsage;
+      this.accumulateChatCompletion(payload);
       if (
         payload.type === 'response.output_item.done' &&
         typeof payload.output_index === 'number' &&
@@ -98,5 +117,88 @@ export class SseAccumulator {
     } catch {
       // Ignore non-JSON keepalive frames while preserving the original stream for the client.
     }
+  }
+
+  private accumulateChatCompletion(payload: Record<string, unknown>): void {
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    if (choices.length === 0) return;
+
+    for (const key of ['id', 'created', 'model', 'system_fingerprint'] as const) {
+      if (payload[key] !== undefined) this.chatCompletionMetadata[key] = payload[key];
+    }
+
+    for (const [position, rawChoice] of choices.entries()) {
+      if (!rawChoice || typeof rawChoice !== 'object') continue;
+      const choice = rawChoice as Record<string, unknown>;
+      const index = typeof choice.index === 'number' ? choice.index : position;
+      const accumulated = this.chatChoices.get(index) ?? {
+        role: 'assistant',
+        content: '',
+        reasoningContent: '',
+        toolCalls: new Map<number, ChatToolCallAccumulator>(),
+        finishReason: null,
+        logprobs: null,
+      };
+      const delta =
+        choice.delta && typeof choice.delta === 'object'
+          ? (choice.delta as Record<string, unknown>)
+          : {};
+
+      if (typeof delta.role === 'string') accumulated.role = delta.role;
+      if (typeof delta.content === 'string') accumulated.content += delta.content;
+      if (typeof delta.reasoning_content === 'string') {
+        accumulated.reasoningContent += delta.reasoning_content;
+      }
+      if (Array.isArray(delta.tool_calls)) {
+        for (const [toolPosition, rawToolCall] of delta.tool_calls.entries()) {
+          if (!rawToolCall || typeof rawToolCall !== 'object') continue;
+          const toolCall = rawToolCall as Record<string, unknown>;
+          const toolIndex = typeof toolCall.index === 'number' ? toolCall.index : toolPosition;
+          const existing = accumulated.toolCalls.get(toolIndex) ?? { arguments: '' };
+          const fn =
+            toolCall.function && typeof toolCall.function === 'object'
+              ? (toolCall.function as Record<string, unknown>)
+              : {};
+          if (typeof toolCall.id === 'string') existing.id = toolCall.id;
+          if (typeof toolCall.type === 'string') existing.type = toolCall.type;
+          if (typeof fn.name === 'string') existing.name = fn.name;
+          if (typeof fn.arguments === 'string') existing.arguments += fn.arguments;
+          accumulated.toolCalls.set(toolIndex, existing);
+        }
+      }
+      if (choice.finish_reason !== undefined) accumulated.finishReason = choice.finish_reason;
+      if (choice.logprobs !== undefined) accumulated.logprobs = choice.logprobs;
+      this.chatChoices.set(index, accumulated);
+    }
+
+    this.completedResponse = {
+      ...this.chatCompletionMetadata,
+      object: 'chat.completion',
+      choices: [...this.chatChoices.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([index, choice]) => {
+          const toolCalls = [...choice.toolCalls.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([, toolCall]) => ({
+              ...(toolCall.id ? { id: toolCall.id } : {}),
+              type: toolCall.type ?? 'function',
+              function: {
+                ...(toolCall.name ? { name: toolCall.name } : {}),
+                arguments: toolCall.arguments,
+              },
+            }));
+          return {
+            index,
+            message: {
+              role: choice.role,
+              content: choice.content || null,
+              ...(choice.reasoningContent ? { reasoning_content: choice.reasoningContent } : {}),
+              ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            },
+            finish_reason: choice.finishReason,
+            logprobs: choice.logprobs,
+          };
+        }),
+    };
   }
 }

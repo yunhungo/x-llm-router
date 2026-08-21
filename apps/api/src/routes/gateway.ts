@@ -301,7 +301,7 @@ async function gatewayHandler(
       }
       usage = bridge.usage;
       errorCode = bridge.errorCode;
-      traceOutput = bridge.completedResponse;
+      traceOutput = outputForTrace(bridge.completedResponse);
       upstreamResponse = {
         status: upstream.status,
         headers: Object.fromEntries(upstream.headers.entries()),
