@@ -963,7 +963,7 @@ export function KeyDetailPage() {
                   </small>
                 </article>
                 <article className="metric-card">
-                  <span>整体 TPS</span>
+                  <span>TPS</span>
                   <strong>{p50Tps > 0 ? decimal.format(p50Tps) : '—'}</strong>
                   <small>
                     P50 · 平均 {p50Tps > 0 ? decimal.format(modelSummary.averageTps) : '—'}
@@ -987,10 +987,10 @@ export function KeyDetailPage() {
                   </small>
                 </article>
                 <article className="metric-card">
-                  <span>首生成 / 首可见</span>
+                  <span>TTFT</span>
                   <strong>{streamingCalls ? `${decimal.format(p50TtftMs)} ms` : '—'}</strong>
                   <small>
-                    P50 TTFT · 首可见{' '}
+                    P50 · 可见 TTFT{' '}
                     {p50FirstVisibleMs > 0 ? `${decimal.format(p50FirstVisibleMs)} ms` : '—'} ·{' '}
                     {integer.format(streamingCalls)} 次流式
                     <span className="metric-query-links">
@@ -1230,7 +1230,7 @@ export function KeyDetailPage() {
                     <th>请求</th>
                     <th>模型</th>
                     <th>Token</th>
-                    <th>TPS / 首 Token</th>
+                    <th>TPS / TTFT</th>
                     <th>延迟</th>
                     <th>成本</th>
                     <th>时间</th>
@@ -1277,18 +1277,19 @@ export function KeyDetailPage() {
                             </small>
                           </td>
                           <td>
-                            {log.tps === null ? '—' : decimal.format(log.tps)} 整体
+                            TPS {log.tps === null ? '—' : decimal.format(log.tps)}
                             <small>
                               {log.timeToFirstTokenMs === null
-                                ? '首生成 —'
-                                : `首生成 ${log.timeToFirstTokenMs} ms`}
+                                ? 'TTFT —'
+                                : `TTFT ${integer.format(log.timeToFirstTokenMs)} ms`}
                             </small>
                             <small>
-                              {log.visibleTps === null ? '—' : decimal.format(log.visibleTps)} 可见
+                              可见 TPS{' '}
+                              {log.visibleTps === null ? '—' : decimal.format(log.visibleTps)}
                               {' · '}
                               {log.timeToFirstVisibleTokenMs === null
-                                ? '首可见 —'
-                                : `首可见 ${log.timeToFirstVisibleTokenMs} ms`}
+                                ? '可见 TTFT —'
+                                : `可见 TTFT ${integer.format(log.timeToFirstVisibleTokenMs)} ms`}
                             </small>
                           </td>
                           <td>{integer.format(log.latencyMs)} ms</td>

@@ -134,7 +134,7 @@ export function UsagePage() {
                           {log.latencyMs.toLocaleString()} ms
                           {log.timeToFirstTokenMs !== null ? (
                             <small>
-                              首生成 {log.timeToFirstTokenMs} ms · 整体 TPS{' '}
+                              TTFT {log.timeToFirstTokenMs.toLocaleString()} ms · TPS{' '}
                               {tokensPerSecond(log) === null
                                 ? '—'
                                 : decimal.format(tokensPerSecond(log) ?? 0)}
@@ -142,7 +142,8 @@ export function UsagePage() {
                           ) : null}
                           {log.timeToFirstVisibleTokenMs !== null ? (
                             <small>
-                              首可见 {log.timeToFirstVisibleTokenMs} ms · 可见 TPS{' '}
+                              可见 TTFT {log.timeToFirstVisibleTokenMs.toLocaleString()} ms · 可见
+                              TPS{' '}
                               {visibleTokensPerSecond(log) === null
                                 ? '—'
                                 : decimal.format(visibleTokensPerSecond(log) ?? 0)}
