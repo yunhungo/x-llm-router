@@ -22,19 +22,6 @@ function tokensPerSecond(log: UsageLog) {
   return (log.outputTokens * 1_000) / generationMs;
 }
 
-function visibleTokensPerSecond(log: UsageLog) {
-  if (
-    log.visibleOutputTokens === null ||
-    log.timeToFirstVisibleTokenMs === null ||
-    log.visibleOutputTokens <= 0
-  ) {
-    return null;
-  }
-  const generationMs = log.latencyMs - log.timeToFirstVisibleTokenMs;
-  if (generationMs <= 0) return null;
-  return (log.visibleOutputTokens * 1_000) / generationMs;
-}
-
 export function UsagePage() {
   const [logs, setLogs] = useState<UsageLog[]>();
   const [refreshing, setRefreshing] = useState(false);
@@ -134,21 +121,19 @@ export function UsagePage() {
                           {log.latencyMs.toLocaleString()} ms
                           {log.timeToFirstTokenMs !== null ? (
                             <small>
-                              TTFT {log.timeToFirstTokenMs.toLocaleString()} ms · TPS{' '}
+                              总输出 TPS{' '}
                               {tokensPerSecond(log) === null
                                 ? '—'
-                                : decimal.format(tokensPerSecond(log) ?? 0)}
+                                : decimal.format(tokensPerSecond(log) ?? 0)}{' '}
+                              · TTFT {log.timeToFirstTokenMs.toLocaleString()} ms
                             </small>
                           ) : null}
-                          {log.timeToFirstVisibleTokenMs !== null ? (
-                            <small>
-                              可见 TTFT {log.timeToFirstVisibleTokenMs.toLocaleString()} ms · 可见
-                              TPS{' '}
-                              {visibleTokensPerSecond(log) === null
-                                ? '—'
-                                : decimal.format(visibleTokensPerSecond(log) ?? 0)}
-                            </small>
-                          ) : null}
+                          <small>
+                            Reasoning{' '}
+                            {log.reasoningTokens === null
+                              ? '—'
+                              : `${log.reasoningTokens.toLocaleString()} tokens`}
+                          </small>
                         </td>
                         <td>{money.format(log.costUsd)}</td>
                         <td>

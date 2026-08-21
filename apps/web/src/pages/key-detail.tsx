@@ -653,10 +653,6 @@ export function KeyDetailPage() {
   );
   const p95TtftMs = finiteMetric(modelSummary?.p95TtftMs, p50TtftMs);
   const p99TtftMs = finiteMetric(modelSummary?.p99TtftMs, p95TtftMs);
-  const p50FirstVisibleMs = finiteMetric(
-    modelSummary?.p50FirstVisibleMs,
-    finiteMetric(modelSummary?.averageFirstVisibleMs),
-  );
   const p50LatencyMs = finiteMetric(
     modelSummary?.p50LatencyMs,
     finiteMetric(modelSummary?.averageLatencyMs),
@@ -927,7 +923,10 @@ export function KeyDetailPage() {
                     <Gauge size={14} />
                   </div>
                   <strong>{integer.format(modelSummary.totalTokens)}</strong>
-                  <small>{integer.format(modelSummary.cachedInputTokens)} cached</small>
+                  <small>
+                    {integer.format(modelSummary.outputTokens)} output ·{' '}
+                    {integer.format(modelSummary.reasoningTokens)} reasoning
+                  </small>
                 </article>
                 <article className="stat-card">
                   <span>成本</span>
@@ -967,10 +966,6 @@ export function KeyDetailPage() {
                   <strong>{p50Tps > 0 ? decimal.format(p50Tps) : '—'}</strong>
                   <small>
                     P50 · 平均 {p50Tps > 0 ? decimal.format(modelSummary.averageTps) : '—'}
-                    {' · '}可见平均{' '}
-                    {modelSummary.averageVisibleTps > 0
-                      ? decimal.format(modelSummary.averageVisibleTps)
-                      : '—'}
                     <button
                       type="button"
                       disabled={p10Tps <= 0}
@@ -990,9 +985,7 @@ export function KeyDetailPage() {
                   <span>TTFT</span>
                   <strong>{streamingCalls ? `${decimal.format(p50TtftMs)} ms` : '—'}</strong>
                   <small>
-                    P50 · 可见 TTFT{' '}
-                    {p50FirstVisibleMs > 0 ? `${decimal.format(p50FirstVisibleMs)} ms` : '—'} ·{' '}
-                    {integer.format(streamingCalls)} 次流式
+                    P50 · {integer.format(streamingCalls)} 次流式
                     <span className="metric-query-links">
                       <button
                         type="button"
@@ -1277,19 +1270,16 @@ export function KeyDetailPage() {
                             </small>
                           </td>
                           <td>
-                            TPS {log.tps === null ? '—' : decimal.format(log.tps)}
+                            总输出 TPS {log.tps === null ? '—' : decimal.format(log.tps)}
+                            {' · '}
+                            {log.timeToFirstTokenMs === null
+                              ? 'TTFT —'
+                              : `TTFT ${integer.format(log.timeToFirstTokenMs)} ms`}
                             <small>
-                              {log.timeToFirstTokenMs === null
-                                ? 'TTFT —'
-                                : `TTFT ${integer.format(log.timeToFirstTokenMs)} ms`}
-                            </small>
-                            <small>
-                              可见 TPS{' '}
-                              {log.visibleTps === null ? '—' : decimal.format(log.visibleTps)}
-                              {' · '}
-                              {log.timeToFirstVisibleTokenMs === null
-                                ? '可见 TTFT —'
-                                : `可见 TTFT ${integer.format(log.timeToFirstVisibleTokenMs)} ms`}
+                              Reasoning{' '}
+                              {log.reasoningTokens === null
+                                ? '—'
+                                : `${integer.format(log.reasoningTokens)} tokens`}
                             </small>
                           </td>
                           <td>{integer.format(log.latencyMs)} ms</td>
