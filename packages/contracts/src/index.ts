@@ -61,7 +61,12 @@ export const createApiKeySchema = z.object({
 
 export const createProviderApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
-  provider: z.literal('openai').default('openai'),
+  provider: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[a-z0-9][a-z0-9-]*$/),
   apiMode: z.enum(['responses', 'chat.completions']),
   apiKey: z.string().min(12),
   baseUrl: z.string().url(),

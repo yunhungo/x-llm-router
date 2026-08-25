@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { getPool } from '../db/client';
 import { requireAdmin } from '../lib/admin-auth';
+import { mergeStoredSseSnapshot } from '../services/sse';
 import { buildStoredRequestCurl, prepareStoredRequest } from '../services/usage-details';
 
 const paramsSchema = z.object({ id: z.string().uuid() });
@@ -45,11 +46,21 @@ export async function usageDetailRoutes(app: FastifyInstance): Promise<void> {
     }
     const clientRequest = prepareStoredRequest(row.clientRequest);
     const upstreamRequest = prepareStoredRequest(row.upstreamRequest);
+    const upstreamResponse =
+      row.upstreamResponse &&
+      typeof row.upstreamResponse === 'object' &&
+      !Array.isArray(row.upstreamResponse)
+        ? {
+            ...row.upstreamResponse,
+            body: mergeStoredSseSnapshot(row.upstreamResponse.body),
+          }
+        : row.upstreamResponse;
     return {
       detail: {
         ...row,
         clientRequest,
         upstreamRequest,
+        upstreamResponse,
         gatewayCurl:
           buildStoredRequestCurl(clientRequest, '<ROUTER_API_KEY>', row.requestId) ??
           row.gatewayCurl,

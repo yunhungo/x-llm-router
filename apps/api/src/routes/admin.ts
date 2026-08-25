@@ -13,7 +13,8 @@ import {
 import { getPool } from '../db/client';
 import { adminId, requireAdmin } from '../lib/admin-auth';
 import { encryptJson } from '../lib/crypto';
-import { getProviderAdapter, providerCatalog } from '../providers/registry';
+import { getPiProviderDefinition } from '../providers/pi-ai';
+import { isProviderRegistered, providerCatalog } from '../providers/registry';
 import {
   decryptLangfuseSettings,
   defaultLangfuseSettings,
@@ -71,20 +72,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         .code(400)
         .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
     }
-    try {
-      getProviderAdapter(parsed.data.provider);
-    } catch (error) {
-      const typed = error as Error & { code?: string };
+    if (!isProviderRegistered(parsed.data.provider)) {
       return reply.code(400).send({
-        error: { code: typed.code ?? 'unsupported_provider', message: typed.message },
+        error: {
+          code: 'unsupported_provider',
+          message: `Provider is not registered: ${parsed.data.provider}.`,
+        },
       });
     }
+    const definition = getPiProviderDefinition(parsed.data.provider);
+    const models = definition?.models ?? [];
     const id = randomUUID();
     await getPool().query(
       `INSERT INTO provider_connections(
         id, name, provider, auth_type, api_mode, credentials_ciphertext, base_url,
-        default_model, priority, created_by
-      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8,$9)`,
+        default_model, priority, available_models, models_refreshed_at, created_by
+      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
       [
         id,
         parsed.data.name,
@@ -94,6 +97,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         parsed.data.baseUrl,
         parsed.data.defaultModel ?? null,
         parsed.data.priority,
+        JSON.stringify(models),
+        models.length ? new Date() : null,
         adminId(request),
       ],
     );

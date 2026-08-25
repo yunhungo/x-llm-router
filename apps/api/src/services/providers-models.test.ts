@@ -105,29 +105,30 @@ describe('provider model refresh', () => {
     );
   });
 
-  it('rejects model discovery for API-key connections', async () => {
-    query.mockResolvedValueOnce({
-      rows: [
-        {
-          id: 'provider-1',
-          name: 'OpenAI API',
-          provider: 'openai',
-          auth_type: 'api_key',
-          api_mode: 'responses',
-          credentials_ciphertext: 'encrypted',
-          account_id: null,
-          base_url: 'https://api.openai.com/v1',
-          default_model: null,
-          token_expires_at: null,
-        },
-      ],
-      rowCount: 1,
-    });
+  it('restores Pi built-in models for API-key connections', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'provider-1',
+            name: 'OpenAI API',
+            provider: 'openai',
+            auth_type: 'api_key',
+            api_mode: 'responses',
+            credentials_ciphertext: 'encrypted',
+            account_id: null,
+            base_url: 'https://api.openai.com/v1',
+            default_model: null,
+            token_expires_at: null,
+          },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
-    await expect(refreshProviderModels('provider-1')).rejects.toMatchObject({
-      code: 'provider_model_discovery_unsupported',
-    });
+    const result = await refreshProviderModels('provider-1');
+    expect(result.models).toContain('gpt-5.6-sol');
     expect(discoverOpenAiModels).not.toHaveBeenCalled();
-    expect(query).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });

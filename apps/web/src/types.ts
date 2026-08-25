@@ -27,6 +27,8 @@ export interface ProviderCatalogItem {
   name: string;
   defaultApiBaseUrl: string | null;
   defaultModel: string | null;
+  defaultApiMode: 'responses' | 'chat.completions';
+  models: string[];
   capabilities: {
     upstreamApis: Array<'responses' | 'chat.completions'>;
     gatewayApis: Array<'responses' | 'chat.completions'>;

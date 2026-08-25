@@ -25,7 +25,7 @@ import {
   PageHeader,
   Skeleton,
 } from '../components/ui';
-import type { Provider } from '../types';
+import type { Provider, ProviderCatalogItem } from '../types';
 
 interface DeviceFlow {
   id: string;
@@ -40,6 +40,8 @@ type ApiMode = 'responses' | 'chat.completions';
 
 export function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>();
+  const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([]);
+  const [providerId, setProviderId] = useState('openai');
   const [modal, setModal] = useState<'add' | 'edit' | null>(null);
   const [editingProvider, setEditingProvider] = useState<Provider>();
   const [connectionMethod, setConnectionMethod] = useState<ConnectionMethod>('api-key');
@@ -56,8 +58,12 @@ export function ProvidersPage() {
   const [modalError, setModalError] = useState('');
 
   const load = useCallback(async () => {
-    const result = await api<{ providers: Provider[] }>('/api/admin/providers');
-    setProviders(result.providers);
+    const [connections, registered] = await Promise.all([
+      api<{ providers: Provider[] }>('/api/admin/providers'),
+      api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
+    ]);
+    setProviders(connections.providers);
+    setCatalog(registered.providers);
   }, []);
   useEffect(() => void load(), [load]);
 
@@ -155,12 +161,12 @@ export function ProvidersPage() {
         method: 'POST',
         ...jsonBody({
           name,
-          provider: 'openai',
+          provider: providerId,
           apiMode,
           apiKey,
           baseUrl,
           defaultModel: defaultModel || undefined,
-          priority: 100,
+          priority: Number(priority),
         }),
       });
       setModal(null);
@@ -176,12 +182,14 @@ export function ProvidersPage() {
 
   const selectConnectionMethod = (method: ConnectionMethod) => {
     setConnectionMethod(method);
+    if (method === 'oauth') setProviderId('openai');
     setName(method === 'api-key' ? 'OpenAI API' : 'OpenAI OAuth');
     setFlow(undefined);
   };
 
   const openAddProviderModal = () => {
     selectConnectionMethod('api-key');
+    setProviderId('openai');
     setApiMode('chat.completions');
     setApiKey('');
     setBaseUrl('https://api.openai.com/v1');
@@ -191,6 +199,16 @@ export function ProvidersPage() {
     setEditingProvider(undefined);
     setModalError('');
     setModal('add');
+  };
+
+  const selectProvider = (nextProviderId: string) => {
+    const selected = catalog.find((provider) => provider.id === nextProviderId);
+    setProviderId(nextProviderId);
+    setConnectionMethod('api-key');
+    setName(selected ? `${selected.name} API` : 'Upstream API');
+    setBaseUrl(selected?.defaultApiBaseUrl ?? '');
+    setDefaultModel(selected?.defaultModel ?? '');
+    setApiMode(selected?.defaultApiMode ?? 'chat.completions');
   };
 
   const openEditProviderModal = (provider: Provider) => {
@@ -309,7 +327,11 @@ export function ProvidersPage() {
                       {provider.authType === 'oauth' ? 'OAuth' : 'API Key'}
                     </Badge>
                   </div>
-                  <span>OpenAI · 优先级 {provider.priority}</span>
+                  <span>
+                    {catalog.find((item) => item.id === provider.provider)?.name ??
+                      provider.provider}{' '}
+                    · 优先级 {provider.priority}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -343,9 +365,13 @@ export function ProvidersPage() {
                 <div>
                   <span>API 方式</span>
                   <code>
-                    {provider.authType === 'oauth' || provider.apiMode === 'responses'
+                    {provider.authType === 'oauth'
                       ? 'Responses'
-                      : 'Chat Completions'}
+                      : provider.provider === 'custom'
+                        ? provider.apiMode === 'responses'
+                          ? 'Responses'
+                          : 'Chat Completions'
+                        : 'Pi AI · Auto'}
                   </code>
                 </div>
                 <div>
@@ -365,7 +391,7 @@ export function ProvidersPage() {
                   </div>
                 ) : null}
               </div>
-              {provider.authType === 'oauth' ? (
+              {provider.models.length || provider.authType === 'oauth' ? (
                 <section className="provider-models" aria-label={`${provider.name} 可用模型`}>
                   <div className="provider-models-heading">
                     <div>
@@ -392,7 +418,7 @@ export function ProvidersPage() {
                       ))}
                     </div>
                   ) : (
-                    <p>授权成功后会从 OpenAI 同步此账号当前可用的模型。</p>
+                    <p>点击刷新以同步或恢复此 Provider 当前可用的模型。</p>
                   )}
                   {provider.modelsRefreshError ? (
                     <div className="provider-model-error">
@@ -420,7 +446,7 @@ export function ProvidersPage() {
       ) : (
         <EmptyState
           title="还没有上游连接"
-          description="添加 OpenAI 上游，并选择 API Key 或 OAuth 接入。"
+          description="从 Pi AI 的预置 Provider 中选择，或添加自定义 OpenAI-compatible 上游。"
           action={
             <Button onClick={openAddProviderModal}>
               <Plus size={14} /> 添加上游
@@ -512,8 +538,16 @@ export function ProvidersPage() {
           ) : (
             <form className="modal-body" onSubmit={(event) => void createApiKeyProvider(event)}>
               <Field label="Provider">
-                <select className="input" value="openai" disabled>
-                  <option value="openai">OpenAI</option>
+                <select
+                  className="input"
+                  value={providerId}
+                  onChange={(event) => selectProvider(event.target.value)}
+                >
+                  {catalog.map((provider) => (
+                    <option value={provider.id} key={provider.id}>
+                      {provider.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="接入方式">
@@ -525,29 +559,33 @@ export function ProvidersPage() {
                   }
                 >
                   <option value="api-key">API Key</option>
-                  <option value="oauth">OAuth</option>
+                  <option value="oauth" disabled={providerId !== 'openai'}>
+                    OAuth（仅 OpenAI）
+                  </option>
                 </select>
               </Field>
-              <Field label="接口类型" hint="使用 OpenAI 兼容的请求与响应格式。">
-                <select className="input" value="openai-compatible" disabled>
-                  <option value="openai-compatible">OpenAI Compatible</option>
+              <Field label="运行时" hint="请求构建、流解析和用量归一化由 Pi AI 完成。">
+                <select className="input" value="pi-ai" disabled>
+                  <option value="pi-ai">Pi AI</option>
                 </select>
               </Field>
-              <Field
-                label="API 方式"
-                hint={`请求会发送到 ${
-                  apiMode === 'responses' ? '/responses' : '/chat/completions'
-                }。`}
-              >
-                <select
-                  className="input"
-                  value={apiMode}
-                  onChange={(event) => setApiMode(event.target.value as ApiMode)}
+              {providerId === 'custom' ? (
+                <Field
+                  label="自定义上游协议"
+                  hint={`请求会发送到 ${
+                    apiMode === 'responses' ? '/responses' : '/chat/completions'
+                  }。`}
                 >
-                  <option value="responses">Responses API</option>
-                  <option value="chat.completions">Chat Completions API</option>
-                </select>
-              </Field>
+                  <select
+                    className="input"
+                    value={apiMode}
+                    onChange={(event) => setApiMode(event.target.value as ApiMode)}
+                  >
+                    <option value="responses">Responses API</option>
+                    <option value="chat.completions">Chat Completions API</option>
+                  </select>
+                </Field>
+              ) : null}
               <Field label="连接名称">
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
@@ -566,24 +604,26 @@ export function ProvidersPage() {
               >
                 <Input
                   type="url"
-                  list="openai-compatible-base-urls"
                   value={baseUrl}
                   onChange={(event) => setBaseUrl(event.target.value)}
                   placeholder="https://api.example.com/v1"
                   required
                 />
-                <datalist id="openai-compatible-base-urls">
-                  <option value="https://api.openai.com/v1">OpenAI</option>
-                  <option value="https://openrouter.ai/api/v1">OpenRouter</option>
-                  <option value="https://api.siliconflow.cn/v1">SiliconFlow</option>
-                </datalist>
               </Field>
               <Field label="默认模型（可选）">
                 <Input
                   value={defaultModel}
+                  list={`catalog-models-${providerId}`}
                   onChange={(event) => setDefaultModel(event.target.value)}
                   placeholder="例如 gpt-4.1"
                 />
+                <datalist id={`catalog-models-${providerId}`}>
+                  {(catalog.find((provider) => provider.id === providerId)?.models ?? []).map(
+                    (model) => (
+                      <option value={model} key={model} />
+                    ),
+                  )}
+                </datalist>
               </Field>
               <div className="modal-actions">
                 <Button type="button" variant="secondary" onClick={() => setModal(null)}>
@@ -619,7 +659,12 @@ export function ProvidersPage() {
               <div className="provider-edit-copy">
                 <strong>{editingProvider.name}</strong>
                 <span>
-                  {editingProvider.authType === 'oauth' ? 'OpenAI OAuth' : 'OpenAI Compatible'}
+                  {editingProvider.authType === 'oauth'
+                    ? 'OpenAI OAuth'
+                    : `${
+                        catalog.find((provider) => provider.id === editingProvider.provider)
+                          ?.name ?? editingProvider.provider
+                      } · Pi AI`}
                   {' · '}
                   {editingProvider.status === 'active' ? '已启用' : '未启用'}
                 </span>
@@ -668,21 +713,27 @@ export function ProvidersPage() {
             {editingProvider.authType === 'api_key' ? (
               <>
                 <div className="modal-section-label">上游 API</div>
-                <Field
-                  label="API 方式"
-                  hint={`请求会发送到 ${
-                    apiMode === 'responses' ? '/responses' : '/chat/completions'
-                  }。`}
-                >
-                  <select
-                    className="input"
-                    value={apiMode}
-                    onChange={(event) => setApiMode(event.target.value as ApiMode)}
+                {editingProvider.provider === 'custom' ? (
+                  <Field
+                    label="自定义上游协议"
+                    hint={`请求会发送到 ${
+                      apiMode === 'responses' ? '/responses' : '/chat/completions'
+                    }。`}
                   >
-                    <option value="responses">Responses API</option>
-                    <option value="chat.completions">Chat Completions API</option>
-                  </select>
-                </Field>
+                    <select
+                      className="input"
+                      value={apiMode}
+                      onChange={(event) => setApiMode(event.target.value as ApiMode)}
+                    >
+                      <option value="responses">Responses API</option>
+                      <option value="chat.completions">Chat Completions API</option>
+                    </select>
+                  </Field>
+                ) : (
+                  <div className="security-note provider-credential-note">
+                    <ShieldCheck size={14} /> Pi AI 会按所选模型自动选择并转换上游协议。
+                  </div>
+                )}
                 <Field label="Base URL" hint="不包含 /responses 或 /chat/completions 路径。">
                   <Input
                     type="url"

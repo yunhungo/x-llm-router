@@ -1,4 +1,5 @@
 import { openAiProviderAdapter } from './openai';
+import { getPiProviderDefinition, piProviderCatalog } from './pi-ai';
 import type { ProviderAdapter } from './types';
 
 const adapters = new Map<string, ProviderAdapter>([
@@ -17,11 +18,9 @@ export function getProviderAdapter(provider: string): ProviderAdapter {
 }
 
 export function providerCatalog() {
-  return [...adapters.values()].map((adapter) => ({
-    id: adapter.id,
-    name: adapter.displayName,
-    defaultApiBaseUrl: adapter.defaultApiBaseUrl ?? null,
-    defaultModel: adapter.defaultModel ?? null,
-    capabilities: adapter.capabilities,
-  }));
+  return piProviderCatalog();
+}
+
+export function isProviderRegistered(provider: string): boolean {
+  return adapters.has(provider) || Boolean(getPiProviderDefinition(provider));
 }

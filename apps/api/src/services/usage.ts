@@ -7,7 +7,7 @@ export interface TokenUsage {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
-  reasoningTokens: number;
+  reasoningTokens: number | null;
   totalTokens: number;
 }
 
@@ -15,7 +15,7 @@ export const emptyUsage = (): TokenUsage => ({
   inputTokens: 0,
   cachedInputTokens: 0,
   outputTokens: 0,
-  reasoningTokens: 0,
+  reasoningTokens: null,
   totalTokens: 0,
 });
 
@@ -46,14 +46,20 @@ export function extractTokenUsage(payload: unknown): TokenUsage {
     inputDetails.cached_tokens ?? usage.prompt_cache_hit_tokens,
   );
   const outputTokens = numberValue(usage.output_tokens ?? usage.completion_tokens);
-  const outputDetails = (
+  const outputDetails =
     usage.output_tokens_details && typeof usage.output_tokens_details === 'object'
-      ? usage.output_tokens_details
-      : usage.completion_tokens_details && typeof usage.completion_tokens_details === 'object'
-        ? usage.completion_tokens_details
-        : {}
-  ) as Record<string, unknown>;
-  const reasoningTokens = numberValue(outputDetails.reasoning_tokens);
+      ? (usage.output_tokens_details as Record<string, unknown>)
+      : {};
+  const completionDetails =
+    usage.completion_tokens_details && typeof usage.completion_tokens_details === 'object'
+      ? (usage.completion_tokens_details as Record<string, unknown>)
+      : {};
+  const rawReasoningTokens =
+    outputDetails.reasoning_tokens ?? completionDetails.reasoning_tokens ?? usage.reasoning_tokens;
+  const reasoningTokens =
+    typeof rawReasoningTokens === 'number' && Number.isFinite(rawReasoningTokens)
+      ? rawReasoningTokens
+      : null;
   const totalTokens = numberValue(usage.total_tokens) || inputTokens + outputTokens;
   return { inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens };
 }
@@ -125,10 +131,16 @@ export async function recordUsage(input: {
   timeToFirstTokenMs?: number;
   timeToFirstVisibleTokenMs?: number;
   errorCode?: string;
+  reportedCostUsd?: number;
   metadata?: Record<string, unknown>;
   details?: UsageCallDetails;
 }): Promise<{ costUsd: number }> {
-  const costUsd = await calculateCost(input.provider ?? '*', input.model, input.usage);
+  const costUsd =
+    input.reportedCostUsd !== undefined &&
+    Number.isFinite(input.reportedCostUsd) &&
+    input.reportedCostUsd >= 0
+      ? input.reportedCostUsd
+      : await calculateCost(input.provider ?? '*', input.model, input.usage);
   const usageLogId = randomUUID();
   const client = await getPool().connect();
   try {

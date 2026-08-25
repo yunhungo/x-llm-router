@@ -153,7 +153,7 @@ describe('Chat Completions and Responses conversion', () => {
       inputTokens: 2,
       cachedInputTokens: 0,
       outputTokens: 1,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 3,
     });
     expect(bridge.completedResponse).toMatchObject({ object: 'chat.completion' });

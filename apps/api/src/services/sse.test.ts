@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { SseAccumulator } from './sse';
+import { mergeStoredSseSnapshot, SseAccumulator } from './sse';
 
 describe('SSE accumulator', () => {
   it('recovers a completed Responses payload across chunks', () => {
@@ -81,14 +81,85 @@ describe('SSE accumulator', () => {
           logprobs: null,
         },
       ],
+      usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
     });
     expect(parser.usage).toEqual({
       inputTokens: 4,
       cachedInputTokens: 0,
       outputTokens: 3,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 7,
     });
+  });
+
+  it('merges stored Chat Completions SSE events for detail display', () => {
+    const snapshot = {
+      stream: true,
+      events: [
+        {
+          id: 'chatcmpl_1',
+          model: 'stealth/ox-alpha',
+          provider: 'Stealth',
+          choices: [
+            {
+              index: 0,
+              delta: { role: 'assistant', reasoning: 'Think ', content: '' },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          id: 'chatcmpl_1',
+          model: 'stealth/ox-alpha',
+          choices: [
+            {
+              index: 0,
+              delta: { reasoning: 'carefully.', content: 'Hello' },
+              finish_reason: 'stop',
+              native_finish_reason: 'stop',
+            },
+          ],
+        },
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 4,
+            completion_tokens: 5,
+            completion_tokens_details: { reasoning_tokens: 3 },
+            total_tokens: 9,
+          },
+        },
+      ],
+      bytes: 1000,
+      truncated: false,
+    };
+
+    expect(mergeStoredSseSnapshot(snapshot)).toEqual({
+      id: 'chatcmpl_1',
+      model: 'stealth/ox-alpha',
+      provider: 'Stealth',
+      usage: {
+        prompt_tokens: 4,
+        completion_tokens: 5,
+        completion_tokens_details: { reasoning_tokens: 3 },
+        total_tokens: 9,
+      },
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: 'Hello', reasoning: 'Think carefully.' },
+          finish_reason: 'stop',
+          native_finish_reason: 'stop',
+          logprobs: null,
+        },
+      ],
+    });
+  });
+
+  it('keeps a truncated SSE snapshot raw', () => {
+    const snapshot = { stream: true, events: [], bytes: 300_000, truncated: true };
+    expect(mergeStoredSseSnapshot(snapshot)).toBe(snapshot);
   });
 
   it('reconstructs streamed Chat Completions tool calls', () => {

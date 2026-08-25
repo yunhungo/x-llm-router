@@ -10,7 +10,7 @@ describe('token usage extraction', () => {
       inputTokens: 10,
       cachedInputTokens: 0,
       outputTokens: 4,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 14,
     });
   });
@@ -22,7 +22,7 @@ describe('token usage extraction', () => {
       inputTokens: 8,
       cachedInputTokens: 0,
       outputTokens: 2,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 10,
     });
   });
@@ -41,7 +41,7 @@ describe('token usage extraction', () => {
       inputTokens: 12,
       cachedInputTokens: 7,
       outputTokens: 3,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 15,
     });
   });
@@ -53,7 +53,7 @@ describe('token usage extraction', () => {
       inputTokens: 7,
       cachedInputTokens: 0,
       outputTokens: 3,
-      reasoningTokens: 0,
+      reasoningTokens: null,
       totalTokens: 10,
     });
   });
@@ -75,6 +75,20 @@ describe('token usage extraction', () => {
       reasoningTokens: 15,
       totalTokens: 30,
     });
+  });
+
+  it('preserves an explicit zero reasoning token count', () => {
+    expect(
+      extractTokenUsage({
+        usage: {
+          prompt_tokens: 8,
+          completion_tokens: 2,
+          output_tokens_details: {},
+          completion_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 10,
+        },
+      }),
+    ).toMatchObject({ reasoningTokens: 0 });
   });
 
   it('prices cached input separately from uncached input', () => {

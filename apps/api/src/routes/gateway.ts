@@ -5,6 +5,13 @@ import { propagateAttributes, startObservation } from '@langfuse/tracing';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { getProviderAdapter } from '../providers/registry';
+import {
+  piErrorMessage,
+  piReportedCost,
+  preparePiRequest,
+  tokenUsageFromPi,
+} from '../providers/pi-ai';
+import { finalOpenAiResponse, PiOpenAiStreamSerializer } from '../providers/pi-openai';
 import type { GatewayEndpoint } from '../providers/types';
 import { defaultLangfuseSettings, isLangfuseDiagnosticsEnabled } from '../services/langfuse';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
@@ -116,6 +123,155 @@ async function writeChunk(reply: FastifyReply, chunk: Uint8Array): Promise<void>
   if (!reply.raw.write(chunk)) await once(reply.raw, 'drain');
 }
 
+interface PiGatewayResult {
+  statusCode: number;
+  model: string;
+  usage: TokenUsage;
+  reportedCostUsd?: number;
+  errorCode?: string;
+  firstTokenAt?: number;
+  firstVisibleTokenAt?: number;
+  traceOutput?: unknown;
+  upstreamRequest?: unknown;
+  upstreamResponse?: unknown;
+  upstreamCurl?: string;
+  capturedError?: unknown;
+}
+
+async function executePiGateway(input: {
+  endpoint: GatewayEndpoint;
+  body: Record<string, unknown>;
+  provider: ProviderRuntime;
+  requestId: string;
+  signal: AbortSignal;
+  reply: FastifyReply;
+}): Promise<PiGatewayResult> {
+  const prepared = preparePiRequest(
+    input.endpoint,
+    input.body,
+    input.provider,
+    input.signal,
+    input.requestId,
+  );
+  const serializer = new PiOpenAiStreamSerializer(
+    input.endpoint,
+    prepared.model.id,
+    prepared.includeUsageInStream,
+  );
+  let completedResponse: Record<string, unknown> | undefined;
+  let usage = emptyUsage();
+  let reportedCostUsd: number | undefined;
+  let errorCode: string | undefined;
+  let capturedError: unknown;
+  let firstTokenAt: number | undefined;
+  let firstVisibleTokenAt: number | undefined;
+  let streamStarted = false;
+
+  for await (const event of prepared.events) {
+    const generated =
+      event.type === 'text_delta' ||
+      event.type === 'thinking_delta' ||
+      event.type === 'toolcall_delta' ||
+      event.type === 'toolcall_end';
+    if (generated && !firstTokenAt) firstTokenAt = Date.now();
+    if (
+      (event.type === 'text_delta' ||
+        event.type === 'toolcall_delta' ||
+        event.type === 'toolcall_end') &&
+      !firstVisibleTokenAt
+    ) {
+      firstVisibleTokenAt = Date.now();
+    }
+
+    if (event.type === 'done') {
+      usage = tokenUsageFromPi(event.message.usage);
+      reportedCostUsd = piReportedCost(event.message);
+      completedResponse = finalOpenAiResponse(input.endpoint, event.message, prepared.model.id);
+    } else if (event.type === 'error') {
+      usage = tokenUsageFromPi(event.error.usage);
+      reportedCostUsd = piReportedCost(event.error);
+      errorCode = event.reason === 'aborted' ? 'client_closed_request' : 'upstream_error';
+      capturedError = {
+        name: event.reason === 'aborted' ? 'AbortError' : 'UpstreamError',
+        code: errorCode,
+        message: piErrorMessage(event),
+      };
+    }
+
+    if (prepared.clientWantsStream) {
+      if (event.type === 'error' && !streamStarted) continue;
+      if (!streamStarted) {
+        streamStarted = true;
+        input.reply.hijack();
+        input.reply.raw.statusCode = prepared.capture.response?.status ?? 200;
+        input.reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
+        input.reply.raw.setHeader('cache-control', 'no-cache, no-transform');
+        input.reply.raw.setHeader('connection', 'keep-alive');
+        input.reply.raw.setHeader('x-request-id', input.requestId);
+      }
+      for (const chunk of serializer.feed(event)) await writeChunk(input.reply, chunk);
+    }
+  }
+
+  const statusCode = errorCode
+    ? prepared.capture.response?.status && prepared.capture.response.status >= 400
+      ? prepared.capture.response.status
+      : errorCode === 'client_closed_request'
+        ? 499
+        : 502
+    : (prepared.capture.response?.status ?? 200);
+  if (prepared.clientWantsStream && streamStarted) {
+    input.reply.raw.end();
+  } else if (completedResponse) {
+    input.reply.code(statusCode).type('application/json').send(completedResponse);
+  } else if (!input.reply.sent && !input.reply.raw.headersSent) {
+    input.reply.code(statusCode).send({
+      error: {
+        type: 'api_error',
+        code: errorCode ?? 'invalid_upstream_response',
+        message:
+          capturedError && typeof capturedError === 'object'
+            ? (capturedError as Record<string, unknown>).message
+            : 'Upstream stream ended without a completed response.',
+      },
+    });
+  }
+
+  const capturedRequest = prepared.capture.request;
+  const upstreamCurl = capturedRequest
+    ? buildCurl({
+        url: capturedRequest.url,
+        body:
+          capturedRequest.body && typeof capturedRequest.body === 'object'
+            ? (capturedRequest.body as Record<string, unknown>)
+            : {},
+        authorization: '<UPSTREAM_CREDENTIAL>',
+        method: capturedRequest.method,
+        headers: capturedRequest.headers,
+        accept: 'text/event-stream',
+        requestId: input.requestId,
+      })
+    : undefined;
+  return {
+    statusCode,
+    model: prepared.model.id,
+    usage,
+    ...(reportedCostUsd === undefined ? {} : { reportedCostUsd }),
+    ...(errorCode ? { errorCode } : {}),
+    ...(firstTokenAt ? { firstTokenAt } : {}),
+    ...(firstVisibleTokenAt ? { firstVisibleTokenAt } : {}),
+    ...(completedResponse ? { traceOutput: outputForTrace(completedResponse) } : {}),
+    ...(capturedRequest ? { upstreamRequest: capturedRequest } : {}),
+    upstreamResponse: {
+      status: prepared.capture.response?.status ?? statusCode,
+      headers: prepared.capture.response?.headers ?? {},
+      body: completedResponse ?? capturedError ?? null,
+    },
+    ...(upstreamCurl ? { upstreamCurl } : {}),
+    ...(capturedError ? { capturedError } : {}),
+  };
+}
+
 async function gatewayHandler(
   endpoint: GatewayEndpoint,
   request: FastifyRequest,
@@ -152,6 +308,7 @@ async function gatewayHandler(
   let provider: ProviderRuntime | undefined;
   let model = typeof body.model === 'string' ? body.model : '';
   let usage: TokenUsage = emptyUsage();
+  let reportedCostUsd: number | undefined;
   let statusCode = 500;
   let errorCode: string | undefined;
   let firstTokenAt: number | undefined;
@@ -215,134 +372,168 @@ async function gatewayHandler(
 
   try {
     provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
-    const adapter = getProviderAdapter(provider.provider);
-    const prepared = adapter.prepareRequest(endpoint, body, provider);
-    model = String(prepared.body.model);
-    observation.update({
-      model,
-      modelParameters: langfuseModelParameters(prepared.body),
-      metadata: {
-        requestedModel,
-        actualModel: model,
-        provider: provider.provider,
-        providerConnectionId: provider.id,
-      },
-    });
-    const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
-    const upstreamHeaders = {
-      authorization: provider.authorization,
-      'content-type': 'application/json',
-      accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
-      'x-request-id': requestId,
-      ...provider.headers,
-    };
-    upstreamRequest = {
-      method: 'POST',
-      url: upstreamUrl,
-      headers: upstreamHeaders,
-      body: prepared.body,
-    };
-    upstreamCurl = buildCurl({
-      url: upstreamUrl,
-      body: prepared.body,
-      authorization: '<UPSTREAM_CREDENTIAL>',
-      method: 'POST',
-      headers: upstreamHeaders,
-      accept: upstreamHeaders.accept,
-      requestId,
-    });
     const abortController = new AbortController();
     reply.raw.once('close', () => {
       if (!reply.raw.writableEnded) abortController.abort();
     });
 
-    const upstream = await fetch(upstreamUrl, {
-      method: 'POST',
-      headers: upstreamHeaders,
-      body: JSON.stringify(prepared.body),
-      signal: abortController.signal,
-    });
-    statusCode = upstream.status;
-    const contentType = upstream.headers.get('content-type') ?? 'application/json';
-    const upstreamIsEventStream =
-      contentType.toLowerCase().includes('text/event-stream') ||
-      (prepared.expectsSseOnSuccess && upstream.ok);
+    if (provider.authType === 'api_key') {
+      const piResult = await executePiGateway({
+        endpoint,
+        body,
+        provider,
+        requestId,
+        signal: abortController.signal,
+        reply,
+      });
+      model = piResult.model;
+      statusCode = piResult.statusCode;
+      usage = piResult.usage;
+      reportedCostUsd = piResult.reportedCostUsd;
+      errorCode = piResult.errorCode;
+      firstTokenAt = piResult.firstTokenAt;
+      firstVisibleTokenAt = piResult.firstVisibleTokenAt;
+      traceOutput = piResult.traceOutput;
+      upstreamCurl = piResult.upstreamCurl;
+      upstreamRequest = piResult.upstreamRequest;
+      upstreamResponse = piResult.upstreamResponse;
+      capturedError = piResult.capturedError;
+      observation.update({
+        model,
+        modelParameters: langfuseModelParameters(body),
+        metadata: {
+          requestedModel,
+          actualModel: model,
+          provider: provider.provider,
+          providerConnectionId: provider.id,
+          upstreamRuntime: 'pi-ai',
+        },
+      });
+    } else {
+      const adapter = getProviderAdapter(provider.provider);
+      const prepared = adapter.prepareRequest(endpoint, body, provider);
+      model = String(prepared.body.model);
+      observation.update({
+        model,
+        modelParameters: langfuseModelParameters(prepared.body),
+        metadata: {
+          requestedModel,
+          actualModel: model,
+          provider: provider.provider,
+          providerConnectionId: provider.id,
+        },
+      });
+      const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
+      const upstreamHeaders = {
+        authorization: provider.authorization,
+        'content-type': 'application/json',
+        accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
+        'x-request-id': requestId,
+        ...provider.headers,
+      };
+      upstreamRequest = {
+        method: 'POST',
+        url: upstreamUrl,
+        headers: upstreamHeaders,
+        body: prepared.body,
+      };
+      upstreamCurl = buildCurl({
+        url: upstreamUrl,
+        body: prepared.body,
+        authorization: '<UPSTREAM_CREDENTIAL>',
+        method: 'POST',
+        headers: upstreamHeaders,
+        accept: upstreamHeaders.accept,
+        requestId,
+      });
+      const upstream = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: JSON.stringify(prepared.body),
+        signal: abortController.signal,
+      });
+      statusCode = upstream.status;
+      const contentType = upstream.headers.get('content-type') ?? 'application/json';
+      const upstreamIsEventStream =
+        contentType.toLowerCase().includes('text/event-stream') ||
+        (prepared.expectsSseOnSuccess && upstream.ok);
 
-    if (upstreamIsEventStream) {
-      const bridge = adapter.createStreamBridge(prepared);
-      const detailCollector = new SseDetailCollector();
-      if (prepared.clientWantsStream) {
-        reply.hijack();
-        reply.raw.statusCode = upstream.status;
-        reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
-        reply.raw.setHeader('cache-control', 'no-cache, no-transform');
-        reply.raw.setHeader('connection', 'keep-alive');
-        reply.raw.setHeader('x-request-id', requestId);
-      }
+      if (upstreamIsEventStream) {
+        const bridge = adapter.createStreamBridge(prepared);
+        const detailCollector = new SseDetailCollector();
+        if (prepared.clientWantsStream) {
+          reply.hijack();
+          reply.raw.statusCode = upstream.status;
+          reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
+          reply.raw.setHeader('cache-control', 'no-cache, no-transform');
+          reply.raw.setHeader('connection', 'keep-alive');
+          reply.raw.setHeader('x-request-id', requestId);
+        }
 
-      if (upstream.body) {
-        const reader = upstream.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          detailCollector.feed(value);
-          const clientChunks = bridge.feed(value);
-          if (!firstTokenAt && bridge.hasGeneratedOutput) firstTokenAt = Date.now();
-          if (!firstVisibleTokenAt && bridge.hasVisibleOutput) firstVisibleTokenAt = Date.now();
-          if (prepared.clientWantsStream) {
-            for (const chunk of clientChunks) await writeChunk(reply, chunk);
+        if (upstream.body) {
+          const reader = upstream.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            detailCollector.feed(value);
+            const clientChunks = bridge.feed(value);
+            if (!firstTokenAt && bridge.hasGeneratedOutput) firstTokenAt = Date.now();
+            if (!firstVisibleTokenAt && bridge.hasVisibleOutput) firstVisibleTokenAt = Date.now();
+            if (prepared.clientWantsStream) {
+              for (const chunk of clientChunks) await writeChunk(reply, chunk);
+            }
           }
         }
-      }
-      detailCollector.feed(new Uint8Array(), true);
-      const finalChunks = bridge.feed(new Uint8Array(), true);
-      if (prepared.clientWantsStream) {
-        for (const chunk of finalChunks) await writeChunk(reply, chunk);
-      }
-      usage = bridge.usage;
-      errorCode = bridge.errorCode;
-      traceOutput = outputForTrace(bridge.completedResponse);
-      upstreamResponse = {
-        status: upstream.status,
-        headers: Object.fromEntries(upstream.headers.entries()),
-        body: detailCollector.snapshot(),
-      };
+        detailCollector.feed(new Uint8Array(), true);
+        const finalChunks = bridge.feed(new Uint8Array(), true);
+        if (prepared.clientWantsStream) {
+          for (const chunk of finalChunks) await writeChunk(reply, chunk);
+        }
+        usage = bridge.usage;
+        errorCode = bridge.errorCode;
+        traceOutput = outputForTrace(bridge.completedResponse);
+        upstreamResponse = {
+          status: upstream.status,
+          headers: Object.fromEntries(upstream.headers.entries()),
+          body: detailCollector.snapshot(),
+        };
 
-      if (prepared.clientWantsStream) {
-        reply.raw.end();
-      } else if (bridge.completedResponse) {
-        reply.code(upstream.status).type('application/json').send(bridge.completedResponse);
+        if (prepared.clientWantsStream) {
+          reply.raw.end();
+        } else if (bridge.completedResponse) {
+          reply.code(upstream.status).type('application/json').send(bridge.completedResponse);
+        } else {
+          statusCode = upstream.ok ? 502 : upstream.status;
+          errorCode = errorCode ?? 'invalid_upstream_response';
+          reply.code(statusCode).send({
+            error: {
+              type: 'api_error',
+              code: errorCode,
+              message: upstream.ok
+                ? 'Upstream stream ended without a completed response.'
+                : 'Upstream stream ended with an error.',
+            },
+          });
+        }
       } else {
-        statusCode = upstream.ok ? 502 : upstream.status;
-        errorCode = errorCode ?? 'invalid_upstream_response';
-        reply.code(statusCode).send({
-          error: {
-            type: 'api_error',
-            code: errorCode,
-            message: upstream.ok
-              ? 'Upstream stream ended without a completed response.'
-              : 'Upstream stream ended with an error.',
-          },
-        });
+        const text = await upstream.text();
+        let payload: unknown;
+        try {
+          payload = text ? (JSON.parse(text) as unknown) : {};
+        } catch {
+          payload = { error: { type: 'api_error', message: text || upstream.statusText } };
+        }
+        const transformedPayload = adapter.transformJsonResponse(prepared, payload);
+        upstreamResponse = {
+          status: upstream.status,
+          headers: Object.fromEntries(upstream.headers.entries()),
+          body: payload,
+        };
+        usage = extractTokenUsage(transformedPayload);
+        errorCode = errorCodeFromPayload(transformedPayload);
+        traceOutput = outputForTrace(transformedPayload);
+        reply.code(upstream.status).type('application/json').send(transformedPayload);
       }
-    } else {
-      const text = await upstream.text();
-      let payload: unknown;
-      try {
-        payload = text ? (JSON.parse(text) as unknown) : {};
-      } catch {
-        payload = { error: { type: 'api_error', message: text || upstream.statusText } };
-      }
-      const transformedPayload = adapter.transformJsonResponse(prepared, payload);
-      upstreamResponse = {
-        status: upstream.status,
-        headers: Object.fromEntries(upstream.headers.entries()),
-        body: payload,
-      };
-      usage = extractTokenUsage(transformedPayload);
-      errorCode = errorCodeFromPayload(transformedPayload);
-      traceOutput = outputForTrace(transformedPayload);
-      reply.code(upstream.status).type('application/json').send(transformedPayload);
     }
   } catch (error) {
     const typed = error as Error & { statusCode?: number; code?: string };
@@ -374,6 +565,7 @@ async function gatewayHandler(
           ? { timeToFirstVisibleTokenMs: firstVisibleTokenAt - startedAt }
           : {}),
         ...(errorCode ? { errorCode } : {}),
+        ...(reportedCostUsd === undefined ? {} : { reportedCostUsd }),
         metadata: { providerAuthType: provider?.authType ?? null },
         details: {
           gatewayCurl,
@@ -392,7 +584,7 @@ async function gatewayHandler(
           input: usage.inputTokens,
           input_cached: usage.cachedInputTokens,
           output: usage.outputTokens,
-          output_reasoning: usage.reasoningTokens,
+          ...(usage.reasoningTokens === null ? {} : { output_reasoning: usage.reasoningTokens }),
           total: usage.totalTokens,
         },
         costDetails: { total: recorded.costUsd },

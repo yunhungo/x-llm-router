@@ -10,9 +10,12 @@ interface ChatToolCallAccumulator {
 interface ChatChoiceAccumulator {
   role: string;
   content: string;
+  reasoning: string;
   reasoningContent: string;
+  reasoningDetails: unknown[];
   toolCalls: Map<number, ChatToolCallAccumulator>;
   finishReason: unknown;
+  nativeFinishReason: unknown;
   logprobs: unknown;
 }
 
@@ -75,8 +78,12 @@ export class SseAccumulator {
         if (!choice || typeof choice !== 'object') return false;
         const delta = (choice as Record<string, unknown>).delta;
         if (!delta || typeof delta !== 'object') return false;
-        const reasoningContent = (delta as Record<string, unknown>).reasoning_content;
-        return typeof reasoningContent === 'string' && reasoningContent.length > 0;
+        const value = delta as Record<string, unknown>;
+        return (
+          (typeof value.reasoning === 'string' && value.reasoning.length > 0) ||
+          (typeof value.reasoning_content === 'string' && value.reasoning_content.length > 0) ||
+          (Array.isArray(value.reasoning_details) && value.reasoning_details.length > 0)
+        );
       });
       if (hasVisibleChoice) this.hasVisibleOutput = true;
       if (hasVisibleChoice || hasReasoningChoice) this.hasGeneratedOutput = true;
@@ -121,11 +128,14 @@ export class SseAccumulator {
 
   private accumulateChatCompletion(payload: Record<string, unknown>): void {
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
-    if (choices.length === 0) return;
 
-    for (const key of ['id', 'created', 'model', 'system_fingerprint'] as const) {
+    for (const key of ['id', 'created', 'model', 'system_fingerprint', 'provider'] as const) {
       if (payload[key] !== undefined) this.chatCompletionMetadata[key] = payload[key];
     }
+    if (payload.usage && typeof payload.usage === 'object') {
+      this.chatCompletionMetadata.usage = payload.usage;
+    }
+    if (choices.length === 0 && this.chatChoices.size === 0) return;
 
     for (const [position, rawChoice] of choices.entries()) {
       if (!rawChoice || typeof rawChoice !== 'object') continue;
@@ -134,9 +144,12 @@ export class SseAccumulator {
       const accumulated = this.chatChoices.get(index) ?? {
         role: 'assistant',
         content: '',
+        reasoning: '',
         reasoningContent: '',
+        reasoningDetails: [],
         toolCalls: new Map<number, ChatToolCallAccumulator>(),
         finishReason: null,
+        nativeFinishReason: null,
         logprobs: null,
       };
       const delta =
@@ -146,8 +159,12 @@ export class SseAccumulator {
 
       if (typeof delta.role === 'string') accumulated.role = delta.role;
       if (typeof delta.content === 'string') accumulated.content += delta.content;
+      if (typeof delta.reasoning === 'string') accumulated.reasoning += delta.reasoning;
       if (typeof delta.reasoning_content === 'string') {
         accumulated.reasoningContent += delta.reasoning_content;
+      }
+      if (Array.isArray(delta.reasoning_details)) {
+        accumulated.reasoningDetails.push(...delta.reasoning_details);
       }
       if (Array.isArray(delta.tool_calls)) {
         for (const [toolPosition, rawToolCall] of delta.tool_calls.entries()) {
@@ -167,6 +184,9 @@ export class SseAccumulator {
         }
       }
       if (choice.finish_reason !== undefined) accumulated.finishReason = choice.finish_reason;
+      if (choice.native_finish_reason !== undefined) {
+        accumulated.nativeFinishReason = choice.native_finish_reason;
+      }
       if (choice.logprobs !== undefined) accumulated.logprobs = choice.logprobs;
       this.chatChoices.set(index, accumulated);
     }
@@ -192,13 +212,36 @@ export class SseAccumulator {
             message: {
               role: choice.role,
               content: choice.content || null,
+              ...(choice.reasoning ? { reasoning: choice.reasoning } : {}),
               ...(choice.reasoningContent ? { reasoning_content: choice.reasoningContent } : {}),
+              ...(choice.reasoningDetails.length > 0
+                ? { reasoning_details: choice.reasoningDetails }
+                : {}),
               ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
             },
             finish_reason: choice.finishReason,
+            ...(choice.nativeFinishReason !== null
+              ? { native_finish_reason: choice.nativeFinishReason }
+              : {}),
             logprobs: choice.logprobs,
           };
         }),
     };
   }
+}
+
+export function mergeStoredSseSnapshot(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const snapshot = value as Record<string, unknown>;
+  if (snapshot.stream !== true || snapshot.truncated === true || !Array.isArray(snapshot.events)) {
+    return value;
+  }
+
+  const accumulator = new SseAccumulator();
+  const encoder = new TextEncoder();
+  for (const event of snapshot.events) {
+    accumulator.feed(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  }
+  accumulator.feed(new Uint8Array(), true);
+  return accumulator.completedResponse ?? value;
 }

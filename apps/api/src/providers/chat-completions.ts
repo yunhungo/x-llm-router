@@ -191,7 +191,9 @@ function chatUsage(usage: TokenUsage): JsonRecord {
     completion_tokens: usage.outputTokens,
     total_tokens: usage.totalTokens,
     prompt_tokens_details: { cached_tokens: usage.cachedInputTokens },
-    completion_tokens_details: { reasoning_tokens: usage.reasoningTokens },
+    ...(usage.reasoningTokens === null
+      ? {}
+      : { completion_tokens_details: { reasoning_tokens: usage.reasoningTokens } }),
   };
 }
 
@@ -240,7 +242,7 @@ export class ResponsesToChatStreamBridge implements GatewayStreamBridge {
     inputTokens: 0,
     cachedInputTokens: 0,
     outputTokens: 0,
-    reasoningTokens: 0,
+    reasoningTokens: null,
     totalTokens: 0,
   };
   private currentErrorCode: string | undefined;

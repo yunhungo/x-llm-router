@@ -1,4 +1,4 @@
-export const schemaVersion = 8;
+export const schemaVersion = 10;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -51,9 +51,24 @@ UPDATE provider_connections
    SET api_mode = CASE WHEN auth_type = 'oauth' THEN 'responses' ELSE 'chat.completions' END
  WHERE api_mode IS NULL;
 
-UPDATE provider_connections
-   SET provider = 'openai'
- WHERE auth_type = 'api_key' AND provider = 'openai-compatible';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version >= 10) THEN
+    UPDATE provider_connections
+       SET provider = 'custom'
+     WHERE auth_type = 'api_key'
+       AND provider = 'openai-compatible';
+
+    UPDATE provider_connections
+       SET provider = CASE
+         WHEN lower(base_url) LIKE '%openrouter.ai%' THEN 'openrouter'
+         ELSE 'custom'
+       END
+     WHERE auth_type = 'api_key'
+       AND provider = 'openai'
+       AND lower(base_url) NOT LIKE 'https://api.openai.com%';
+  END IF;
+END $$;
 
 ALTER TABLE provider_connections
   ALTER COLUMN api_mode SET DEFAULT 'chat.completions',
@@ -136,7 +151,7 @@ ALTER TABLE usage_logs
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 8) THEN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version >= 8) THEN
     UPDATE usage_logs
        SET time_to_first_visible_token_ms = time_to_first_token_ms,
            time_to_first_token_ms = NULL
@@ -177,7 +192,23 @@ CREATE INDEX IF NOT EXISTS usage_log_details_expires_idx ON usage_log_details(ex
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 8) THEN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version >= 9) THEN
+    UPDATE usage_logs u
+       SET reasoning_tokens = (
+         jsonb_path_query_first(
+           d.upstream_response,
+           '$.body.**.reasoning_tokens ? (@.type() == "number")'
+         ) #>> '{}'
+       )::integer
+      FROM usage_log_details d
+     WHERE d.usage_log_id = u.id
+       AND (u.reasoning_tokens IS NULL OR u.reasoning_tokens = 0);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version >= 8) THEN
     UPDATE usage_logs u
        SET reasoning_tokens =
          (d.upstream_response #>> '{body,usage,output_tokens_details,reasoning_tokens}')::integer

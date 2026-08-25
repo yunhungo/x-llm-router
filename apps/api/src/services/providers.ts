@@ -1,5 +1,6 @@
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
+import { getPiProviderDefinition } from '../providers/pi-ai';
 import type { GatewayEndpoint } from '../providers/types';
 import {
   codexClientHeaders,
@@ -42,12 +43,20 @@ async function getProviderModelRuntime(providerId: string): Promise<ProviderRunt
       exposeMessage: true,
     });
   }
-  if (row.auth_type !== 'oauth') {
-    throw Object.assign(new Error('只有 OAuth 连接支持自动同步模型列表。'), {
-      statusCode: 400,
-      code: 'provider_model_discovery_unsupported',
-      exposeMessage: true,
-    });
+  if (row.auth_type === 'api_key') {
+    const credentials = decryptJson<ApiKeyCredentials>(row.credentials_ciphertext);
+    return {
+      id: row.id,
+      name: row.name,
+      provider: row.provider,
+      authType: row.auth_type,
+      apiMode: row.api_mode,
+      baseUrl: row.base_url.replace(/\/$/, ''),
+      defaultModel: row.default_model,
+      authorization: `Bearer ${credentials.apiKey}`,
+      apiKey: credentials.apiKey,
+      headers: {},
+    };
   }
 
   let credentials = decryptJson<OAuthCredentials>(row.credentials_ciphertext);
@@ -89,6 +98,7 @@ export interface ProviderRuntime {
   baseUrl: string;
   defaultModel: string | null;
   authorization: string;
+  apiKey?: string;
   headers: Record<string, string>;
 }
 
@@ -99,11 +109,18 @@ export async function refreshProviderModels(providerId: string): Promise<{
   const runtime = await getProviderModelRuntime(providerId);
 
   try {
-    const models = await discoverOpenAiModels({
-      baseUrl: runtime.baseUrl,
-      authorization: runtime.authorization,
-      headers: runtime.headers,
-    });
+    const builtInModels =
+      runtime.authType === 'api_key'
+        ? (getPiProviderDefinition(runtime.provider)?.models ?? [])
+        : [];
+    const models =
+      builtInModels.length > 0
+        ? builtInModels
+        : await discoverOpenAiModels({
+            baseUrl: runtime.baseUrl,
+            authorization: runtime.authorization,
+            headers: runtime.headers,
+          });
     const refreshedAt = new Date();
     await getPool().query(
       `UPDATE provider_connections
@@ -131,7 +148,7 @@ export async function refreshProviderModels(providerId: string): Promise<{
 export async function getProviderRuntime(
   preferredId: string | null,
   sessionId: string,
-  endpoint: GatewayEndpoint,
+  _endpoint: GatewayEndpoint,
 ): Promise<ProviderRuntime> {
   const result = await getPool().query<ProviderRow>(
     `SELECT id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
@@ -140,11 +157,11 @@ export async function getProviderRuntime(
       WHERE status = 'active'
         AND (
           ($1::uuid IS NOT NULL AND id = $1)
-          OR ($1::uuid IS NULL AND (auth_type = 'oauth' OR api_mode = $2))
+          OR $1::uuid IS NULL
         )
       ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, priority ASC, created_at ASC
       LIMIT 1`,
-    [preferredId, endpoint],
+    [preferredId],
   );
   const row = result.rows[0];
   if (!row) {
@@ -165,6 +182,7 @@ export async function getProviderRuntime(
       baseUrl: row.base_url.replace(/\/$/, ''),
       defaultModel: row.default_model,
       authorization: `Bearer ${credentials.apiKey}`,
+      apiKey: credentials.apiKey,
       headers: {},
     };
   }

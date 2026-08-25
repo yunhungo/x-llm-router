@@ -1,12 +1,12 @@
 # xRouter
 
-xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI / ChatGPT：管理端可以完成 GPT OAuth 设备授权、OpenAI API Key 连接、虚拟 Key 签发、调用统计、成本估算和 Langfuse 追踪；客户端通过 `/v1/responses` 或 `/v1/chat/completions` 访问。
+xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。管理端可以配置 Pi AI 预置或自定义 Provider、完成 GPT OAuth 设备授权、签发虚拟 Key，并查看调用统计、成本和 Langfuse 追踪；客户端统一通过 `/v1/responses` 或 `/v1/chat/completions` 访问。
 
 ## 首版能力
 
 - ChatGPT OAuth：采用 Codex 官方设备码授权流程，访问令牌、刷新令牌和账号信息以 AES-256-GCM 加密保存。
-- OpenAI API 上游：使用 OpenAI-compatible 接口，可为每条连接指定 Responses 或 Chat Completions；密钥不会以明文写入数据库或日志。
-- OpenAI 双协议：暴露 Responses 与 Chat Completions；支持 JSON 和 SSE 流式响应。
+- Pi AI Provider：预置 OpenAI、OpenRouter、Anthropic、Google、xAI、Groq、DeepSeek 等 Provider，并允许注册自定义 OpenAI-compatible 上游。
+- 双协议网关：Pi AI 负责构建上游请求、解析流、归一化文本/思考/工具调用/用量；xRouter 对外暴露 Responses 与 Chat Completions 的 JSON 和 SSE。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT、TPS、缓存命中与成本，并提供天/周/月图表和异常请求下钻。
 - Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，可配置输入输出采集和追踪上下文。
@@ -19,7 +19,7 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。首版聚焦 OpenAI 
 Client / OpenAI SDK
         │  Bearer xr_...
         ▼
-  Fastify Gateway ──────► OpenAI API Key upstream
+  Fastify Gateway ──────► Pi AI ──► API Key providers
         │                ► ChatGPT Codex OAuth upstream
         ├── serves React Admin UI and /api/admin/*
         ├── PostgreSQL: users, providers, virtual keys, usage
@@ -80,12 +80,14 @@ QNAP/Linux 上若代理运行在 NAS 宿主机，通常填写 NAS 的局域网 I
 
 ### API Key 上游
 
-进入「上游连接」→「添加上游」，Provider 选择 OpenAI，再选择 API Key 或 OAuth 接入方式。选择 API Key 时，接口类型固定为 OpenAI Compatible，并需要指定 API 方式：
+进入「上游连接」→「添加上游」，可以直接选择 Pi AI 注册的预置 Provider。xRouter 保存连接、加密凭据和路由优先级；Pi AI 根据请求模型选择对应上游协议，并负责请求构建、SSE 解析以及文本、思考、工具调用、Token 和成本的归一化。无论上游使用哪种协议，客户端都可以调用 xRouter 的 Responses 或 Chat Completions 接口。
+
+若服务不在预置目录中，选择 `Custom OpenAI Compatible`，填写 Base URL，并指定其真实协议：
 
 - Responses API：请求发送到 Base URL 下的 `/responses`。
 - Chat Completions API：请求发送到 Base URL 下的 `/chat/completions`。
 
-Base URL 不需要包含上述接口路径。输入框可以选择 OpenAI、OpenRouter、SiliconFlow 等常用地址，也可以直接填写其他 OpenAI-compatible 服务的自定义域名，不需要为每个服务商单独增加 Provider 类型。
+Base URL 不需要包含上述接口路径。预置 Provider 会展示 Pi AI 自带的模型目录；自定义 Provider 可以通过上游 `/models` 刷新模型。升级时，旧版中以 OpenAI-compatible 形式保存的 OpenRouter 和其他自定义地址会自动迁移到对应 Provider。
 
 所有上游密钥都会加密保存。创建虚拟 API Key 时可以固定一个上游；客户端仍只需连接 xRouter 的 `/v1` 地址。
 
@@ -178,11 +180,12 @@ pnpm format:check
 - `ENCRYPTION_KEY` 随 PostgreSQL 数据持久化；数据库数据丢失后，现有上游凭据无法恢复。
 - 管理端会话使用 HttpOnly、SameSite=Lax Cookie；合并部署会自动校验当前访问来源，只有前后端分离部署时才需要设置 `WEB_ORIGIN`。
 - 虚拟 Key 的 RPM 校验由 PostgreSQL 调用日志计算，适合首版和中等流量；多副本高吞吐部署应增加 Redis/Valkey 原子限流。
-- 价格表会合并上游同步模型、连接默认模型和历史调用模型；内置 GPT-5.6 系列示例，可通过管理 API/数据库更新。未知模型仍记录 Token，配置价格前成本显示为 0。
+- 价格优先使用 Pi AI 对已知 Provider/模型计算的请求成本；无法识别时回退到 xRouter 的模型价格表。价格表会合并上游同步模型、连接默认模型和历史调用模型，未知模型仍记录 Token。
 
 ## 参考
 
 - [OpenAI Codex authentication](https://learn.chatgpt.com/docs/auth)
 - [OpenAI Responses migration guide](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+- [Pi AI](https://github.com/earendil-works/pi/tree/main/packages/ai)
 - [LiteLLM](https://github.com/BerriAI/litellm)
 - [Langfuse JS/TS observability](https://langfuse.com/docs/observability/get-started)
