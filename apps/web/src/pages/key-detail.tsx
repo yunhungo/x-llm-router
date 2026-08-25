@@ -1270,17 +1270,11 @@ export function KeyDetailPage() {
                             </small>
                           </td>
                           <td>
-                            总输出 TPS {log.tps === null ? '—' : decimal.format(log.tps)}
+                            TPS {log.tps === null ? '—' : decimal.format(log.tps)}
                             {' · '}
                             {log.timeToFirstTokenMs === null
                               ? 'TTFT —'
                               : `TTFT ${integer.format(log.timeToFirstTokenMs)} ms`}
-                            <small>
-                              Reasoning{' '}
-                              {log.reasoningTokens === null
-                                ? '—'
-                                : `${integer.format(log.reasoningTokens)} tokens`}
-                            </small>
                           </td>
                           <td>{integer.format(log.latencyMs)} ms</td>
                           <td>{money.format(log.costUsd)}</td>

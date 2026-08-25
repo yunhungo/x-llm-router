@@ -121,19 +121,13 @@ export function UsagePage() {
                           {log.latencyMs.toLocaleString()} ms
                           {log.timeToFirstTokenMs !== null ? (
                             <small>
-                              总输出 TPS{' '}
+                              TPS{' '}
                               {tokensPerSecond(log) === null
                                 ? '—'
                                 : decimal.format(tokensPerSecond(log) ?? 0)}{' '}
                               · TTFT {log.timeToFirstTokenMs.toLocaleString()} ms
                             </small>
                           ) : null}
-                          <small>
-                            Reasoning{' '}
-                            {log.reasoningTokens === null
-                              ? '—'
-                              : `${log.reasoningTokens.toLocaleString()} tokens`}
-                          </small>
                         </td>
                         <td>{money.format(log.costUsd)}</td>
                         <td>
