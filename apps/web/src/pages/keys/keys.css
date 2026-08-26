@@ -1,0 +1,83 @@
+.secret-key {
+  width: 100%;
+  padding: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas-soft);
+  cursor: pointer;
+}
+
+.created-key {
+  text-align: center;
+  justify-items: center;
+}
+
+.created-check {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--success-bg);
+  color: var(--green);
+}
+
+.created-key h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.created-key > p {
+  margin: -8px 0 0;
+  color: var(--body);
+  font-size: 13px;
+}
+
+.secret-key {
+  text-align: left;
+  min-width: 0;
+}
+
+.secret-key code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secret-key span {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.created-key .modal-actions {
+  width: calc(100% + 44px);
+}
+
+.key-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.compact-notice {
+  margin: -10px 0 16px;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.clickable-row:hover td {
+  background: var(--canvas-soft);
+}

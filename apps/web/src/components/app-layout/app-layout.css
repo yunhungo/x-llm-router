@@ -1,0 +1,369 @@
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.app-shell.is-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--canvas);
+  border-right: 1px solid var(--hairline);
+  transition:
+    width 0.2s ease,
+    transform 0.2s ease;
+}
+
+.is-collapsed .sidebar {
+  width: 72px;
+}
+
+.brand-row {
+  height: 68px;
+  padding: 0 19px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--hairline);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.brand-copy {
+  display: grid;
+  min-width: 120px;
+  line-height: 1.1;
+}
+
+.brand-copy strong {
+  font-size: 15px;
+  letter-spacing: -0.35px;
+}
+
+.brand-copy span {
+  margin-top: 4px;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.is-collapsed .brand-copy,
+.is-collapsed .nav-label,
+.is-collapsed .side-nav span,
+.is-collapsed .user-copy,
+.is-collapsed .sidebar-footer .icon-button {
+  display: none;
+}
+
+.is-collapsed .brand-row {
+  padding: 0 23px;
+}
+
+.nav-label {
+  padding: 25px 20px 8px;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sidebar-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.side-nav {
+  display: grid;
+  gap: 3px;
+  padding: 0 10px;
+}
+
+.side-nav a {
+  position: relative;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 11px;
+  border-radius: 6px;
+  color: var(--body);
+  font-size: 14px;
+  white-space: nowrap;
+  transition: 0.15s;
+}
+
+.side-nav a:hover {
+  background: var(--canvas-soft-2);
+  color: var(--ink);
+}
+
+.side-nav a.active {
+  background: var(--nav-active);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.side-nav a.active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  width: 2px;
+  height: 20px;
+  background: var(--ink);
+}
+
+.is-collapsed .side-nav {
+  padding: 18px 10px 0;
+}
+
+.is-collapsed .side-nav a {
+  justify-content: center;
+  padding: 0;
+}
+
+.is-collapsed .side-nav a.active::before {
+  left: -10px;
+}
+
+.sidebar-theme-selector {
+  margin: auto 12px 10px;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.is-collapsed .sidebar-theme-selector {
+  width: 38px;
+  margin: auto auto 10px;
+  flex-direction: column;
+  align-self: center;
+}
+
+.sidebar-footer {
+  margin-top: 0;
+  min-height: 66px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--hairline);
+  flex: 0 0 auto;
+}
+
+.user-avatar {
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--on-solid);
+  background: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+}
+
+.user-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.user-copy span {
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: 10px;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--canvas-soft-2);
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.collapse-button {
+  position: absolute;
+  right: -13px;
+  top: 82px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  color: var(--mute);
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.is-collapsed .collapse-button svg {
+  transform: rotate(180deg);
+}
+
+.app-main {
+  min-width: 0;
+  grid-column: 2;
+}
+
+.app-main main {
+  min-height: 100vh;
+}
+
+.mobile-header,
+.mobile-close,
+.mobile-overlay {
+  display: none;
+}
+
+.live-dot i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+@media (max-width: 760px) {
+  .app-shell,
+  .app-shell.is-collapsed {
+    display: block;
+  }
+
+  .sidebar,
+  .is-collapsed .sidebar {
+    width: min(290px, 84vw);
+    transform: translateX(-105%);
+    box-shadow: 15px 0 35px rgba(0, 0, 0, 0.12);
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .is-collapsed .brand-copy,
+  .is-collapsed .nav-label,
+  .is-collapsed .side-nav span,
+  .is-collapsed .user-copy,
+  .is-collapsed .sidebar-footer .icon-button {
+    display: initial;
+  }
+
+  .is-collapsed .brand-row {
+    padding: 0 19px;
+  }
+
+  .is-collapsed .side-nav {
+    padding: 0 10px;
+  }
+
+  .is-collapsed .side-nav a {
+    justify-content: flex-start;
+    padding: 0 11px;
+  }
+
+  .collapse-button {
+    display: none;
+  }
+
+  .mobile-close {
+    display: inline-grid;
+    margin-left: auto;
+  }
+
+  .mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    border: 0;
+    background: var(--overlay-soft);
+  }
+
+  .app-main {
+    display: block;
+  }
+
+  .mobile-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: 58px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--mobile-bar);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-header strong {
+    font-size: 14px;
+  }
+
+  .live-dot {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--mute);
+    font-family: 'Geist Mono Variable', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+
+  .langfuse-metadata-row .icon-button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .is-collapsed .sidebar-theme-selector {
+    width: auto;
+    margin: auto 12px 10px;
+    flex-direction: row;
+    align-self: stretch;
+  }
+}

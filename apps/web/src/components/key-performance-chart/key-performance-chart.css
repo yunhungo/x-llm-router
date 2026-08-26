@@ -1,0 +1,133 @@
+.analytics-empty {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.performance-chart-panel {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.performance-chart-heading {
+  min-height: 62px;
+  padding: 11px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.chart-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.chart-title-row h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.chart-title-row span {
+  color: var(--mute);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.chart-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.metric-tabs {
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas-soft);
+}
+
+.metric-tabs button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mute);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.metric-tabs button:hover {
+  color: var(--ink);
+}
+
+.metric-tabs button.active {
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+}
+
+.performance-chart {
+  width: 100%;
+  height: 330px;
+  padding: 10px 12px 6px 5px;
+  cursor: crosshair;
+}
+
+.performance-chart .recharts-text,
+.performance-chart .recharts-legend-item-text {
+  font-family: 'Geist Mono Variable', monospace;
+}
+
+.performance-empty {
+  min-height: 250px;
+}
+
+@media (max-width: 1160px) {
+  .chart-controls {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .performance-chart-heading {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  .performance-chart-heading {
+    flex-direction: column;
+  }
+
+  .chart-controls {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .metric-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .metric-tabs button {
+    flex: 1 0 auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .performance-chart {
+    height: 285px;
+    padding-left: 0;
+  }
+}

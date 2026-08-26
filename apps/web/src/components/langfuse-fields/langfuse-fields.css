@@ -1,0 +1,75 @@
+.langfuse-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.langfuse-capture-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.langfuse-capture-options label {
+  min-height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  color: var(--body);
+  font-size: 12px;
+}
+
+.langfuse-capture-options input {
+  accent-color: var(--blue);
+}
+
+.langfuse-metadata-editor {
+  margin-top: 4px;
+  display: grid;
+  gap: 12px;
+}
+
+.langfuse-section-heading {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.langfuse-section-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.langfuse-section-heading strong {
+  font-size: 12px;
+}
+
+.langfuse-section-heading span {
+  color: var(--mute);
+  font-size: 10px;
+}
+
+.langfuse-add-field {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.langfuse-metadata-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 36px;
+  gap: 7px;
+}
+
+@media (max-width: 760px) {
+  .langfuse-capture-options {
+    grid-template-columns: 1fr;
+  }
+
+  .langfuse-metadata-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+}

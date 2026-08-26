@@ -113,6 +113,8 @@ describe('key analytics route', () => {
     expect(pricesCall?.[0]).toContain('jsonb_array_elements_text(p.available_models)');
     expect(pricesCall?.[0]).toContain('SELECT p.provider, available.model');
     expect(pricesCall?.[0]).toContain("WHERE p.status = 'active'");
+    expect(pricesCall?.[0]).toContain('virtual_api_key_id = $1');
+    expect(pricesCall?.[0]).toContain('virtual_api_key_id IS NULL');
     expect(pricesCall?.[0]).not.toContain('$3::text');
     expect(pricesCall?.[1]).toEqual([keyId]);
   });

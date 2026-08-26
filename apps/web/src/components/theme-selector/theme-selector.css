@@ -1,0 +1,36 @@
+.theme-selector {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas-soft-2);
+}
+
+.theme-selector button {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.theme-selector button:hover {
+  color: var(--ink);
+}
+
+.theme-selector button.active {
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+.theme-selector button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -1px;
+}

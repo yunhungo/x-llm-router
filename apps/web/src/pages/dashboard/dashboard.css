@@ -1,0 +1,280 @@
+.health-pill {
+  height: 30px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--body);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.health-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.trend-panel {
+  min-height: 356px;
+}
+
+.trend-content {
+  padding: 17px 22px 18px;
+}
+
+.chart-summary {
+  min-height: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.chart-summary strong {
+  margin-left: 5px;
+  color: var(--ink);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.line-chart {
+  height: 225px;
+  padding-top: 8px;
+}
+
+.line-chart-stage {
+  height: 186px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.line-y-axis,
+.line-plot {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.line-y-axis span {
+  position: absolute;
+  right: 0;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 9px;
+  line-height: 1;
+  transform: translateY(50%);
+  white-space: nowrap;
+}
+
+.line-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.line-grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.line-area {
+  fill: url('#traffic-area');
+}
+
+.line-stroke {
+  fill: none;
+  stroke: var(--blue);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.line-point {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--blue);
+  border-radius: 50%;
+  outline: none;
+  background: var(--canvas);
+  cursor: default;
+  transform: translate(-50%, -50%);
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+
+.line-point:hover,
+.line-point:focus-visible {
+  z-index: 3;
+  background: var(--blue);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 16%, transparent);
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+.line-tooltip {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  min-width: max-content;
+  padding: 7px 9px;
+  display: grid;
+  gap: 2px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--canvas);
+  text-align: left;
+  font-size: 10px;
+  line-height: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.line-tooltip span {
+  color: var(--placeholder);
+}
+
+.line-point.is-first .line-tooltip {
+  left: -5px;
+  transform: translate(0, 4px);
+}
+
+.line-point.is-last .line-tooltip {
+  right: -5px;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+.line-point:hover .line-tooltip,
+.line-point:focus-visible .line-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.line-point.is-first:hover .line-tooltip,
+.line-point.is-first:focus-visible .line-tooltip,
+.line-point.is-last:hover .line-tooltip,
+.line-point.is-last:focus-visible .line-tooltip {
+  transform: translate(0, 0);
+}
+
+.line-x-axis {
+  margin-top: 9px;
+  margin-left: 54px;
+  display: grid;
+}
+
+.line-x-label {
+  color: var(--mute);
+  text-align: center;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.quick-panel {
+  padding-bottom: 20px;
+}
+
+.quick-panel > p {
+  margin: 21px 20px;
+  color: var(--body);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.quick-panel > .inline-link {
+  margin: 17px 20px 0;
+}
+
+.code-block {
+  margin: 0 20px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--code-bg);
+  color: var(--code-text);
+}
+
+.code-block span {
+  display: block;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--code-border);
+  color: var(--code-muted);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.code-block code {
+  display: block;
+  padding: 13px 11px;
+  color: var(--code-text);
+  line-height: 22px;
+}
+
+.model-panel {
+  overflow: hidden;
+}
+
+@media (max-width: 1040px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .health-pill {
+    display: none;
+  }
+
+  .trend-content {
+    padding-inline: 12px;
+  }
+
+  .chart-summary {
+    gap: 8px;
+  }
+
+  .line-chart-stage {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .line-x-axis {
+    margin-left: 41px;
+  }
+
+  .line-x-label:nth-child(even) {
+    visibility: hidden;
+  }
+}

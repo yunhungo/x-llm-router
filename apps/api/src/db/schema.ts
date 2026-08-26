@@ -1,4 +1,4 @@
-export const schemaVersion = 11;
+export const schemaVersion = 12;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -249,18 +249,33 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 );
 
 CREATE TABLE IF NOT EXISTS model_prices (
+  virtual_api_key_id uuid REFERENCES virtual_api_keys(id) ON DELETE CASCADE,
   provider varchar(40) NOT NULL DEFAULT '*',
   model_pattern varchar(120) NOT NULL,
   input_per_million numeric(14, 6) NOT NULL,
   cached_input_per_million numeric(14, 6) NOT NULL,
   output_per_million numeric(14, 6) NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY(provider, model_pattern)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE model_prices
+  ADD COLUMN IF NOT EXISTS virtual_api_key_id uuid,
   ADD COLUMN IF NOT EXISTS provider varchar(40) NOT NULL DEFAULT '*',
   ADD COLUMN IF NOT EXISTS cached_input_per_million numeric(14, 6);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'model_prices'::regclass
+       AND contype = 'f'
+       AND conname = 'model_prices_virtual_api_key_id_fkey'
+  ) THEN
+    ALTER TABLE model_prices
+      ADD CONSTRAINT model_prices_virtual_api_key_id_fkey
+      FOREIGN KEY (virtual_api_key_id) REFERENCES virtual_api_keys(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 UPDATE model_prices
    SET cached_input_per_million = input_per_million
@@ -269,26 +284,10 @@ UPDATE model_prices
 ALTER TABLE model_prices
   ALTER COLUMN cached_input_per_million SET NOT NULL;
 
-DO $$
-DECLARE
-  primary_key_columns integer;
-BEGIN
-  SELECT cardinality(conkey)
-    INTO primary_key_columns
-    FROM pg_constraint
-   WHERE conrelid = 'model_prices'::regclass AND contype = 'p';
+ALTER TABLE model_prices DROP CONSTRAINT IF EXISTS model_prices_pkey;
 
-  IF primary_key_columns = 1 THEN
-    ALTER TABLE model_prices DROP CONSTRAINT model_prices_pkey;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conrelid = 'model_prices'::regclass AND contype = 'p'
-  ) THEN
-    ALTER TABLE model_prices ADD PRIMARY KEY(provider, model_pattern);
-  END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS model_prices_scope_provider_pattern_uidx
+  ON model_prices(virtual_api_key_id, provider, model_pattern) NULLS NOT DISTINCT;
 
 `;
 

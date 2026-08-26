@@ -91,6 +91,7 @@ export function computeCost(usage: TokenUsage, price: ModelPrice): number {
 }
 
 export async function calculateCost(
+  virtualApiKeyId: string,
   provider: string,
   model: string,
   usage: TokenUsage,
@@ -102,11 +103,14 @@ export async function calculateCost(
   }>(
     `SELECT input_per_million, cached_input_per_million, output_per_million
        FROM model_prices
-      WHERE provider IN ($1, '*')
-        AND ($2 = model_pattern OR $2 LIKE model_pattern || '%')
-      ORDER BY CASE WHEN provider = $1 THEN 0 ELSE 1 END, length(model_pattern) DESC
+      WHERE (virtual_api_key_id = $1 OR virtual_api_key_id IS NULL)
+        AND provider IN ($2, '*')
+        AND ($3 = model_pattern OR $3 LIKE model_pattern || '%')
+      ORDER BY CASE WHEN virtual_api_key_id = $1 THEN 0 ELSE 1 END,
+               CASE WHEN provider = $2 THEN 0 ELSE 1 END,
+               length(model_pattern) DESC
       LIMIT 1`,
-    [provider, model],
+    [virtualApiKeyId, provider, model],
   );
   const price = result.rows[0];
   if (!price) return 0;
@@ -140,7 +144,7 @@ export async function recordUsage(input: {
     Number.isFinite(input.reportedCostUsd) &&
     input.reportedCostUsd >= 0
       ? input.reportedCostUsd
-      : await calculateCost(input.provider ?? '*', input.model, input.usage);
+      : await calculateCost(input.virtualApiKeyId, input.provider ?? '*', input.model, input.usage);
   const usageLogId = randomUUID();
   const client = await getPool().connect();
   try {

@@ -13,11 +13,23 @@ export class ModelPriceNotFoundError extends Error {
   }
 }
 
+export class ModelPriceKeyNotFoundError extends Error {
+  constructor() {
+    super('API Key 不存在。');
+    this.name = 'ModelPriceKeyNotFoundError';
+  }
+}
+
 export class ModelPricingService {
   constructor(private readonly repository: ModelPriceRepository) {}
 
-  async list(): Promise<ModelPriceListResponse> {
-    const prices = await this.repository.list();
+  private async ensureKeyExists(keyId: string): Promise<void> {
+    if (!(await this.repository.keyExists(keyId))) throw new ModelPriceKeyNotFoundError();
+  }
+
+  async list(keyId: string): Promise<ModelPriceListResponse> {
+    await this.ensureKeyExists(keyId);
+    const prices = await this.repository.list(keyId);
     return {
       prices: prices.map((price) => ({
         ...price,
@@ -29,12 +41,14 @@ export class ModelPricingService {
     };
   }
 
-  async upsert(price: ModelPriceInput): Promise<void> {
-    await this.repository.upsert(price);
+  async upsert(keyId: string, price: ModelPriceInput): Promise<void> {
+    await this.ensureKeyExists(keyId);
+    await this.repository.upsert(keyId, price);
   }
 
-  async delete(key: ModelPriceKeyInput): Promise<void> {
-    if (!(await this.repository.delete(key))) throw new ModelPriceNotFoundError();
+  async delete(keyId: string, key: ModelPriceKeyInput): Promise<void> {
+    await this.ensureKeyExists(keyId);
+    if (!(await this.repository.delete(keyId, key))) throw new ModelPriceNotFoundError();
   }
 }
 

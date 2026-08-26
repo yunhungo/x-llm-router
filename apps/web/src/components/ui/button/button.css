@@ -1,0 +1,85 @@
+.button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    transform 0.12s;
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: var(--ink);
+  color: var(--on-solid);
+  border-color: var(--ink);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--solid-hover);
+  border-color: var(--solid-hover);
+}
+
+.button-secondary {
+  background: var(--canvas);
+  border-color: var(--hairline);
+  color: var(--ink);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02);
+}
+
+.button-secondary:hover:not(:disabled),
+.button-ghost:hover:not(:disabled) {
+  background: var(--canvas-soft-2);
+  border-color: var(--hairline-strong);
+}
+
+.button-danger {
+  background: var(--red);
+  color: var(--on-solid);
+}
+
+.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--body);
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-actions .button {
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .page-action > .button,
+  .page-action .button-group {
+    width: 100%;
+  }
+
+  .page-action .button-group .button {
+    flex: 1;
+  }
+}

@@ -1,0 +1,36 @@
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.2vw, 28px);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.85px;
+}
+
+.page-action {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 25px;
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+    letter-spacing: -0.7px;
+  }
+
+  .page-action {
+    width: 100%;
+  }
+}

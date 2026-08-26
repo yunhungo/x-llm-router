@@ -1,0 +1,24 @@
+.brand-mark {
+  display: block;
+  width: 26px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--ink);
+  overflow: visible;
+}
+
+.brand-mark path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.brand-mark circle {
+  fill: currentColor;
+}
+
+.brand-mark.large {
+  transform: scale(1.35);
+}

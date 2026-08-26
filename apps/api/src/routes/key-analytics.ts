@@ -348,9 +348,11 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM used_models m
            LEFT JOIN LATERAL (
              SELECT * FROM model_prices
-              WHERE provider IN (m.provider, '*')
+              WHERE (virtual_api_key_id = $1 OR virtual_api_key_id IS NULL)
+                AND provider IN (m.provider, '*')
                 AND (m.model = model_pattern OR m.model LIKE model_pattern || '%')
-              ORDER BY CASE WHEN provider = m.provider THEN 0 ELSE 1 END,
+              ORDER BY CASE WHEN virtual_api_key_id = $1 THEN 0 ELSE 1 END,
+                       CASE WHEN provider = m.provider THEN 0 ELSE 1 END,
                        length(model_pattern) DESC
               LIMIT 1
            ) price ON true

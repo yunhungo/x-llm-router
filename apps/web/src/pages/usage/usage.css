@@ -1,0 +1,8 @@
+.usage-key-link {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.usage-key-link:hover {
+  text-decoration: underline;
+}

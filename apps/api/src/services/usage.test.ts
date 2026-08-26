@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { computeCost, extractTokenUsage } from './usage';
+const { query } = vi.hoisted(() => ({
+  query: vi.fn(),
+}));
+
+vi.mock('../db/client', () => ({
+  getPool: () => ({ query }),
+}));
+
+import { calculateCost, computeCost, extractTokenUsage } from './usage';
+
+beforeEach(() => {
+  query.mockReset();
+});
 
 describe('token usage extraction', () => {
   it('supports Responses API usage', () => {
@@ -104,5 +116,36 @@ describe('token usage extraction', () => {
         { inputPerMillion: 2, cachedInputPerMillion: 0.2, outputPerMillion: 12 },
       ),
     ).toBeCloseTo(2.48);
+  });
+
+  it('prefers the current API Key price before the legacy global fallback', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          input_per_million: '2',
+          cached_input_per_million: '0.2',
+          output_per_million: '12',
+        },
+      ],
+      rowCount: 1,
+    });
+
+    await expect(
+      calculateCost('11111111-1111-4111-8111-111111111111', 'openai', 'gpt-5', {
+        inputTokens: 1_000,
+        cachedInputTokens: 0,
+        outputTokens: 100,
+        reasoningTokens: null,
+        totalTokens: 1_100,
+      }),
+    ).resolves.toBeCloseTo(0.0032);
+
+    expect(query.mock.calls[0]?.[0]).toContain('virtual_api_key_id = $1');
+    expect(query.mock.calls[0]?.[0]).toContain('virtual_api_key_id IS NULL');
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      '11111111-1111-4111-8111-111111111111',
+      'openai',
+      'gpt-5',
+    ]);
   });
 });
