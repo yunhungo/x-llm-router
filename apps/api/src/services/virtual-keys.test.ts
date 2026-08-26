@@ -22,6 +22,7 @@ function virtualKeyRow(rpmLimit: number) {
     spend_usd: '0',
     rpm_limit: rpmLimit,
     provider_connection_id: null,
+    middleware_code: null,
     langfuse_config_ciphertext: null,
   };
 }
@@ -62,6 +63,7 @@ describe('virtual API key RPM limits', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(reply.code).not.toHaveBeenCalled();
     expect(request.routerKey).toMatchObject({ rpmLimit: 0 });
+    expect(query.mock.calls[0]?.[0]).toContain('middleware_code');
   });
 
   it('still rejects a limited key after it reaches its RPM limit', async () => {

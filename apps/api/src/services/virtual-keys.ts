@@ -19,6 +19,7 @@ export interface VirtualApiKeyRecord {
   spendUsd: number;
   rpmLimit: number;
   providerConnectionId: string | null;
+  middlewareCode?: string;
   langfuse?: KeyLangfuseSettings;
 }
 
@@ -30,6 +31,7 @@ interface VirtualApiKeyRow {
   spend_usd: string;
   rpm_limit: number;
   provider_connection_id: string | null;
+  middleware_code: string | null;
   langfuse_config_ciphertext: string | null;
 }
 
@@ -95,7 +97,7 @@ export async function requireVirtualApiKey(
 
   const result = await getPool().query<VirtualApiKeyRow>(
     `SELECT id, name, key_prefix, budget_usd, spend_usd, rpm_limit, provider_connection_id,
-            langfuse_config_ciphertext
+            middleware_code, langfuse_config_ciphertext
        FROM virtual_api_keys
       WHERE key_hash = $1 AND status = 'active'
         AND (expires_at IS NULL OR expires_at > now())`,
@@ -164,6 +166,7 @@ export async function requireVirtualApiKey(
     spendUsd,
     rpmLimit: row.rpm_limit,
     providerConnectionId: row.provider_connection_id,
+    ...(row.middleware_code ? { middlewareCode: row.middleware_code } : {}),
     ...(langfuse ? { langfuse } : {}),
   };
 }

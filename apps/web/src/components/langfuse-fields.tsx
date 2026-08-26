@@ -76,29 +76,33 @@ export function LangfuseFields({
   value,
   onChange,
   hasSecretKey = false,
+  showEnabledSwitch = true,
   switchLabel = 'Langfuse',
   switchHint = '此 Key 的独立项目',
 }: {
   value: LangfuseDraft;
   onChange: (value: LangfuseDraft) => void;
   hasSecretKey?: boolean;
+  showEnabledSwitch?: boolean;
   switchLabel?: string;
   switchHint?: string;
 }) {
   return (
     <div className="langfuse-fields">
-      <label className="switch-row compact">
-        <div>
-          <strong>{switchLabel}</strong>
-          <span>{switchHint}</span>
-        </div>
-        <input
-          type="checkbox"
-          checked={value.enabled}
-          onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
-        />
-        <i />
-      </label>
+      {showEnabledSwitch ? (
+        <label className="switch-row compact">
+          <div>
+            <strong>{switchLabel}</strong>
+            <span>{switchHint}</span>
+          </div>
+          <input
+            type="checkbox"
+            checked={value.enabled}
+            onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
+          />
+          <i />
+        </label>
+      ) : null}
       {value.enabled ? (
         <>
           <div className="form-grid">

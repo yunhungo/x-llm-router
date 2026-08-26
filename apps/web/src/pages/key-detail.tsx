@@ -1,18 +1,31 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import {
   BarChart3,
   Check,
   ChevronDown,
   CircleDollarSign,
+  Code2,
   Gauge,
   Info,
   KeyRound,
   List,
+  Plus,
   RefreshCcw,
   Save,
   Search,
   Settings2,
   Timer,
+  Trash2,
   X,
   Zap,
 } from 'lucide-react';
@@ -26,7 +39,7 @@ import {
   langfusePayload,
   type LangfuseDraft,
 } from '../components/langfuse-fields';
-import { Badge, Button, Field, Input, PageHeader, Skeleton } from '../components/ui';
+import { Badge, Button, Field, Input, Modal, PageHeader, Skeleton } from '../components/ui';
 import type {
   KeyAnalyticsRange,
   KeyAnalyticsResponse,
@@ -34,7 +47,7 @@ import type {
   KeyUsageLog,
   KeyUsageLogsResponse,
   KeyUsagePoint,
-  ModelPriceMatch,
+  ModelPriceRule,
   Provider,
   VirtualKey,
 } from '../types';
@@ -51,10 +64,11 @@ const money = new Intl.NumberFormat('en-US', {
 const integer = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 const allModelsValue = '__all_models__';
+const MiddlewareCodeEditor = lazy(() => import('../components/middleware-code-editor'));
 
-type DetailTab = 'overview' | 'charts' | 'logs' | 'settings';
+type DetailTab = 'overview' | 'charts' | 'logs' | 'settings' | 'middleware';
 type LogStatusFilter = 'all' | 'success' | 'failed';
-const detailTabValues: DetailTab[] = ['overview', 'charts', 'logs', 'settings'];
+const detailTabValues: DetailTab[] = ['overview', 'charts', 'logs', 'settings', 'middleware'];
 
 export function parseDetailTab(value: string | null): DetailTab {
   return detailTabValues.includes(value as DetailTab) ? (value as DetailTab) : 'overview';
@@ -72,12 +86,23 @@ interface PriceDraft {
   outputPerMillion: string;
 }
 
+interface NewPriceDraft extends PriceDraft {
+  provider: string;
+  modelPattern: string;
+}
+
 interface GeneralDraft {
   name: string;
   rpmLimit: string;
   budgetUsd: string;
   expiresAt: string;
   providerConnectionId: string;
+}
+
+interface KeyMiddlewareConfig {
+  code: string;
+  configured: boolean;
+  updatedAt: string | null;
 }
 
 interface LogDrilldown {
@@ -113,6 +138,7 @@ const detailTabs: Array<{
   { value: 'charts', label: '图表', icon: BarChart3 },
   { value: 'logs', label: '调用记录', icon: List },
   { value: 'settings', label: '设置', icon: Settings2 },
+  { value: 'middleware', label: '中间件', icon: Code2 },
 ];
 
 const rangeLabels: Record<KeyAnalyticsRange, string> = {
@@ -175,12 +201,34 @@ export function analyticsModelOptions(
   return options;
 }
 
-function priceDraft(price: ModelPriceMatch): PriceDraft {
+const emptyPriceDraft: NewPriceDraft = {
+  provider: '*',
+  modelPattern: '',
+  inputPerMillion: '',
+  cachedInputPerMillion: '',
+  outputPerMillion: '',
+};
+
+function priceDraft(price: ModelPriceRule): PriceDraft {
   return {
-    inputPerMillion: price.inputPerMillion?.toString() ?? '',
-    cachedInputPerMillion: price.cachedInputPerMillion?.toString() ?? '',
-    outputPerMillion: price.outputPerMillion?.toString() ?? '',
+    inputPerMillion: price.inputPerMillion.toString(),
+    cachedInputPerMillion: price.cachedInputPerMillion.toString(),
+    outputPerMillion: price.outputPerMillion.toString(),
   };
+}
+
+function priceRuleKey(provider: string, modelPattern: string) {
+  return modelIdentity(provider, modelPattern);
+}
+
+export function priceModelSuggestions(providers: readonly Provider[], provider: string) {
+  const models = new Set<string>();
+  providers.forEach((connection) => {
+    if (provider !== '*' && connection.provider !== provider) return;
+    if (connection.defaultModel) models.add(connection.defaultModel);
+    connection.models.forEach((model) => models.add(model));
+  });
+  return [...models].sort((left, right) => left.localeCompare(right));
 }
 
 function datetimeLocalValue(value: string | null) {
@@ -288,9 +336,15 @@ export function KeyDetailPage() {
   const [data, setData] = useState<KeyAnalyticsResponse>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [priceRules, setPriceRules] = useState<ModelPriceRule[]>([]);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, PriceDraft>>({});
   const [savingPrice, setSavingPrice] = useState('');
   const [savedPrice, setSavedPrice] = useState('');
+  const [deletingPrice, setDeletingPrice] = useState('');
+  const [showAddPrice, setShowAddPrice] = useState(false);
+  const [newPrice, setNewPrice] = useState<NewPriceDraft>(emptyPriceDraft);
+  const [creatingPrice, setCreatingPrice] = useState(false);
+  const [priceFormError, setPriceFormError] = useState('');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [generalSettings, setGeneralSettings] = useState<GeneralDraft>();
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -316,6 +370,15 @@ export function KeyDetailPage() {
   const [logStatus, setLogStatus] = useState<LogStatusFilter>('all');
   const [logModel, setLogModel] = useState('all');
   const [logEndpoint, setLogEndpoint] = useState('all');
+  const [middlewareCode, setMiddlewareCode] = useState('');
+  const [savedMiddlewareCode, setSavedMiddlewareCode] = useState('');
+  const [middlewareUpdatedAt, setMiddlewareUpdatedAt] = useState<string | null>(null);
+  const [middlewareConfigured, setMiddlewareConfigured] = useState(false);
+  const [middlewareLoading, setMiddlewareLoading] = useState(false);
+  const [middlewareSaving, setMiddlewareSaving] = useState(false);
+  const [middlewareSaved, setMiddlewareSaved] = useState(false);
+  const [middlewareError, setMiddlewareError] = useState('');
+  const middlewareLoadRequest = useRef(0);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -333,20 +396,27 @@ export function KeyDetailPage() {
     setFocusedLogs(undefined);
     setExpandedLogId(undefined);
     try {
-      const [response, providerResponse] = await Promise.all([
+      const [response, providerResponse, priceResponse] = await Promise.all([
         api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`, {
           signal: controller.signal,
         }),
         api<{ providers: Provider[] }>('/api/admin/providers', { signal: controller.signal }),
+        api<{ prices: ModelPriceRule[] }>('/api/admin/settings/model-prices', {
+          signal: controller.signal,
+        }),
       ]);
       if (mainLoadRequest.current !== requestId) return;
       setData(response);
       setProviders(providerResponse.providers.filter((provider) => provider.status === 'active'));
       setGeneralSettings(generalDraft(response.key));
       setLangfuseSettings(langfuseDraft(response.key.langfuse));
+      setPriceRules(priceResponse.prices);
       setPriceDrafts(
         Object.fromEntries(
-          response.prices.map((price) => [`${price.provider}:${price.model}`, priceDraft(price)]),
+          priceResponse.prices.map((price) => [
+            priceRuleKey(price.provider, price.modelPattern),
+            priceDraft(price),
+          ]),
         ),
       );
     } catch (caught) {
@@ -376,9 +446,63 @@ export function KeyDetailPage() {
     [data, id, providers],
   );
 
+  const priceProviderOptions = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...providers.map((provider) => provider.provider),
+          ...priceRules.map((rule) => rule.provider),
+        ]),
+      ]
+        .filter((provider) => provider !== '*')
+        .sort((left, right) => left.localeCompare(right)),
+    [priceRules, providers],
+  );
+  const priceModelOptions = useMemo(
+    () => priceModelSuggestions(providers, newPrice.provider),
+    [newPrice.provider, providers],
+  );
+
   useEffect(() => {
     setChartModel(allModelsValue);
+    setMiddlewareCode('');
+    setSavedMiddlewareCode('');
+    setMiddlewareUpdatedAt(null);
+    setMiddlewareConfigured(false);
+    setMiddlewareSaved(false);
+    setMiddlewareError('');
   }, [id]);
+
+  useEffect(() => {
+    if (activeTab !== 'middleware' || !id) return;
+    const requestId = ++middlewareLoadRequest.current;
+    const controller = new AbortController();
+    setMiddlewareLoading(true);
+    setMiddlewareError('');
+    void api<KeyMiddlewareConfig>(`/api/admin/keys/${id}/middleware`, {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (middlewareLoadRequest.current !== requestId) return;
+        setMiddlewareCode(response.code);
+        setSavedMiddlewareCode(response.code);
+        setMiddlewareUpdatedAt(response.updatedAt);
+        setMiddlewareConfigured(response.configured);
+        setMiddlewareSaved(false);
+      })
+      .catch((caught: unknown) => {
+        if (middlewareLoadRequest.current !== requestId) return;
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        setMiddlewareError(caught instanceof ApiError ? caught.message : '中间件加载失败。');
+      })
+      .finally(() => {
+        if (middlewareLoadRequest.current === requestId) setMiddlewareLoading(false);
+      });
+    return () => {
+      controller.abort();
+      if (middlewareLoadRequest.current === requestId) middlewareLoadRequest.current += 1;
+    };
+  }, [activeTab, id]);
 
   useEffect(() => {
     if (!data || data.key.id !== id) return;
@@ -508,20 +632,39 @@ export function KeyDetailPage() {
     void loadDrilldown({ ...next, ...selectedModel });
   };
 
-  const savePrice = async (price: ModelPriceMatch) => {
-    const key = `${price.provider}:${price.model}`;
-    const draft = priceDrafts[key];
-    if (!draft) return;
+  const reloadPriceRules = async () => {
+    const response = await api<{ prices: ModelPriceRule[] }>('/api/admin/settings/model-prices');
+    setPriceRules(response.prices);
+    setPriceDrafts(
+      Object.fromEntries(
+        response.prices.map((price) => [
+          priceRuleKey(price.provider, price.modelPattern),
+          priceDraft(price),
+        ]),
+      ),
+    );
+  };
+
+  const priceValues = (draft: PriceDraft, setMessage: (message: string) => void) => {
     const rawValues = [draft.inputPerMillion, draft.cachedInputPerMillion, draft.outputPerMillion];
     if (rawValues.some((value) => value.trim() === '')) {
-      setError('请填写完整的输入、缓存输入和输出价格。');
-      return;
+      setMessage('请填写完整的输入、缓存输入和输出价格。');
+      return undefined;
     }
-    const values = rawValues.map(Number);
+    const values = rawValues.map(Number) as [number, number, number];
     if (values.some((value) => !Number.isFinite(value) || value < 0)) {
-      setError('价格必须是大于或等于 0 的数字。');
-      return;
+      setMessage('价格必须是大于或等于 0 的数字。');
+      return undefined;
     }
+    return values;
+  };
+
+  const savePrice = async (price: ModelPriceRule) => {
+    const key = priceRuleKey(price.provider, price.modelPattern);
+    const draft = priceDrafts[key];
+    if (!draft) return;
+    const values = priceValues(draft, setError);
+    if (!values) return;
     setSavingPrice(key);
     setSavedPrice('');
     setError('');
@@ -530,18 +673,71 @@ export function KeyDetailPage() {
         method: 'PUT',
         ...jsonBody({
           provider: price.provider,
-          modelPattern: price.model,
+          modelPattern: price.modelPattern,
           inputPerMillion: values[0],
           cachedInputPerMillion: values[1],
           outputPerMillion: values[2],
         }),
       });
-      await load();
+      await reloadPriceRules();
       setSavedPrice(key);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : '价格保存失败。');
     } finally {
       setSavingPrice('');
+    }
+  };
+
+  const createPrice = async (event: FormEvent) => {
+    event.preventDefault();
+    const provider = newPrice.provider.trim();
+    const modelPattern = newPrice.modelPattern.trim();
+    if (!provider || !modelPattern) {
+      setPriceFormError('请选择 Provider 并输入模型。');
+      return;
+    }
+    const values = priceValues(newPrice, setPriceFormError);
+    if (!values) return;
+    setCreatingPrice(true);
+    setPriceFormError('');
+    setError('');
+    try {
+      await api('/api/admin/settings/model-prices', {
+        method: 'PUT',
+        ...jsonBody({
+          provider,
+          modelPattern,
+          inputPerMillion: values[0],
+          cachedInputPerMillion: values[1],
+          outputPerMillion: values[2],
+        }),
+      });
+      await reloadPriceRules();
+      setShowAddPrice(false);
+      setNewPrice(emptyPriceDraft);
+    } catch (caught) {
+      setPriceFormError(caught instanceof ApiError ? caught.message : '价格新增失败。');
+    } finally {
+      setCreatingPrice(false);
+    }
+  };
+
+  const deletePrice = async (price: ModelPriceRule) => {
+    if (!window.confirm(`确定删除“${price.modelPattern} · ${price.provider}”的价格记录吗？`))
+      return;
+    const key = priceRuleKey(price.provider, price.modelPattern);
+    setDeletingPrice(key);
+    setError('');
+    try {
+      await api('/api/admin/settings/model-prices', {
+        method: 'DELETE',
+        ...jsonBody({ provider: price.provider, modelPattern: price.modelPattern }),
+      });
+      await reloadPriceRules();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : '价格删除失败。');
+    } finally {
+      setDeletingPrice('');
     }
   };
 
@@ -605,6 +801,30 @@ export function KeyDetailPage() {
       setError(caught instanceof ApiError ? caught.message : 'Langfuse 保存失败。');
     } finally {
       setSavingLangfuse(false);
+    }
+  };
+
+  const saveMiddleware = async () => {
+    if (!id || !middlewareCode.trim()) return;
+    setMiddlewareSaving(true);
+    setMiddlewareError('');
+    setMiddlewareSaved(false);
+    try {
+      const response = await api<{
+        configured: boolean;
+        updatedAt: string;
+      }>(`/api/admin/keys/${id}/middleware`, {
+        method: 'PUT',
+        ...jsonBody({ code: middlewareCode }),
+      });
+      setSavedMiddlewareCode(middlewareCode);
+      setMiddlewareConfigured(response.configured);
+      setMiddlewareUpdatedAt(response.updatedAt);
+      setMiddlewareSaved(true);
+    } catch (caught) {
+      setMiddlewareError(caught instanceof ApiError ? caught.message : '中间件保存失败。');
+    } finally {
+      setMiddlewareSaving(false);
     }
   };
 
@@ -691,6 +911,7 @@ export function KeyDetailPage() {
   const generalChanged = !sameGeneralDraft(currentGeneral, initialGeneral);
   const initialLangfuse = langfuseDraft(key.langfuse);
   const langfuseChanged = !sameLangfuseDraft(langfuseSettings, initialLangfuse);
+  const middlewareChanged = middlewareCode !== savedMiddlewareCode;
   const updateGeneralSettings = (next: GeneralDraft) => {
     setGeneralSettings(next);
     setSavedSettings((current) => (current === 'general' ? undefined : current));
@@ -1436,7 +1657,23 @@ export function KeyDetailPage() {
 
             <section className="panel settings-section langfuse-settings-section">
               <div className="panel-heading compact-panel-heading settings-section-heading">
-                <h2>Langfuse</h2>
+                <div className="langfuse-section-title">
+                  <h2>Langfuse</h2>
+                  <label className="switch-row langfuse-header-switch">
+                    <input
+                      type="checkbox"
+                      checked={langfuseSettings.enabled}
+                      onChange={(event) =>
+                        updateLangfuseSettings({
+                          ...langfuseSettings,
+                          enabled: event.target.checked,
+                        })
+                      }
+                      aria-label="启用 Langfuse"
+                    />
+                    <i />
+                  </label>
+                </div>
                 <Button
                   type="submit"
                   form="key-langfuse-settings-form"
@@ -1461,8 +1698,7 @@ export function KeyDetailPage() {
                   value={langfuseSettings}
                   onChange={updateLangfuseSettings}
                   hasSecretKey={key.langfuse.hasSecretKey}
-                  switchLabel="启用"
-                  switchHint="为此 Key 独立记录"
+                  showEnabledSwitch={false}
                 />
               </form>
             </section>
@@ -1472,25 +1708,34 @@ export function KeyDetailPage() {
             <div className="panel-heading pricing-heading">
               <div>
                 <h2>模型价格</h2>
-                <span className="panel-note">USD / 1M tokens · 仅影响后续调用</span>
+                <span className="panel-note">仅展示已配置记录 · USD / 1M tokens</span>
               </div>
+              <Button
+                onClick={() => {
+                  setPriceFormError('');
+                  setNewPrice(emptyPriceDraft);
+                  setShowAddPrice(true);
+                }}
+              >
+                <Plus size={14} /> 新增价格
+              </Button>
             </div>
             <div className="table-wrap pricing-table">
               <table>
                 <thead>
                   <tr>
-                    <th>Provider / 模型</th>
+                    <th>Provider / 模型规则</th>
                     <th>输入</th>
                     <th>缓存输入</th>
                     <th>输出</th>
-                    <th>当前规则</th>
+                    <th>更新时间</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {data.prices.length ? (
-                    data.prices.map((price) => {
-                      const draftKey = `${price.provider}:${price.model}`;
+                  {priceRules.length ? (
+                    priceRules.map((price) => {
+                      const draftKey = priceRuleKey(price.provider, price.modelPattern);
                       const initialDraft = priceDraft(price);
                       const draft = priceDrafts[draftKey] ?? initialDraft;
                       const changed = (
@@ -1499,7 +1744,7 @@ export function KeyDetailPage() {
                       return (
                         <tr key={draftKey}>
                           <td>
-                            <strong>{price.model}</strong>
+                            <strong>{price.modelPattern}</strong>
                             <small>{price.provider}</small>
                           </td>
                           {(
@@ -1524,35 +1769,37 @@ export function KeyDetailPage() {
                                     [draftKey]: { ...draft, [field]: event.target.value },
                                   }));
                                 }}
-                                aria-label={`${price.model} ${field}`}
+                                aria-label={`${price.modelPattern} ${field}`}
                               />
                             </td>
                           ))}
+                          <td>{formatFullDate(price.updatedAt)}</td>
                           <td>
-                            {price.matchedPattern ? (
-                              <>
-                                <code>{price.matchedPattern}</code>
-                                <small>{price.matchedProvider}</small>
-                              </>
-                            ) : (
-                              '未配置'
-                            )}
-                          </td>
-                          <td>
-                            <Button
-                              variant="secondary"
-                              loading={savingPrice === draftKey}
-                              disabled={!changed}
-                              aria-label={`保存 ${price.model} 价格`}
-                              onClick={() => void savePrice(price)}
-                            >
-                              {savedPrice === draftKey && !changed ? (
-                                <Check size={13} />
-                              ) : (
-                                <Save size={13} />
-                              )}
-                              {savedPrice === draftKey && !changed ? '已保存' : '保存'}
-                            </Button>
+                            <div className="price-row-actions">
+                              <Button
+                                variant="secondary"
+                                loading={savingPrice === draftKey}
+                                disabled={!changed || deletingPrice === draftKey}
+                                aria-label={`保存 ${price.modelPattern} 价格`}
+                                onClick={() => void savePrice(price)}
+                              >
+                                {savedPrice === draftKey && !changed ? (
+                                  <Check size={13} />
+                                ) : (
+                                  <Save size={13} />
+                                )}
+                                {savedPrice === draftKey && !changed ? '已保存' : '保存'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                loading={deletingPrice === draftKey}
+                                disabled={savingPrice === draftKey}
+                                aria-label={`删除 ${price.modelPattern} 价格记录`}
+                                onClick={() => void deletePrice(price)}
+                              >
+                                <Trash2 size={14} /> 删除
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1560,7 +1807,7 @@ export function KeyDetailPage() {
                   ) : (
                     <tr>
                       <td colSpan={6} className="table-empty">
-                        同步上游模型或产生调用后可配置价格
+                        暂无价格记录，请点击“新增价格”单独配置
                       </td>
                     </tr>
                   )}
@@ -1569,6 +1816,200 @@ export function KeyDetailPage() {
             </div>
           </section>
         </div>
+      ) : null}
+
+      {activeTab === 'middleware' ? (
+        <div
+          id="key-panel-middleware"
+          className="key-tab-panel middleware-tab-panel"
+          role="tabpanel"
+          aria-labelledby="key-tab-middleware"
+        >
+          <section className="panel middleware-panel">
+            <div className="middleware-intro">
+              <div>
+                <div className="middleware-title-row">
+                  <h2>请求 / 响应中间件</h2>
+                  <Badge tone={middlewareConfigured ? 'success' : 'neutral'}>
+                    {middlewareConfigured ? '已启用' : '示例模板'}
+                  </Badge>
+                </div>
+                <p>
+                  固定暴露 <code>onRequest(ctx)</code> 与 <code>onResponse(ctx)</code> 两个 async
+                  函数。保存成功后，下一个请求立即使用新代码。
+                </p>
+              </div>
+              <div className="middleware-runtime-note">
+                单次钩子最多执行 1 秒；流式响应会依次触发 headers 与 chunk 阶段。
+              </div>
+            </div>
+
+            <div className="middleware-editor-frame">
+              <div className="middleware-editor-toolbar">
+                <div className="middleware-editor-status" aria-live="polite">
+                  {middlewareSaved && !middlewareChanged ? (
+                    <span className="middleware-saved-status">
+                      <Check size={13} /> 已保存，下一请求生效
+                    </span>
+                  ) : middlewareChanged ? (
+                    <span>有未保存修改</span>
+                  ) : middlewareUpdatedAt ? (
+                    <span>保存于 {formatFullDate(middlewareUpdatedAt)}</span>
+                  ) : (
+                    <span>middleware.js</span>
+                  )}
+                </div>
+                <Button
+                  loading={middlewareSaving}
+                  disabled={middlewareLoading || !middlewareCode.trim() || !middlewareChanged}
+                  onClick={() => void saveMiddleware()}
+                >
+                  <Save size={13} /> 保存
+                </Button>
+              </div>
+              {middlewareLoading ? (
+                <Skeleton height={560} />
+              ) : middlewareCode ? (
+                <Suspense fallback={<Skeleton height={560} />}>
+                  <MiddlewareCodeEditor
+                    value={middlewareCode}
+                    onChange={(nextCode) => {
+                      setMiddlewareCode(nextCode);
+                      setMiddlewareSaved(false);
+                      setMiddlewareError('');
+                    }}
+                  />
+                </Suspense>
+              ) : (
+                <div className="middleware-editor-empty">中间件代码尚未加载。</div>
+              )}
+            </div>
+
+            {middlewareError ? (
+              <div className="form-error middleware-error" role="alert">
+                {middlewareError}
+              </div>
+            ) : null}
+
+            <div className="middleware-context-grid">
+              <div>
+                <strong>请求上下文</strong>
+                <code>ctx.request.body / headers / upstreamHeaders</code>
+              </div>
+              <div>
+                <strong>响应上下文</strong>
+                <code>ctx.response.status / headers / body / phase</code>
+              </div>
+              <div>
+                <strong>常用模块</strong>
+                <code>ctx.crypto / base64 / url / log / state</code>
+              </div>
+            </div>
+            <p className="middleware-security-note">
+              中间件由平台管理员维护并运行在隔离 Worker
+              中；请只保存你信任的代码，不要写入或打印上游密钥。
+            </p>
+          </section>
+        </div>
+      ) : null}
+
+      {showAddPrice ? (
+        <Modal
+          title="新增模型价格"
+          onClose={() => {
+            setShowAddPrice(false);
+            setPriceFormError('');
+          }}
+        >
+          <form className="modal-body" onSubmit={(event) => void createPrice(event)}>
+            <Field label="Provider" hint="“全部 Provider”会作为通用兜底价格。">
+              <select
+                className="input"
+                value={newPrice.provider}
+                onChange={(event) =>
+                  setNewPrice({
+                    ...newPrice,
+                    provider: event.target.value,
+                    modelPattern: '',
+                  })
+                }
+              >
+                <option value="*">全部 Provider</option>
+                {priceProviderOptions.map((provider) => (
+                  <option value={provider} key={provider}>
+                    {provider}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="模型" hint="从已同步模型中选择，也可直接输入模型名称或前缀规则。">
+              <Input
+                value={newPrice.modelPattern}
+                list="price-model-options"
+                onChange={(event) => setNewPrice({ ...newPrice, modelPattern: event.target.value })}
+                placeholder="选择或输入模型"
+                autoComplete="off"
+                required
+              />
+              <datalist id="price-model-options">
+                {priceModelOptions.map((model) => (
+                  <option value={model} key={model} />
+                ))}
+              </datalist>
+            </Field>
+            <div className="price-form-grid">
+              <Field label="输入">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={newPrice.inputPerMillion}
+                  onChange={(event) =>
+                    setNewPrice({ ...newPrice, inputPerMillion: event.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="缓存输入">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={newPrice.cachedInputPerMillion}
+                  onChange={(event) =>
+                    setNewPrice({ ...newPrice, cachedInputPerMillion: event.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="输出">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={newPrice.outputPerMillion}
+                  onChange={(event) =>
+                    setNewPrice({ ...newPrice, outputPerMillion: event.target.value })
+                  }
+                  required
+                />
+              </Field>
+            </div>
+            {priceFormError ? (
+              <div className="form-error" role="alert">
+                {priceFormError}
+              </div>
+            ) : null}
+            <div className="modal-actions">
+              <Button type="button" variant="secondary" onClick={() => setShowAddPrice(false)}>
+                取消
+              </Button>
+              <Button type="submit" loading={creatingPrice}>
+                保存价格
+              </Button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
     </div>
   );

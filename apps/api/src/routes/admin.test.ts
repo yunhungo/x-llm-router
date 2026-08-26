@@ -64,6 +64,62 @@ describe('admin API keys', () => {
     expect(query.mock.calls[0]?.[1]?.[5]).toBe(0);
   });
 
+  it('returns the persisted API Key middleware code', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          middlewareCode:
+            'async function onRequest(ctx) { return ctx.request; }\nasync function onResponse(ctx) { return ctx.response; }',
+          updatedAt: '2026-08-26T00:00:00.000Z',
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/admin/keys/${keyId}/middleware`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ configured: true });
+    expect(response.json().code).toContain('async function onRequest');
+  });
+
+  it('validates and saves API Key middleware code', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ updatedAt: '2026-08-26T00:00:00.000Z' }],
+      rowCount: 1,
+    });
+    const code = `
+      async function onRequest(ctx) { return ctx.request; }
+      async function onResponse(ctx) { return ctx.response; }
+    `;
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/admin/keys/${keyId}/middleware`,
+      payload: { code },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ ok: true, configured: true });
+    expect(query.mock.calls[0]?.[0]).toContain('middleware_code = $2');
+    expect(query.mock.calls[0]?.[1]).toEqual([keyId, code]);
+  });
+
+  it('rejects middleware without both fixed async hooks', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/admin/keys/${keyId}/middleware`,
+      payload: { code: 'async function onRequest(ctx) { return ctx.request; }' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'invalid_middleware' } });
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it('returns persisted provider model discovery state', async () => {
     query.mockResolvedValueOnce({
       rows: [
@@ -88,6 +144,75 @@ describe('admin API keys', () => {
       modelsRefreshError: null,
     });
     expect(query.mock.calls[0]?.[0]).toContain('available_models AS models');
+  });
+
+  it('lists only persisted model price records', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          provider: 'openai',
+          modelPattern: 'gpt-5.6-sol',
+          inputPerMillion: 5,
+          cachedInputPerMillion: 0.5,
+          outputPerMillion: 30,
+          updatedAt: '2026-08-26T00:00:00.000Z',
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/admin/settings/model-prices' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().prices).toHaveLength(1);
+    expect(response.json().prices[0]).toMatchObject({
+      provider: 'openai',
+      modelPattern: 'gpt-5.6-sol',
+    });
+    expect(query.mock.calls[0]?.[0]).toContain('FROM model_prices');
+  });
+
+  it('upserts one model price record', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/settings/model-prices',
+      payload: {
+        provider: 'openai',
+        modelPattern: 'gpt-5.6-sol',
+        inputPerMillion: 5,
+        cachedInputPerMillion: 0.5,
+        outputPerMillion: 30,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(query.mock.calls[0]?.[0]).toContain('ON CONFLICT (provider, model_pattern)');
+    expect(query.mock.calls[0]?.[1]).toEqual(['openai', 'gpt-5.6-sol', 5, 0.5, 30]);
+  });
+
+  it('deletes one exact model price record', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/admin/settings/model-prices',
+      payload: { provider: 'openai', modelPattern: 'gpt-5.6-sol' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(query.mock.calls[0]?.[0]).toContain('DELETE FROM model_prices');
+    expect(query.mock.calls[0]?.[1]).toEqual(['openai', 'gpt-5.6-sol']);
+  });
+
+  it('reports a missing model price record when deleting', async () => {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/admin/settings/model-prices',
+      payload: { provider: '*', modelPattern: 'missing-model' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: { code: 'price_not_found' } });
   });
 
   it('refreshes models for a valid provider connection', async () => {

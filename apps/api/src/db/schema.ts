@@ -1,4 +1,4 @@
-export const schemaVersion = 10;
+export const schemaVersion = 11;
 
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -115,7 +115,9 @@ CREATE TABLE IF NOT EXISTS virtual_api_keys (
 );
 
 ALTER TABLE virtual_api_keys
-  ADD COLUMN IF NOT EXISTS langfuse_config_ciphertext text;
+  ADD COLUMN IF NOT EXISTS langfuse_config_ciphertext text,
+  ADD COLUMN IF NOT EXISTS middleware_code text,
+  ADD COLUMN IF NOT EXISTS middleware_updated_at timestamptz;
 
 CREATE INDEX IF NOT EXISTS virtual_api_keys_status_idx ON virtual_api_keys(status, expires_at);
 

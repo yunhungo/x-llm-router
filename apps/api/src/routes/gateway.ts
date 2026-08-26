@@ -14,6 +14,11 @@ import {
 import { finalOpenAiResponse, PiOpenAiStreamSerializer } from '../providers/pi-openai';
 import type { GatewayEndpoint } from '../providers/types';
 import { defaultLangfuseSettings, isLangfuseDiagnosticsEnabled } from '../services/langfuse';
+import {
+  createKeyMiddlewareSession,
+  type KeyMiddlewareResponse,
+  type KeyMiddlewareSession,
+} from '../services/key-middleware';
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
 import { buildCurl, SseDetailCollector } from '../services/usage-details';
 import { requireVirtualApiKey } from '../services/virtual-keys';
@@ -123,6 +128,142 @@ async function writeChunk(reply: FastifyReply, chunk: Uint8Array): Promise<void>
   if (!reply.raw.write(chunk)) await once(reply.raw, 'drain');
 }
 
+const RESERVED_UPSTREAM_HEADERS = new Set([
+  'authorization',
+  'connection',
+  'content-length',
+  'content-type',
+  'cookie',
+  'host',
+  'proxy-authorization',
+  'transfer-encoding',
+  'x-request-id',
+]);
+const RESERVED_RESPONSE_HEADERS = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'proxy-authenticate',
+  'set-cookie',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const responseDecoder = new TextDecoder();
+const responseEncoder = new TextEncoder();
+
+function safeUpstreamHeaders(headers: Record<string, string>): Record<string, string> {
+  const safe: Record<string, string> = {};
+  for (const [rawName, value] of Object.entries(headers)) {
+    const name = rawName.toLowerCase();
+    if (
+      RESERVED_UPSTREAM_HEADERS.has(name) ||
+      !HEADER_NAME_PATTERN.test(name) ||
+      /[\r\n]/.test(value)
+    ) {
+      continue;
+    }
+    safe[name] = value;
+  }
+  return safe;
+}
+
+function applyResponseHeaders(reply: FastifyReply, headers: Record<string, string>): void {
+  for (const [rawName, value] of Object.entries(headers)) {
+    const name = rawName.toLowerCase();
+    if (
+      RESERVED_RESPONSE_HEADERS.has(name) ||
+      !HEADER_NAME_PATTERN.test(name) ||
+      /[\r\n]/.test(value)
+    ) {
+      continue;
+    }
+    reply.header(name, value);
+  }
+}
+
+async function sendCompleteResponse(input: {
+  reply: FastifyReply;
+  middleware?: KeyMiddlewareSession;
+  status: number;
+  headers?: Record<string, string>;
+  body: unknown;
+}): Promise<KeyMiddlewareResponse> {
+  const base: KeyMiddlewareResponse = {
+    status: input.status,
+    headers: { 'content-type': 'application/json', ...input.headers },
+    body: input.body,
+    stream: false,
+    phase: 'complete',
+  };
+  const response = input.middleware ? await input.middleware.onResponse(base) : base;
+  if (input.middleware) applyResponseHeaders(input.reply, response.headers);
+  else input.reply.type('application/json');
+  input.reply.code(response.status).send(response.body);
+  return response;
+}
+
+async function beginEventStream(input: {
+  reply: FastifyReply;
+  middleware?: KeyMiddlewareSession;
+  requestId: string;
+  status: number;
+  headers?: Record<string, string>;
+}): Promise<KeyMiddlewareResponse> {
+  const base: KeyMiddlewareResponse = {
+    status: input.status,
+    headers: {
+      ...input.headers,
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-request-id': input.requestId,
+    },
+    body: null,
+    stream: true,
+    phase: 'headers',
+  };
+  const response = input.middleware ? await input.middleware.onResponse(base) : base;
+  input.reply.hijack();
+  input.reply.raw.statusCode = response.status;
+  for (const [name, value] of Object.entries(response.headers)) {
+    const normalized = name.toLowerCase();
+    if (
+      RESERVED_RESPONSE_HEADERS.has(normalized) ||
+      !HEADER_NAME_PATTERN.test(normalized) ||
+      /[\r\n]/.test(value)
+    ) {
+      continue;
+    }
+    input.reply.raw.setHeader(normalized, value);
+  }
+  return response;
+}
+
+async function writeResponseChunk(input: {
+  reply: FastifyReply;
+  middleware?: KeyMiddlewareSession;
+  stream: KeyMiddlewareResponse;
+  chunk: Uint8Array;
+}): Promise<void> {
+  if (!input.middleware) return writeChunk(input.reply, input.chunk);
+  const transformed = await input.middleware.onResponse({
+    ...input.stream,
+    body: responseDecoder.decode(input.chunk),
+    phase: 'chunk',
+  });
+  if (transformed.body === null || transformed.body === '') return;
+  if (typeof transformed.body !== 'string') {
+    throw Object.assign(new Error('流式 onResponse 必须让 ctx.response.body 保持字符串。'), {
+      code: 'middleware_execution_failed',
+      statusCode: 500,
+    });
+  }
+  await writeChunk(input.reply, responseEncoder.encode(transformed.body));
+}
+
 interface PiGatewayResult {
   statusCode: number;
   model: string;
@@ -145,6 +286,7 @@ async function executePiGateway(input: {
   requestId: string;
   signal: AbortSignal;
   reply: FastifyReply;
+  middleware?: KeyMiddlewareSession;
 }): Promise<PiGatewayResult> {
   const prepared = preparePiRequest(
     input.endpoint,
@@ -159,6 +301,8 @@ async function executePiGateway(input: {
     prepared.includeUsageInStream,
   );
   let completedResponse: Record<string, unknown> | undefined;
+  let clientCompletedResponse: unknown;
+  let hasClientCompletedResponse = false;
   let usage = emptyUsage();
   let reportedCostUsd: number | undefined;
   let errorCode: string | undefined;
@@ -166,6 +310,7 @@ async function executePiGateway(input: {
   let firstTokenAt: number | undefined;
   let firstVisibleTokenAt: number | undefined;
   let streamStarted = false;
+  let streamResponse: KeyMiddlewareResponse | undefined;
 
   for await (const event of prepared.events) {
     const generated =
@@ -202,39 +347,65 @@ async function executePiGateway(input: {
       if (event.type === 'error' && !streamStarted) continue;
       if (!streamStarted) {
         streamStarted = true;
-        input.reply.hijack();
-        input.reply.raw.statusCode = prepared.capture.response?.status ?? 200;
-        input.reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
-        input.reply.raw.setHeader('cache-control', 'no-cache, no-transform');
-        input.reply.raw.setHeader('connection', 'keep-alive');
-        input.reply.raw.setHeader('x-request-id', input.requestId);
+        streamResponse = await beginEventStream({
+          reply: input.reply,
+          ...(input.middleware ? { middleware: input.middleware } : {}),
+          requestId: input.requestId,
+          status: prepared.capture.response?.status ?? 200,
+          headers: prepared.capture.response?.headers ?? {},
+        });
       }
-      for (const chunk of serializer.feed(event)) await writeChunk(input.reply, chunk);
+      for (const chunk of serializer.feed(event)) {
+        await writeResponseChunk({
+          reply: input.reply,
+          ...(input.middleware ? { middleware: input.middleware } : {}),
+          stream: streamResponse!,
+          chunk,
+        });
+      }
     }
   }
 
-  const statusCode = errorCode
-    ? prepared.capture.response?.status && prepared.capture.response.status >= 400
-      ? prepared.capture.response.status
-      : errorCode === 'client_closed_request'
-        ? 499
-        : 502
-    : (prepared.capture.response?.status ?? 200);
+  let statusCode =
+    streamResponse?.status ??
+    (errorCode
+      ? prepared.capture.response?.status && prepared.capture.response.status >= 400
+        ? prepared.capture.response.status
+        : errorCode === 'client_closed_request'
+          ? 499
+          : 502
+      : (prepared.capture.response?.status ?? 200));
   if (prepared.clientWantsStream && streamStarted) {
     input.reply.raw.end();
   } else if (completedResponse) {
-    input.reply.code(statusCode).type('application/json').send(completedResponse);
+    const outgoing = await sendCompleteResponse({
+      reply: input.reply,
+      ...(input.middleware ? { middleware: input.middleware } : {}),
+      status: statusCode,
+      headers: prepared.capture.response?.headers ?? {},
+      body: completedResponse,
+    });
+    statusCode = outgoing.status;
+    clientCompletedResponse = outgoing.body;
+    hasClientCompletedResponse = true;
   } else if (!input.reply.sent && !input.reply.raw.headersSent) {
-    input.reply.code(statusCode).send({
-      error: {
-        type: 'api_error',
-        code: errorCode ?? 'invalid_upstream_response',
-        message:
-          capturedError && typeof capturedError === 'object'
-            ? (capturedError as Record<string, unknown>).message
-            : 'Upstream stream ended without a completed response.',
+    const outgoing = await sendCompleteResponse({
+      reply: input.reply,
+      ...(input.middleware ? { middleware: input.middleware } : {}),
+      status: statusCode,
+      headers: prepared.capture.response?.headers ?? {},
+      body: {
+        error: {
+          type: 'api_error',
+          code: errorCode ?? 'invalid_upstream_response',
+          message:
+            capturedError && typeof capturedError === 'object'
+              ? (capturedError as Record<string, unknown>).message
+              : 'Upstream stream ended without a completed response.',
+        },
       },
     });
+    statusCode = outgoing.status;
   }
 
   const capturedRequest = prepared.capture.request;
@@ -260,7 +431,13 @@ async function executePiGateway(input: {
     ...(errorCode ? { errorCode } : {}),
     ...(firstTokenAt ? { firstTokenAt } : {}),
     ...(firstVisibleTokenAt ? { firstVisibleTokenAt } : {}),
-    ...(completedResponse ? { traceOutput: outputForTrace(completedResponse) } : {}),
+    ...(completedResponse
+      ? {
+          traceOutput: outputForTrace(
+            hasClientCompletedResponse ? clientCompletedResponse : completedResponse,
+          ),
+        }
+      : {}),
     ...(capturedRequest ? { upstreamRequest: capturedRequest } : {}),
     upstreamResponse: {
       status: prepared.capture.response?.status ?? statusCode,
@@ -283,7 +460,7 @@ async function gatewayHandler(
   const requestId = gatewayRequestId(request);
   reply.header('x-request-id', requestId);
 
-  const body =
+  let body =
     request.body && typeof request.body === 'object'
       ? ({ ...request.body } as Record<string, unknown>)
       : {};
@@ -318,6 +495,8 @@ async function gatewayHandler(
   let upstreamRequest: unknown;
   let upstreamResponse: unknown;
   let capturedError: unknown;
+  let middlewareSession: KeyMiddlewareSession | undefined;
+  let middlewareUpstreamHeaders: Record<string, string> = {};
   const langfuse = key.langfuse ?? defaultLangfuseSettings();
   const langfuseDiagnostics = langfuse.enabled && isLangfuseDiagnosticsEnabled();
   const identity = langfuseRequestIdentity(request, body, langfuse, key.id);
@@ -371,6 +550,32 @@ async function gatewayHandler(
   }
 
   try {
+    if (key.middlewareCode) {
+      middlewareSession = await createKeyMiddlewareSession({
+        code: key.middlewareCode,
+        metadata: {
+          key: { id: key.id, name: key.name, prefix: key.keyPrefix },
+          endpoint,
+          requestId,
+        },
+        logger: (level, values) => {
+          request.log[level](
+            { component: 'key-middleware', apiKeyId: key.id, requestId },
+            values.join(' '),
+          );
+        },
+      });
+      const transformedRequest = await middlewareSession.onRequest({
+        method: request.method,
+        url: clientUrl,
+        headers: { ...request.headers },
+        body,
+        upstreamHeaders: {},
+      });
+      body = transformedRequest.body;
+      middlewareUpstreamHeaders = safeUpstreamHeaders(transformedRequest.upstreamHeaders);
+    }
+
     provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
     const abortController = new AbortController();
     reply.raw.once('close', () => {
@@ -381,10 +586,14 @@ async function gatewayHandler(
       const piResult = await executePiGateway({
         endpoint,
         body,
-        provider,
+        provider: {
+          ...provider,
+          headers: { ...provider.headers, ...middlewareUpstreamHeaders },
+        },
         requestId,
         signal: abortController.signal,
         reply,
+        ...(middlewareSession ? { middleware: middlewareSession } : {}),
       });
       model = piResult.model;
       statusCode = piResult.statusCode;
@@ -425,11 +634,12 @@ async function gatewayHandler(
       });
       const upstreamUrl = `${provider.baseUrl}${prepared.path}`;
       const upstreamHeaders = {
+        ...provider.headers,
+        ...middlewareUpstreamHeaders,
         authorization: provider.authorization,
         'content-type': 'application/json',
         accept: prepared.body.stream === true ? 'text/event-stream' : 'application/json',
         'x-request-id': requestId,
-        ...provider.headers,
       };
       upstreamRequest = {
         method: 'POST',
@@ -461,13 +671,16 @@ async function gatewayHandler(
       if (upstreamIsEventStream) {
         const bridge = adapter.createStreamBridge(prepared);
         const detailCollector = new SseDetailCollector();
+        let streamResponse: KeyMiddlewareResponse | undefined;
         if (prepared.clientWantsStream) {
-          reply.hijack();
-          reply.raw.statusCode = upstream.status;
-          reply.raw.setHeader('content-type', 'text/event-stream; charset=utf-8');
-          reply.raw.setHeader('cache-control', 'no-cache, no-transform');
-          reply.raw.setHeader('connection', 'keep-alive');
-          reply.raw.setHeader('x-request-id', requestId);
+          streamResponse = await beginEventStream({
+            reply,
+            ...(middlewareSession ? { middleware: middlewareSession } : {}),
+            requestId,
+            status: upstream.status,
+            headers: Object.fromEntries(upstream.headers.entries()),
+          });
+          statusCode = streamResponse.status;
         }
 
         if (upstream.body) {
@@ -480,14 +693,28 @@ async function gatewayHandler(
             if (!firstTokenAt && bridge.hasGeneratedOutput) firstTokenAt = Date.now();
             if (!firstVisibleTokenAt && bridge.hasVisibleOutput) firstVisibleTokenAt = Date.now();
             if (prepared.clientWantsStream) {
-              for (const chunk of clientChunks) await writeChunk(reply, chunk);
+              for (const chunk of clientChunks) {
+                await writeResponseChunk({
+                  reply,
+                  ...(middlewareSession ? { middleware: middlewareSession } : {}),
+                  stream: streamResponse!,
+                  chunk,
+                });
+              }
             }
           }
         }
         detailCollector.feed(new Uint8Array(), true);
         const finalChunks = bridge.feed(new Uint8Array(), true);
         if (prepared.clientWantsStream) {
-          for (const chunk of finalChunks) await writeChunk(reply, chunk);
+          for (const chunk of finalChunks) {
+            await writeResponseChunk({
+              reply,
+              ...(middlewareSession ? { middleware: middlewareSession } : {}),
+              stream: streamResponse!,
+              chunk,
+            });
+          }
         }
         usage = bridge.usage;
         errorCode = bridge.errorCode;
@@ -501,19 +728,34 @@ async function gatewayHandler(
         if (prepared.clientWantsStream) {
           reply.raw.end();
         } else if (bridge.completedResponse) {
-          reply.code(upstream.status).type('application/json').send(bridge.completedResponse);
+          const outgoing = await sendCompleteResponse({
+            reply,
+            ...(middlewareSession ? { middleware: middlewareSession } : {}),
+            status: upstream.status,
+            headers: Object.fromEntries(upstream.headers.entries()),
+            body: bridge.completedResponse,
+          });
+          statusCode = outgoing.status;
+          traceOutput = outputForTrace(outgoing.body);
         } else {
           statusCode = upstream.ok ? 502 : upstream.status;
           errorCode = errorCode ?? 'invalid_upstream_response';
-          reply.code(statusCode).send({
-            error: {
-              type: 'api_error',
-              code: errorCode,
-              message: upstream.ok
-                ? 'Upstream stream ended without a completed response.'
-                : 'Upstream stream ended with an error.',
+          const outgoing = await sendCompleteResponse({
+            reply,
+            ...(middlewareSession ? { middleware: middlewareSession } : {}),
+            status: statusCode,
+            headers: Object.fromEntries(upstream.headers.entries()),
+            body: {
+              error: {
+                type: 'api_error',
+                code: errorCode,
+                message: upstream.ok
+                  ? 'Upstream stream ended without a completed response.'
+                  : 'Upstream stream ended with an error.',
+              },
             },
           });
+          statusCode = outgoing.status;
         }
       } else {
         const text = await upstream.text();
@@ -531,8 +773,16 @@ async function gatewayHandler(
         };
         usage = extractTokenUsage(transformedPayload);
         errorCode = errorCodeFromPayload(transformedPayload);
-        traceOutput = outputForTrace(transformedPayload);
-        reply.code(upstream.status).type('application/json').send(transformedPayload);
+        const outgoing = await sendCompleteResponse({
+          reply,
+          ...(middlewareSession ? { middleware: middlewareSession } : {}),
+          status: upstream.status,
+          headers: Object.fromEntries(upstream.headers.entries()),
+          body: transformedPayload,
+        });
+        statusCode = outgoing.status;
+        errorCode = errorCodeFromPayload(outgoing.body) ?? errorCode;
+        traceOutput = outputForTrace(outgoing.body);
       }
     }
   } catch (error) {
@@ -545,6 +795,8 @@ async function gatewayHandler(
       await reply.code(statusCode).send({
         error: { type: 'api_error', code: errorCode, message: typed.message },
       });
+    } else if (reply.raw.headersSent && !reply.raw.writableEnded) {
+      reply.raw.end();
     }
   } finally {
     const latencyMs = Date.now() - startedAt;
@@ -622,6 +874,16 @@ async function gatewayHandler(
           },
           'Langfuse observation ended',
         );
+      }
+      if (middlewareSession) {
+        try {
+          await middlewareSession.dispose();
+        } catch (disposeError) {
+          request.log.warn(
+            { err: disposeError, apiKeyId: key.id, requestId },
+            'Failed to dispose API Key middleware worker',
+          );
+        }
       }
     }
   }

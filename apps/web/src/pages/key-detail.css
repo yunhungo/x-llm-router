@@ -638,8 +638,23 @@
   grid-column: span 2;
 }
 
-.langfuse-settings-section .switch-row.compact {
-  margin: -3px 0 0;
+.langfuse-section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.langfuse-header-switch.switch-row {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.langfuse-header-switch input:focus-visible + i {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .pricing-panel {
@@ -649,6 +664,10 @@
 .pricing-heading > div {
   display: grid;
   gap: 5px;
+}
+
+.pricing-heading .button {
+  flex: 0 0 auto;
 }
 
 .price-input {
@@ -671,6 +690,192 @@
 
 .pricing-table td {
   height: 68px;
+}
+
+.pricing-table td:nth-child(5) {
+  color: var(--mute);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.price-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.price-row-actions .button {
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
+.price-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.middleware-panel {
+  overflow: hidden;
+}
+
+.middleware-intro {
+  padding: 19px 20px 17px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.middleware-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.middleware-title-row h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.middleware-intro p {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: var(--mute);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.middleware-intro p code,
+.middleware-context-grid code {
+  color: var(--ink);
+  font-family: 'Geist Mono Variable', monospace;
+}
+
+.middleware-runtime-note {
+  max-width: 320px;
+  padding: 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas-soft);
+  color: var(--mute);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.middleware-editor-frame {
+  margin: 18px 20px 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.middleware-editor-toolbar {
+  min-height: 48px;
+  padding: 7px 8px 7px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas-soft);
+}
+
+.middleware-editor-toolbar .button {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.middleware-editor-status {
+  min-width: 0;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.middleware-saved-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green);
+}
+
+.middleware-editor-frame .cm-editor {
+  background: var(--canvas);
+}
+
+.middleware-editor-frame .cm-gutters {
+  border-right-color: var(--hairline);
+  background: var(--canvas-soft);
+}
+
+.middleware-editor-frame .cm-activeLine,
+.middleware-editor-frame .cm-activeLineGutter {
+  background: var(--canvas-soft-2);
+}
+
+.middleware-editor-frame .cm-tooltip {
+  border-color: var(--hairline-strong);
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.middleware-editor-frame .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--blue);
+  color: #fff;
+}
+
+.middleware-editor-empty {
+  min-height: 560px;
+  display: grid;
+  place-items: center;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.middleware-error {
+  margin: 14px 20px 0;
+}
+
+.middleware-context-grid {
+  margin: 16px 20px 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.middleware-context-grid > div {
+  min-width: 0;
+  padding: 12px 13px;
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas-soft);
+}
+
+.middleware-context-grid strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.middleware-context-grid code {
+  color: var(--mute);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.middleware-security-note {
+  margin: 14px 20px 20px;
+  color: var(--mute);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .clickable-row {
@@ -908,6 +1113,23 @@
     grid-column: auto;
   }
 
+  .price-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .middleware-intro {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .middleware-runtime-note {
+    max-width: none;
+  }
+
+  .middleware-context-grid {
+    grid-template-columns: 1fr;
+  }
+
   .key-header-prefix {
     max-width: calc(100% - 86px);
     overflow: hidden;
@@ -919,7 +1141,7 @@
 
   .key-detail-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     overflow: visible;
   }
 

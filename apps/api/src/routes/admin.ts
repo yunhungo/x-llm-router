@@ -22,12 +22,15 @@ import {
   saveApiKeyLangfuseSettings,
   testApiKeyLangfuseConnection,
 } from '../services/langfuse';
+import { DEFAULT_KEY_MIDDLEWARE_CODE, validateKeyMiddlewareCode } from '../services/key-middleware';
 import { pollDeviceFlow, startDeviceFlow } from '../services/openai-oauth';
 import { refreshProviderModels } from '../services/providers';
 import { createApiKeyRecord } from '../services/virtual-keys';
 
 const oauthStartSchema = z.object({ name: z.string().trim().min(1).max(120) });
 const providerParamsSchema = z.object({ id: z.string().uuid() });
+const apiKeyParamsSchema = z.object({ id: z.string().uuid() });
+const keyMiddlewareSchema = z.object({ code: z.string().min(1).max(100_000) });
 const apiKeyUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -46,6 +49,7 @@ const priceSchema = z.object({
   cachedInputPerMillion: z.number().nonnegative(),
   outputPerMillion: z.number().nonnegative(),
 });
+const priceKeySchema = priceSchema.pick({ provider: true, modelPattern: true });
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAdmin);
@@ -365,6 +369,67 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, restartRequired: false };
   });
 
+  app.get('/api/admin/keys/:id/middleware', async (request, reply) => {
+    const params = apiKeyParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: { code: 'invalid_request', message: 'Key ID 无效。' } });
+    }
+    const result = await getPool().query<{
+      middlewareCode: string | null;
+      updatedAt: string | null;
+    }>(
+      `SELECT middleware_code AS "middlewareCode", middleware_updated_at AS "updatedAt"
+         FROM virtual_api_keys WHERE id = $1`,
+      [params.data.id],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
+    }
+    return {
+      code: row.middlewareCode ?? DEFAULT_KEY_MIDDLEWARE_CODE,
+      configured: row.middlewareCode !== null,
+      updatedAt: row.updatedAt,
+    };
+  });
+
+  app.put('/api/admin/keys/:id/middleware', async (request, reply) => {
+    const params = apiKeyParamsSchema.safeParse(request.params);
+    const parsed = keyMiddlewareSchema.safeParse(request.body);
+    if (!params.success || !parsed.success) {
+      return reply.code(400).send({
+        error: {
+          code: 'invalid_request',
+          message: parsed.error?.issues[0]?.message ?? 'Key ID 无效。',
+        },
+      });
+    }
+    try {
+      await validateKeyMiddlewareCode(parsed.data.code);
+    } catch (error) {
+      return reply.code(400).send({
+        error: {
+          code: 'invalid_middleware',
+          message: error instanceof Error ? error.message : '中间件代码无效。',
+        },
+      });
+    }
+    const result = await getPool().query<{ updatedAt: string }>(
+      `UPDATE virtual_api_keys
+          SET middleware_code = $2, middleware_updated_at = now()
+        WHERE id = $1 AND status = 'active'
+        RETURNING middleware_updated_at AS "updatedAt"`,
+      [params.data.id, parsed.data.code],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: 'API Key 不存在或已撤销。' },
+      });
+    }
+    return { ok: true, configured: true, updatedAt: row.updatedAt };
+  });
+
   app.post(
     '/api/admin/keys/:id/langfuse/test',
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
@@ -494,6 +559,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         parsed.data.outputPerMillion,
       ],
     );
+    return { ok: true };
+  });
+
+  app.delete('/api/admin/settings/model-prices', async (request, reply) => {
+    const parsed = priceKeySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'invalid_request', message: parsed.error.issues[0]?.message } });
+    }
+    const result = await getPool().query(
+      'DELETE FROM model_prices WHERE provider = $1 AND model_pattern = $2',
+      [parsed.data.provider, parsed.data.modelPattern],
+    );
+    if (!result.rowCount) {
+      return reply.code(404).send({
+        error: { code: 'price_not_found', message: '价格记录不存在。' },
+      });
+    }
     return { ok: true };
   });
 }

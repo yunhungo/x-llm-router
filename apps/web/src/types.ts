@@ -270,6 +270,15 @@ export interface ModelPriceMatch {
   updatedAt: string | null;
 }
 
+export interface ModelPriceRule {
+  provider: string;
+  modelPattern: string;
+  inputPerMillion: number;
+  cachedInputPerMillion: number;
+  outputPerMillion: number;
+  updatedAt: string;
+}
+
 export interface KeyAnalyticsResponse {
   range: KeyAnalyticsRange;
   key: VirtualKey & { provider: string | null };

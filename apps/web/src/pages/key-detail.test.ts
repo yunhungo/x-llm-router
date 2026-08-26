@@ -8,6 +8,7 @@ import {
   analyticsModelOptions,
   detailTabSearchParams,
   modelIdentity,
+  priceModelSuggestions,
   parseDetailTab,
   parseModelIdentity,
 } from './key-detail';
@@ -17,6 +18,7 @@ describe('key detail tab URL state', () => {
     expect(parseDetailTab('charts')).toBe('charts');
     expect(parseDetailTab('logs')).toBe('logs');
     expect(parseDetailTab('settings')).toBe('settings');
+    expect(parseDetailTab('middleware')).toBe('middleware');
     expect(parseDetailTab('unknown')).toBe('overview');
     expect(parseDetailTab(null)).toBe('overview');
   });
@@ -101,5 +103,27 @@ describe('key detail model filter', () => {
     );
 
     expect(options).toEqual([]);
+  });
+
+  it('offers unique synced models for the selected price provider', () => {
+    const providers = [
+      {
+        provider: 'openai',
+        defaultModel: 'gpt-default',
+        models: ['gpt-default', 'gpt-mini'],
+      },
+      {
+        provider: 'deepseek',
+        defaultModel: null,
+        models: ['deepseek-chat'],
+      },
+    ] as never;
+
+    expect(priceModelSuggestions(providers, 'openai')).toEqual(['gpt-default', 'gpt-mini']);
+    expect(priceModelSuggestions(providers, '*')).toEqual([
+      'deepseek-chat',
+      'gpt-default',
+      'gpt-mini',
+    ]);
   });
 });
