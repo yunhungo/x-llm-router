@@ -7,8 +7,24 @@ import {
 } from './key-middleware';
 
 const metadata = {
-  key: { id: 'key-1', name: 'Development', prefix: 'xr_test' },
-  endpoint: 'responses',
+  key: {
+    id: 'key-1',
+    name: 'Development',
+    prefix: 'xr_test',
+    budgetUsd: 20,
+    spendUsd: 3.5,
+    rpmLimit: 60,
+    provider: {
+      id: 'provider-1',
+      name: 'OpenAI production',
+      slug: 'openai',
+      authType: 'api_key' as const,
+      apiMode: 'responses' as const,
+      baseUrl: 'https://api.openai.com/v1',
+      defaultModel: 'gpt-5.6',
+    },
+  },
+  endpoint: 'responses' as const,
   requestId: 'request-1',
 };
 
@@ -36,6 +52,8 @@ describe('API Key middleware', () => {
       code: `
         async function onRequest(ctx) {
           ctx.state.marker = ctx.crypto.sha256(ctx.request.body.model).slice(0, 8);
+          ctx.request.body.provider = ctx.key.provider.slug;
+          ctx.request.body.rpmLimit = ctx.key.rpmLimit;
           ctx.request.body.temperature = 0.25;
           ctx.request.upstreamHeaders['x-marker'] = ctx.state.marker;
           return ctx.request;
@@ -56,7 +74,12 @@ describe('API Key middleware', () => {
         body: { model: 'gpt-test' },
         upstreamHeaders: {},
       });
-      expect(request.body).toMatchObject({ model: 'gpt-test', temperature: 0.25 });
+      expect(request.body).toMatchObject({
+        model: 'gpt-test',
+        provider: 'openai',
+        rpmLimit: 60,
+        temperature: 0.25,
+      });
       expect(request.upstreamHeaders['x-marker']).toMatch(/^[a-f0-9]{8}$/);
 
       const response = await session.onResponse({

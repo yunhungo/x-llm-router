@@ -328,6 +328,7 @@ export function KeyDetailPage() {
   const [middlewareSaved, setMiddlewareSaved] = useState(false);
   const [middlewareError, setMiddlewareError] = useState('');
   const middlewareLoadRequest = useRef(0);
+  const middlewareSaveInFlight = useRef(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -614,7 +615,14 @@ export function KeyDetailPage() {
   };
 
   const saveMiddleware = async () => {
-    if (!id || !middlewareCode.trim()) return;
+    if (
+      !id ||
+      !middlewareCode.trim() ||
+      middlewareCode === savedMiddlewareCode ||
+      middlewareSaveInFlight.current
+    )
+      return;
+    middlewareSaveInFlight.current = true;
     setMiddlewareSaving(true);
     setMiddlewareError('');
     setMiddlewareSaved(false);
@@ -629,6 +637,7 @@ export function KeyDetailPage() {
     } catch (caught) {
       setMiddlewareError(caught instanceof ApiError ? caught.message : '中间件保存失败。');
     } finally {
+      middlewareSaveInFlight.current = false;
       setMiddlewareSaving(false);
     }
   };
@@ -717,6 +726,8 @@ export function KeyDetailPage() {
   const initialLangfuse = langfuseDraft(key.langfuse);
   const langfuseChanged = !sameLangfuseDraft(langfuseSettings, initialLangfuse);
   const middlewareChanged = middlewareCode !== savedMiddlewareCode;
+  const middlewareCanSave =
+    !middlewareLoading && !middlewareSaving && Boolean(middlewareCode.trim()) && middlewareChanged;
   const updateGeneralSettings = (next: GeneralDraft) => {
     setGeneralSettings(next);
     setSavedSettings((current) => (current === 'general' ? undefined : current));
@@ -1557,7 +1568,7 @@ export function KeyDetailPage() {
                 </div>
                 <Button
                   loading={middlewareSaving}
-                  disabled={middlewareLoading || !middlewareCode.trim() || !middlewareChanged}
+                  disabled={!middlewareCanSave}
                   onClick={() => void saveMiddleware()}
                 >
                   <Save size={13} /> 保存
@@ -1569,6 +1580,8 @@ export function KeyDetailPage() {
                 <Suspense fallback={<Skeleton height={560} />}>
                   <MiddlewareCodeEditor
                     value={middlewareCode}
+                    canSave={middlewareCanSave}
+                    onSave={saveMiddleware}
                     onChange={(nextCode) => {
                       setMiddlewareCode(nextCode);
                       setMiddlewareSaved(false);

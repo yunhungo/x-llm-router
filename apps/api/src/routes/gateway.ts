@@ -550,11 +550,29 @@ async function gatewayHandler(
   }
 
   try {
+    provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
+
     if (key.middlewareCode) {
       middlewareSession = await createKeyMiddlewareSession({
         code: key.middlewareCode,
         metadata: {
-          key: { id: key.id, name: key.name, prefix: key.keyPrefix },
+          key: {
+            id: key.id,
+            name: key.name,
+            prefix: key.keyPrefix,
+            budgetUsd: key.budgetUsd,
+            spendUsd: key.spendUsd,
+            rpmLimit: key.rpmLimit,
+            provider: {
+              id: provider.id,
+              name: provider.name,
+              slug: provider.provider,
+              authType: provider.authType,
+              apiMode: provider.apiMode,
+              baseUrl: provider.baseUrl,
+              defaultModel: provider.defaultModel,
+            },
+          },
           endpoint,
           requestId,
         },
@@ -576,7 +594,6 @@ async function gatewayHandler(
       middlewareUpstreamHeaders = safeUpstreamHeaders(transformedRequest.upstreamHeaders);
     }
 
-    provider = await getProviderRuntime(key.providerConnectionId, requestId, endpoint);
     const abortController = new AbortController();
     reply.raw.once('close', () => {
       if (!reply.raw.writableEnded) abortController.abort();

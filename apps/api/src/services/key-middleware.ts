@@ -1,12 +1,14 @@
 import { Worker } from 'node:worker_threads';
 
+import type { GatewayEndpoint } from '../providers/types';
+
 export const DEFAULT_KEY_MIDDLEWARE_CODE = `/**
  * 客户端请求发往上游前执行。
  *
  * ctx.request.body            请求 JSON，可直接修改
  * ctx.request.headers         客户端请求头（用于读取）
  * ctx.request.upstreamHeaders 要追加到上游的请求头
- * ctx.key / ctx.endpoint / ctx.requestId / ctx.state
+ * ctx.key / ctx.key.provider / ctx.endpoint / ctx.requestId / ctx.state
  * ctx.crypto / ctx.base64 / ctx.url（也可从 ctx.modules 访问）
  */
 async function onRequest(ctx) {
@@ -53,9 +55,27 @@ export interface KeyMiddlewareResponse {
   phase: 'headers' | 'chunk' | 'complete';
 }
 
-interface KeyMiddlewareMetadata {
-  key: { id: string; name: string; prefix: string };
-  endpoint: string;
+export interface KeyMiddlewareProvider {
+  id: string;
+  name: string;
+  slug: string;
+  authType: 'oauth' | 'api_key';
+  apiMode: GatewayEndpoint;
+  baseUrl: string;
+  defaultModel: string | null;
+}
+
+export interface KeyMiddlewareMetadata {
+  key: {
+    id: string;
+    name: string;
+    prefix: string;
+    budgetUsd: number | null;
+    spendUsd: number;
+    rpmLimit: number;
+    provider: KeyMiddlewareProvider;
+  };
+  endpoint: GatewayEndpoint;
   requestId: string;
 }
 
@@ -413,7 +433,23 @@ export async function createKeyMiddlewareSession(input: {
 
 export async function validateKeyMiddlewareCode(code: string): Promise<void> {
   const session = new KeyMiddlewareSession(code, {
-    key: { id: 'validation', name: 'validation', prefix: 'xr_validation' },
+    key: {
+      id: 'validation',
+      name: 'validation',
+      prefix: 'xr_validation',
+      budgetUsd: null,
+      spendUsd: 0,
+      rpmLimit: 0,
+      provider: {
+        id: 'validation',
+        name: 'validation',
+        slug: 'openai',
+        authType: 'api_key',
+        apiMode: 'responses',
+        baseUrl: 'https://api.openai.com/v1',
+        defaultModel: null,
+      },
+    },
     endpoint: 'responses',
     requestId: 'validation',
   });
