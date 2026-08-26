@@ -7,3 +7,4 @@ export { Input } from './input';
 export { Modal } from './modal';
 export { PageHeader } from './page-header';
 export { Skeleton } from './skeleton';
+export { Toast } from './toast';

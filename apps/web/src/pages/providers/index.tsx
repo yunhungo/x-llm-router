@@ -25,6 +25,7 @@ import {
   Modal,
   PageHeader,
   Skeleton,
+  Toast,
 } from '../../components/ui';
 import type { Provider, ProviderCatalogItem } from '../../types';
 import './providers.css';
@@ -57,7 +58,10 @@ export function ProvidersPage() {
   const [loading, setLoading] = useState(false);
   const [refreshingModels, setRefreshingModels] = useState('');
   const [message, setMessage] = useState('');
+  const [toast, setToast] = useState<{ id: number; message: string }>();
   const [modalError, setModalError] = useState('');
+
+  const dismissToast = useCallback(() => setToast(undefined), []);
 
   const load = useCallback(async () => {
     const [connections, registered] = await Promise.all([
@@ -93,11 +97,15 @@ export function ProvidersPage() {
         if (result.status === 'complete') {
           setFlow(undefined);
           setModal(null);
-          setMessage(
-            result.modelsWarning
-              ? `OpenAI OAuth 连接成功，但模型同步失败：${result.modelsWarning}`
-              : `OpenAI OAuth 连接成功，已同步 ${result.modelsCount ?? 0} 个模型。`,
-          );
+          if (result.modelsWarning) {
+            setMessage(`OpenAI OAuth 连接成功，但模型同步失败：${result.modelsWarning}`);
+          } else {
+            setMessage('');
+            setToast({
+              id: Date.now(),
+              message: `OpenAI OAuth 连接成功，已同步 ${result.modelsCount ?? 0} 个模型。`,
+            });
+          }
           void load();
           return;
         }
@@ -173,7 +181,7 @@ export function ProvidersPage() {
       });
       setModal(null);
       setApiKey('');
-      setMessage('API Key 连接已添加。');
+      setToast({ id: Date.now(), message: 'API Key 连接已添加。' });
       await load();
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : '保存失败。');
@@ -293,6 +301,11 @@ export function ProvidersPage() {
 
   return (
     <div className="page-wrap">
+      {toast ? (
+        <Toast key={toast.id} tone="success" onDismiss={dismissToast}>
+          {toast.message}
+        </Toast>
+      ) : null}
       <PageHeader
         title="上游连接"
         action={
