@@ -78,8 +78,8 @@ export default function MiddlewareCodeEditor({
           bracketMatching: true,
           closeBrackets: true,
           foldGutter: true,
-          highlightActiveLine: true,
-          highlightActiveLineGutter: true,
+          highlightActiveLine: false,
+          highlightActiveLineGutter: false,
           highlightSelectionMatches: true,
           lineNumbers: true,
         }}

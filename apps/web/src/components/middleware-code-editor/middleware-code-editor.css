@@ -7,11 +7,6 @@
   background: var(--canvas-soft);
 }
 
-.middleware-code-editor .cm-activeLine,
-.middleware-code-editor .cm-activeLineGutter {
-  background: var(--canvas-soft-2);
-}
-
 .middleware-code-editor .cm-selectionBackground,
 .middleware-code-editor
   .cm-editor.cm-focused
