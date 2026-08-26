@@ -18,6 +18,7 @@ import { copyText } from '../clipboard';
 import {
   Badge,
   Button,
+  ComboboxInput,
   EmptyState,
   Field,
   Input,
@@ -611,19 +612,12 @@ export function ProvidersPage() {
                 />
               </Field>
               <Field label="默认模型（可选）">
-                <Input
+                <ComboboxInput
                   value={defaultModel}
-                  list={`catalog-models-${providerId}`}
+                  options={catalog.find((provider) => provider.id === providerId)?.models ?? []}
                   onChange={(event) => setDefaultModel(event.target.value)}
                   placeholder="例如 gpt-4.1"
                 />
-                <datalist id={`catalog-models-${providerId}`}>
-                  {(catalog.find((provider) => provider.id === providerId)?.models ?? []).map(
-                    (model) => (
-                      <option value={model} key={model} />
-                    ),
-                  )}
-                </datalist>
               </Field>
               <div className="modal-actions">
                 <Button type="button" variant="secondary" onClick={() => setModal(null)}>
@@ -695,19 +689,12 @@ export function ProvidersPage() {
               label="默认模型（可选）"
               hint="请求未传 model 时使用；留空则要求调用方指定模型。"
             >
-              <Input
+              <ComboboxInput
                 value={defaultModel}
-                list={`provider-models-${editingProvider.id}`}
+                options={editingProvider.models}
                 onChange={(event) => setDefaultModel(event.target.value)}
                 placeholder="Request model"
               />
-              {editingProvider.models.length ? (
-                <datalist id={`provider-models-${editingProvider.id}`}>
-                  {editingProvider.models.map((model) => (
-                    <option value={model} key={model} />
-                  ))}
-                </datalist>
-              ) : null}
             </Field>
 
             {editingProvider.authType === 'api_key' ? (

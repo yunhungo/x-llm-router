@@ -62,7 +62,6 @@ interface KeyMiddlewareMetadata {
 interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
 }
 
 interface WorkerReply {
@@ -73,9 +72,6 @@ interface WorkerReply {
   level?: KeyMiddlewareLogLevel;
   values?: string[];
 }
-
-const HOOK_TIMEOUT_MS = 1_000;
-const INIT_TIMEOUT_MS = 1_000;
 
 const WORKER_SOURCE = String.raw`
 const { parentPort } = require('node:worker_threads');
@@ -175,7 +171,7 @@ function initialize(code, nextMetadata) {
     code +
     '\nreturn { onRequest, onResponse };\n})();';
   const script = new vm.Script(wrapped, { filename: 'api-key-middleware.js' });
-  script.runInContext(context, { timeout: 250 });
+  script.runInContext(context);
   hooks = context.__hooks;
   asyncHook('onRequest');
   asyncHook('onResponse');
@@ -187,7 +183,7 @@ async function runHook(name, payload) {
     'globalThis.__result = globalThis.__hooks.' + name + '(globalThis.__ctx);',
     { filename: 'api-key-middleware-' + name + '.js' },
   );
-  call.runInContext(context, { timeout: 250 });
+  call.runInContext(context);
   const returned = await context.__result;
   const target = returned === undefined
     ? context.__ctx[name === 'onRequest' ? 'request' : 'response']
@@ -309,7 +305,7 @@ export class KeyMiddlewareSession {
         this.fail(middlewareError(`API Key 中间件 Worker 异常退出（${codeValue}）。`));
       }
     });
-    this.initialized = this.call({ type: 'init', code, metadata }, INIT_TIMEOUT_MS);
+    this.initialized = this.call({ type: 'init', code, metadata });
   }
 
   async ready(): Promise<void> {
@@ -320,7 +316,7 @@ export class KeyMiddlewareSession {
     await this.ready();
     try {
       return normalizeRequest(
-        await this.call({ type: 'run', hook: 'onRequest', payload: { request } }, HOOK_TIMEOUT_MS),
+        await this.call({ type: 'run', hook: 'onRequest', payload: { request } }),
       );
     } catch (error) {
       throw middlewareError(
@@ -334,10 +330,7 @@ export class KeyMiddlewareSession {
     await this.ready();
     try {
       return normalizeResponse(
-        await this.call(
-          { type: 'run', hook: 'onResponse', payload: { response } },
-          HOOK_TIMEOUT_MS,
-        ),
+        await this.call({ type: 'run', hook: 'onResponse', payload: { response } }),
       );
     } catch (error) {
       throw middlewareError(
@@ -351,26 +344,18 @@ export class KeyMiddlewareSession {
     if (this.disposed) return;
     this.disposed = true;
     for (const call of this.pending.values()) {
-      clearTimeout(call.timer);
       call.reject(middlewareError('API Key 中间件 Worker 已关闭。'));
     }
     this.pending.clear();
     await this.worker.terminate();
   }
 
-  private call(payload: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  private call(payload: Record<string, unknown>): Promise<unknown> {
     if (this.disposed) return Promise.reject(middlewareError('API Key 中间件 Worker 已关闭。'));
     if (this.failure) return Promise.reject(this.failure);
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        const error = middlewareError(`API Key 中间件执行超过 ${timeoutMs}ms，已终止。`);
-        this.failure = error;
-        reject(error);
-        void this.worker.terminate();
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject });
       this.worker.postMessage({ id, ...payload });
     });
   }
@@ -384,7 +369,6 @@ export class KeyMiddlewareSession {
     const call = this.pending.get(message.id);
     if (!call) return;
     this.pending.delete(message.id);
-    clearTimeout(call.timer);
     if (message.type === 'error') {
       call.reject(
         middlewareError(
@@ -403,7 +387,6 @@ export class KeyMiddlewareSession {
         : middlewareError(reason instanceof Error ? reason.message : String(reason), reason);
     this.failure = error;
     for (const call of this.pending.values()) {
-      clearTimeout(call.timer);
       call.reject(error);
     }
     this.pending.clear();

@@ -8,7 +8,6 @@ import {
   analyticsModelOptions,
   detailTabSearchParams,
   modelIdentity,
-  priceModelSuggestions,
   parseDetailTab,
   parseModelIdentity,
 } from './key-detail';
@@ -103,27 +102,5 @@ describe('key detail model filter', () => {
     );
 
     expect(options).toEqual([]);
-  });
-
-  it('offers unique synced models for the selected price provider', () => {
-    const providers = [
-      {
-        provider: 'openai',
-        defaultModel: 'gpt-default',
-        models: ['gpt-default', 'gpt-mini'],
-      },
-      {
-        provider: 'deepseek',
-        defaultModel: null,
-        models: ['deepseek-chat'],
-      },
-    ] as never;
-
-    expect(priceModelSuggestions(providers, 'openai')).toEqual(['gpt-default', 'gpt-mini']);
-    expect(priceModelSuggestions(providers, '*')).toEqual([
-      'deepseek-chat',
-      'gpt-default',
-      'gpt-mini',
-    ]);
   });
 });

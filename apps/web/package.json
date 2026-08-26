@@ -23,7 +23,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "recharts": "3.10.1"
+    "recharts": "3.10.1",
+    "@x-router/contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

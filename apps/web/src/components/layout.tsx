@@ -4,6 +4,7 @@ import {
   Cable,
   ChartNoAxesCombined,
   ChevronLeft,
+  CircleDollarSign,
   KeyRound,
   LogOut,
   Menu,
@@ -21,7 +22,8 @@ const navigation = [
   { to: '/providers', label: '上游连接', icon: Cable },
   { to: '/keys', label: 'API Keys', icon: KeyRound },
   { to: '/usage', label: '调用记录', icon: Activity },
-  { to: '/settings', label: '平台设置', icon: Settings },
+  { to: '/settings/model-pricing', label: '模型价格', icon: CircleDollarSign },
+  { to: '/settings', label: '平台设置', icon: Settings, end: true },
 ];
 
 export function AppLayout({

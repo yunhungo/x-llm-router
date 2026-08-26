@@ -76,25 +76,29 @@ describe('API Key middleware', () => {
     }
   });
 
-  it('terminates middleware that never settles', async () => {
+  it('allows middleware hooks to run longer than the former one-second limit', async () => {
     const session = await createKeyMiddlewareSession({
       metadata,
       code: `
-        async function onRequest() { await new Promise(() => {}); }
+        async function onRequest(ctx) {
+          const startedAt = Date.now();
+          while (Date.now() - startedAt < 1_050) {}
+          ctx.request.body.completed = true;
+          return ctx.request;
+        }
         async function onResponse(ctx) { return ctx.response; }
       `,
     });
 
     try {
-      await expect(
-        session.onRequest({
-          method: 'POST',
-          url: 'https://router.example/v1/responses',
-          headers: {},
-          body: {},
-          upstreamHeaders: {},
-        }),
-      ).rejects.toThrow(/超过 1000ms/);
+      const request = await session.onRequest({
+        method: 'POST',
+        url: 'https://router.example/v1/responses',
+        headers: {},
+        body: {},
+        upstreamHeaders: {},
+      });
+      expect(request.body).toMatchObject({ completed: true });
     } finally {
       await session.dispose();
     }

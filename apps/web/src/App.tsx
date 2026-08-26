@@ -1,17 +1,35 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { api } from './api';
 import { BrandMark } from './components/brand-mark';
 import { AppLayout } from './components/layout';
-import { DashboardPage } from './pages/dashboard';
-import { KeyDetailPage } from './pages/key-detail';
-import { KeysPage } from './pages/keys';
 import { LoginPage } from './pages/login';
-import { ProvidersPage } from './pages/providers';
-import { SettingsPage } from './pages/settings';
-import { UsagePage } from './pages/usage';
 import type { User } from './types';
+
+const DashboardPage = lazy(() =>
+  import('./pages/dashboard').then((module) => ({ default: module.DashboardPage })),
+);
+const ProvidersPage = lazy(() =>
+  import('./pages/providers').then((module) => ({ default: module.ProvidersPage })),
+);
+const KeysPage = lazy(() =>
+  import('./pages/keys').then((module) => ({ default: module.KeysPage })),
+);
+const KeyDetailPage = lazy(() =>
+  import('./pages/key-detail').then((module) => ({ default: module.KeyDetailPage })),
+);
+const UsagePage = lazy(() =>
+  import('./pages/usage').then((module) => ({ default: module.UsagePage })),
+);
+const SettingsPage = lazy(() =>
+  import('./pages/settings').then((module) => ({ default: module.SettingsPage })),
+);
+const ModelPricingPage = lazy(() =>
+  import('./features/model-pricing/model-pricing-page').then((module) => ({
+    default: module.ModelPricingPage,
+  })),
+);
 
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -44,18 +62,27 @@ export function App() {
 
   return (
     <AppLayout user={user} onLogout={() => void logout()}>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/providers" element={<ProvidersPage />} />
-        <Route path="/keys" element={<KeysPage />} />
-        <Route path="/keys/:id" element={<KeyDetailPage />} />
-        <Route path="/usage" element={<UsagePage />} />
-        <Route
-          path="/settings"
-          element={<SettingsPage user={user} onAccountChanged={() => setUser(null)} />}
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense
+        fallback={
+          <div className="page-wrap">
+            <BrandMark large />
+          </div>
+        }
+      >
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/keys" element={<KeysPage />} />
+          <Route path="/keys/:id" element={<KeyDetailPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/settings/model-pricing" element={<ModelPricingPage />} />
+          <Route
+            path="/settings"
+            element={<SettingsPage user={user} onAccountChanged={() => setUser(null)} />}
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </AppLayout>
   );
 }

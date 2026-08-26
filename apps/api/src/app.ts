@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 
 import { getConfig } from './config';
 import { getPool } from './db/client';
+import { modelPricingRoutes } from './features/model-pricing/model-pricing.routes';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { gatewayRoutes } from './routes/gateway';
@@ -112,6 +113,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminRoutes);
   await app.register(keyAnalyticsRoutes);
   await app.register(usageDetailRoutes);
+  await app.register(modelPricingRoutes);
   await app.register(gatewayRoutes);
   registerUsageDetailRetention(app);
 

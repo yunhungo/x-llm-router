@@ -1,5 +1,12 @@
 export const schemaVersion = 11;
 
+export const schemaMigrationsTableSql = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version integer PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+`;
+
 export const schemaSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version integer PRIMARY KEY,
@@ -283,11 +290,6 @@ BEGIN
   END IF;
 END $$;
 
-INSERT INTO model_prices(provider, model_pattern, input_per_million, cached_input_per_million, output_per_million)
-VALUES
-  ('*', 'gpt-5.6-sol', 5.0, 0.5, 30.0),
-  ('*', 'gpt-5.6', 5.0, 0.5, 30.0),
-  ('*', 'gpt-5.6-terra', 2.0, 0.2, 12.0),
-  ('*', 'gpt-5.6-luna', 0.2, 0.02, 1.2)
-ON CONFLICT (provider, model_pattern) DO NOTHING;
 `;
+
+export const migrations = [{ version: schemaVersion, sql: schemaSql }] as const;

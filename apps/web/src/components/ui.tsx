@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { CircleHelp, LoaderCircle, X } from 'lucide-react';
 
 export function Button({
@@ -25,6 +25,23 @@ export function Button({
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input className="input" {...props} />;
+}
+
+export function ComboboxInput({
+  options,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { options: readonly string[] }) {
+  const listId = useId();
+  return (
+    <>
+      <Input {...props} list={listId} autoComplete={props.autoComplete ?? 'off'} />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option value={option} key={option} />
+        ))}
+      </datalist>
+    </>
+  );
 }
 
 export function Field({

@@ -1,0 +1,62 @@
+.model-pricing-panel {
+  overflow: hidden;
+}
+
+.model-pricing-heading {
+  justify-content: flex-start;
+}
+
+.model-pricing-error {
+  margin-bottom: 14px;
+}
+
+.model-price-input {
+  width: 112px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 5px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  outline: none;
+}
+
+.model-price-input:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.model-pricing-table td {
+  height: 68px;
+}
+
+.model-pricing-table td:nth-child(5) {
+  color: var(--mute);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.model-price-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.model-price-row-actions .button {
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
+.model-price-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .model-price-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
