@@ -79,6 +79,45 @@ export interface UsageCallDetails {
   error?: unknown;
 }
 
+export type UsageCallStatus = 'processing' | 'thinking' | 'responding' | 'completed' | 'failed';
+
+export async function beginUsage(input: {
+  requestId: string;
+  virtualApiKeyId: string;
+  endpoint: 'responses' | 'chat.completions';
+  requestedModel: string;
+}): Promise<void> {
+  await getPool().query(
+    `INSERT INTO usage_logs(
+       id, request_id, virtual_api_key_id, endpoint, requested_model, model,
+       call_status, status_code, success
+     ) VALUES ($1,$2,$3,$4,$5,$6,'processing',NULL,NULL)
+     ON CONFLICT (request_id) DO NOTHING`,
+    [
+      randomUUID(),
+      input.requestId,
+      input.virtualApiKeyId,
+      input.endpoint,
+      input.requestedModel,
+      input.requestedModel,
+    ],
+  );
+}
+
+export async function updateUsageCallStatus(
+  requestId: string,
+  callStatus: Extract<UsageCallStatus, 'thinking' | 'responding'>,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE usage_logs
+        SET call_status = $2
+      WHERE request_id = $1
+        AND (($2 = 'thinking' AND call_status = 'processing')
+          OR ($2 = 'responding' AND call_status IN ('processing', 'thinking')))`,
+    [requestId, callStatus],
+  );
+}
+
 export function computeCost(usage: TokenUsage, price: ModelPrice): number {
   const cachedInputTokens = Math.min(usage.inputTokens, usage.cachedInputTokens);
   const uncachedInputTokens = Math.max(usage.inputTokens - cachedInputTokens, 0);
@@ -145,27 +184,50 @@ export async function recordUsage(input: {
     input.reportedCostUsd >= 0
       ? input.reportedCostUsd
       : await calculateCost(input.virtualApiKeyId, input.provider ?? '*', input.model, input.usage);
-  const usageLogId = randomUUID();
+  const newUsageLogId = randomUUID();
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    const inserted = await client.query<{ id: string }>(
+    const finalStatus: UsageCallStatus =
+      input.statusCode >= 200 && input.statusCode < 400 ? 'completed' : 'failed';
+    const recorded = await client.query<{ id: string }>(
       `INSERT INTO usage_logs(
         id, request_id, virtual_api_key_id, provider_connection_id, endpoint, requested_model, model,
-        status_code, success, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
-        total_tokens, cost_usd, latency_ms, time_to_first_token_ms,
+        call_status, status_code, success, input_tokens, cached_input_tokens, output_tokens,
+        reasoning_tokens, total_tokens, cost_usd, latency_ms, time_to_first_token_ms,
         time_to_first_visible_token_ms, error_code, metadata
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb)
-      ON CONFLICT (request_id) DO NOTHING
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb)
+      ON CONFLICT (request_id) DO UPDATE SET
+        virtual_api_key_id = EXCLUDED.virtual_api_key_id,
+        provider_connection_id = EXCLUDED.provider_connection_id,
+        endpoint = EXCLUDED.endpoint,
+        requested_model = EXCLUDED.requested_model,
+        model = EXCLUDED.model,
+        call_status = EXCLUDED.call_status,
+        status_code = EXCLUDED.status_code,
+        success = EXCLUDED.success,
+        input_tokens = EXCLUDED.input_tokens,
+        cached_input_tokens = EXCLUDED.cached_input_tokens,
+        output_tokens = EXCLUDED.output_tokens,
+        reasoning_tokens = EXCLUDED.reasoning_tokens,
+        total_tokens = EXCLUDED.total_tokens,
+        cost_usd = EXCLUDED.cost_usd,
+        latency_ms = EXCLUDED.latency_ms,
+        time_to_first_token_ms = EXCLUDED.time_to_first_token_ms,
+        time_to_first_visible_token_ms = EXCLUDED.time_to_first_visible_token_ms,
+        error_code = EXCLUDED.error_code,
+        metadata = EXCLUDED.metadata
+      WHERE usage_logs.call_status IN ('processing', 'thinking', 'responding')
       RETURNING id`,
       [
-        usageLogId,
+        newUsageLogId,
         input.requestId,
         input.virtualApiKeyId,
         input.providerConnectionId ?? null,
         input.endpoint,
         input.requestedModel,
         input.model,
+        finalStatus,
         input.statusCode,
         input.statusCode >= 200 && input.statusCode < 400,
         input.usage.inputTokens,
@@ -181,12 +243,22 @@ export async function recordUsage(input: {
         JSON.stringify(input.metadata ?? {}),
       ],
     );
-    if (inserted.rowCount && input.details) {
+    const usageLogId = recorded.rows[0]?.id;
+    if (usageLogId && input.details) {
       await client.query(
         `INSERT INTO usage_log_details(
            usage_log_id, gateway_curl, upstream_curl, client_request,
            upstream_request, upstream_response, error
-         ) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7::jsonb)`,
+         ) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7::jsonb)
+         ON CONFLICT (usage_log_id) DO UPDATE SET
+           gateway_curl = EXCLUDED.gateway_curl,
+           upstream_curl = EXCLUDED.upstream_curl,
+           client_request = EXCLUDED.client_request,
+           upstream_request = EXCLUDED.upstream_request,
+           upstream_response = EXCLUDED.upstream_response,
+           error = EXCLUDED.error,
+           captured_at = now(),
+           expires_at = now() + interval '30 days'`,
         [
           usageLogId,
           input.details.gatewayCurl,
@@ -204,12 +276,12 @@ export async function recordUsage(input: {
         ],
       );
     }
-    if (inserted.rowCount && costUsd > 0) {
+    if (usageLogId && costUsd > 0) {
       await client.query(
         `UPDATE virtual_api_keys SET spend_usd = spend_usd + $2, last_used_at = now() WHERE id = $1`,
         [input.virtualApiKeyId, costUsd],
       );
-    } else if (inserted.rowCount) {
+    } else if (usageLogId) {
       await client.query('UPDATE virtual_api_keys SET last_used_at = now() WHERE id = $1', [
         input.virtualApiKeyId,
       ]);

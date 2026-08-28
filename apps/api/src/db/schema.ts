@@ -1,4 +1,4 @@
-export const schemaVersion = 12;
+export const schemaVersion = 13;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -136,8 +136,10 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   endpoint varchar(40) NOT NULL,
   requested_model varchar(120) NOT NULL,
   model varchar(120) NOT NULL,
-  status_code integer NOT NULL,
-  success boolean NOT NULL,
+  call_status varchar(24) NOT NULL DEFAULT 'processing'
+    CHECK (call_status IN ('processing', 'thinking', 'responding', 'completed', 'failed')),
+  status_code integer,
+  success boolean,
   input_tokens integer NOT NULL DEFAULT 0,
   cached_input_tokens integer NOT NULL DEFAULT 0,
   output_tokens integer NOT NULL DEFAULT 0,
@@ -156,7 +158,25 @@ ALTER TABLE usage_logs
   ADD COLUMN IF NOT EXISTS cached_input_tokens integer NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS requested_model varchar(120),
   ADD COLUMN IF NOT EXISTS reasoning_tokens integer,
-  ADD COLUMN IF NOT EXISTS time_to_first_visible_token_ms integer;
+  ADD COLUMN IF NOT EXISTS time_to_first_visible_token_ms integer,
+  ADD COLUMN IF NOT EXISTS call_status varchar(24);
+
+UPDATE usage_logs
+   SET call_status = CASE WHEN success THEN 'completed' ELSE 'failed' END
+ WHERE call_status IS NULL;
+
+ALTER TABLE usage_logs
+  ALTER COLUMN call_status SET DEFAULT 'processing',
+  ALTER COLUMN call_status SET NOT NULL,
+  ALTER COLUMN status_code DROP NOT NULL,
+  ALTER COLUMN success DROP NOT NULL;
+
+ALTER TABLE usage_logs
+  DROP CONSTRAINT IF EXISTS usage_logs_call_status_check;
+
+ALTER TABLE usage_logs
+  ADD CONSTRAINT usage_logs_call_status_check
+  CHECK (call_status IN ('processing', 'thinking', 'responding', 'completed', 'failed'));
 
 DO $$
 BEGIN

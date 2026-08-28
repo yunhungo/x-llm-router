@@ -1,0 +1,85 @@
+.key-detail-tabs {
+  min-height: 45px;
+  margin-bottom: 18px;
+  padding: 4px;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas-soft);
+  overflow-x: auto;
+}
+
+.key-detail-tabs button {
+  min-width: 128px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.key-detail-tabs button:hover {
+  color: var(--ink);
+}
+
+.key-detail-tabs button.active {
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+}
+
+.key-detail-tabs button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+@media (max-width: 760px) {
+  .key-detail-tabs {
+    margin-inline: -2px;
+  }
+
+  .key-detail-tabs button {
+    min-width: 112px;
+  }
+}
+
+@media (max-width: 520px) {
+  .key-detail-tabs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .key-detail-tabs button {
+    min-width: 0;
+    padding: 0 5px;
+    gap: 5px;
+    font-size: 11px;
+  }
+
+  .key-detail-tabs button svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+@media (max-width: 360px) {
+  .key-detail-tabs button {
+    gap: 3px;
+    font-size: 10px;
+  }
+
+  .key-detail-tabs button svg {
+    display: none;
+  }
+}

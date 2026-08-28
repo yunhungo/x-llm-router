@@ -1,0 +1,199 @@
+.tab-toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.range-toolbar > span {
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.chart-filter-toolbar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.chart-model-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-model-filter > span,
+.chart-range-label {
+  color: var(--mute);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chart-model-filter .input {
+  width: min(320px, 52vw);
+  height: 36px;
+  padding-right: 34px;
+  font-size: 12px;
+  background-position:
+    calc(100% - 17px) 15px,
+    calc(100% - 12px) 15px;
+}
+
+.model-breakdown-panel .panel-heading > span {
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.chart-model-empty,
+.chart-model-error {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.chart-model-empty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.chart-model-error .button {
+  margin-top: 4px;
+}
+
+.key-performance-grid {
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.metric-card {
+  min-width: 0;
+  padding: 12px 16px;
+  border-right: 1px solid var(--hairline);
+}
+
+.metric-card:last-child {
+  border-right: 0;
+}
+
+.metric-card span,
+.metric-card small {
+  display: block;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.metric-card strong {
+  display: block;
+  margin: 8px 0 5px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+.metric-card small > button,
+.metric-query-links button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  cursor: pointer;
+}
+
+.metric-card small > button {
+  margin-top: 4px;
+  display: block;
+}
+
+.metric-query-links {
+  margin-top: 4px;
+  display: flex !important;
+  gap: 8px;
+}
+
+.metric-query-links button:hover,
+.metric-query-links button:focus-visible,
+.metric-card small > button:hover,
+.metric-card small > button:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+.metric-query-links button:disabled,
+.metric-card small > button:disabled {
+  color: var(--mute);
+  text-decoration: none;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.model-breakdown-panel {
+  overflow: hidden;
+}
+
+@media (max-width: 1050px) {
+  .key-performance-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .metric-card:nth-child(3) {
+    border-right: 0;
+  }
+
+  .metric-card:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--hairline);
+  }
+}
+
+@media (max-width: 820px) {
+  .chart-filter-toolbar {
+    align-items: flex-start;
+  }
+
+  .chart-model-filter {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .chart-model-filter .input {
+    min-width: 0;
+    width: auto;
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .key-performance-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .metric-card {
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .metric-card:nth-child(odd) {
+    border-right: 1px solid var(--hairline);
+  }
+
+  .metric-card:nth-child(even) {
+    border-right: 0;
+  }
+
+  .metric-card:last-child {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 0;
+  }
+}

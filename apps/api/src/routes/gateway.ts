@@ -22,7 +22,17 @@ import {
 import { getProviderRuntime, type ProviderRuntime } from '../services/providers';
 import { buildCurl, SseDetailCollector } from '../services/usage-details';
 import { requireVirtualApiKey } from '../services/virtual-keys';
-import { emptyUsage, extractTokenUsage, recordUsage, type TokenUsage } from '../services/usage';
+import {
+  beginUsage,
+  emptyUsage,
+  extractTokenUsage,
+  recordUsage,
+  updateUsageCallStatus,
+  type TokenUsage,
+  type UsageCallStatus,
+} from '../services/usage';
+
+type ActiveUsageCallStatus = Extract<UsageCallStatus, 'thinking' | 'responding'>;
 
 function errorCodeFromPayload(payload: unknown): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
@@ -287,6 +297,7 @@ async function executePiGateway(input: {
   signal: AbortSignal;
   reply: FastifyReply;
   middleware?: KeyMiddlewareSession;
+  onStatus?: (status: ActiveUsageCallStatus) => void;
 }): Promise<PiGatewayResult> {
   const prepared = preparePiRequest(
     input.endpoint,
@@ -313,6 +324,15 @@ async function executePiGateway(input: {
   let streamResponse: KeyMiddlewareResponse | undefined;
 
   for await (const event of prepared.events) {
+    if (event.type === 'thinking_start' || event.type === 'thinking_delta') {
+      input.onStatus?.('thinking');
+    } else if (
+      event.type === 'text_delta' ||
+      event.type === 'toolcall_delta' ||
+      event.type === 'toolcall_end'
+    ) {
+      input.onStatus?.('responding');
+    }
     const generated =
       event.type === 'text_delta' ||
       event.type === 'thinking_delta' ||
@@ -511,6 +531,33 @@ async function gatewayHandler(
     sessionIdSource: identity.sessionIdSource,
     ...(identity.clientName ? { clientName: identity.clientName } : {}),
   };
+  try {
+    await beginUsage({
+      requestId,
+      virtualApiKeyId: key.id,
+      endpoint,
+      requestedModel,
+    });
+  } catch (usageError) {
+    request.log.error({ err: usageError, requestId }, 'Failed to start gateway usage record');
+  }
+  let activeCallStatus: Extract<UsageCallStatus, 'processing' | ActiveUsageCallStatus> =
+    'processing';
+  const advanceCallStatus = (nextStatus: ActiveUsageCallStatus) => {
+    const rank: Record<Extract<UsageCallStatus, 'processing' | ActiveUsageCallStatus>, number> = {
+      processing: 0,
+      thinking: 1,
+      responding: 2,
+    };
+    if (rank[nextStatus] <= rank[activeCallStatus]) return;
+    activeCallStatus = nextStatus;
+    void updateUsageCallStatus(requestId, nextStatus).catch((usageError: unknown) => {
+      request.log.error(
+        { err: usageError, requestId, callStatus: nextStatus },
+        'Failed to update gateway usage status',
+      );
+    });
+  };
 
   const observation = propagateAttributes(
     {
@@ -611,6 +658,7 @@ async function gatewayHandler(
         signal: abortController.signal,
         reply,
         ...(middlewareSession ? { middleware: middlewareSession } : {}),
+        onStatus: advanceCallStatus,
       });
       model = piResult.model;
       statusCode = piResult.statusCode;
@@ -709,6 +757,8 @@ async function gatewayHandler(
             const clientChunks = bridge.feed(value);
             if (!firstTokenAt && bridge.hasGeneratedOutput) firstTokenAt = Date.now();
             if (!firstVisibleTokenAt && bridge.hasVisibleOutput) firstVisibleTokenAt = Date.now();
+            if (bridge.hasVisibleOutput) advanceCallStatus('responding');
+            else if (bridge.hasGeneratedOutput) advanceCallStatus('thinking');
             if (prepared.clientWantsStream) {
               for (const chunk of clientChunks) {
                 await writeResponseChunk({
@@ -775,6 +825,7 @@ async function gatewayHandler(
           statusCode = outgoing.status;
         }
       } else {
+        advanceCallStatus('responding');
         const text = await upstream.text();
         let payload: unknown;
         try {

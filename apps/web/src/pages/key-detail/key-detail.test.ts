@@ -10,7 +10,7 @@ import {
   modelIdentity,
   parseDetailTab,
   parseModelIdentity,
-} from './index';
+} from './key-detail-model';
 
 describe('key detail tab URL state', () => {
   it('restores valid tabs and falls back to overview for invalid values', () => {

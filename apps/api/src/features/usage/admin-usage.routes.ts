@@ -17,7 +17,9 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
                 COALESCE(sum(output_tokens), 0)::int AS "outputTokens",
                 COALESCE(sum(cost_usd), 0)::float8 AS "costUsd",
                 COALESCE(avg(latency_ms), 0)::int AS "averageLatencyMs"
-           FROM usage_logs WHERE created_at >= now() - interval '24 hours'`,
+           FROM usage_logs
+          WHERE created_at >= now() - interval '24 hours'
+            AND call_status IN ('completed', 'failed')`,
       ),
       getPool().query(
         `WITH days AS (
@@ -27,13 +29,17 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
                 count(u.id)::int AS calls,
                 COALESCE(sum(u.total_tokens), 0)::int AS tokens,
                 COALESCE(sum(u.cost_usd), 0)::float8 AS "costUsd"
-           FROM days LEFT JOIN usage_logs u ON u.created_at >= days.day AND u.created_at < days.day + interval '1 day'
+           FROM days LEFT JOIN usage_logs u ON u.created_at >= days.day
+            AND u.created_at < days.day + interval '1 day'
+            AND u.call_status IN ('completed', 'failed')
           GROUP BY days.day ORDER BY days.day`,
       ),
       getPool().query(
         `SELECT model, count(*)::int AS calls, COALESCE(sum(total_tokens), 0)::int AS tokens,
                 COALESCE(sum(cost_usd), 0)::float8 AS "costUsd"
-           FROM usage_logs WHERE created_at >= now() - interval '30 days'
+           FROM usage_logs
+          WHERE created_at >= now() - interval '30 days'
+            AND call_status IN ('completed', 'failed')
           GROUP BY model ORDER BY calls DESC LIMIT 8`,
       ),
     ]);
@@ -44,7 +50,8 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
     const query = usageLogQuerySchema.parse(request.query);
     const result = await getPool().query(
       `SELECT u.id, u.request_id AS "requestId", u.endpoint,
-              u.requested_model AS "requestedModel", u.model, u.status_code AS "statusCode",
+              u.requested_model AS "requestedModel", u.model,
+              u.call_status AS "callStatus", u.status_code AS "statusCode",
               u.success, u.input_tokens AS "inputTokens",
               u.cached_input_tokens AS "cachedInputTokens", u.output_tokens AS "outputTokens",
               u.reasoning_tokens AS "reasoningTokens",

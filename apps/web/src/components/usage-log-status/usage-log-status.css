@@ -1,0 +1,18 @@
+.usage-status-spinner {
+  margin-right: 4px;
+  animation: usage-status-spin 0.9s linear infinite;
+}
+
+.usage-log-row-active {
+  cursor: default;
+}
+
+.usage-log-row-active td {
+  background: color-mix(in srgb, var(--info-bg) 38%, transparent);
+}
+
+@keyframes usage-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

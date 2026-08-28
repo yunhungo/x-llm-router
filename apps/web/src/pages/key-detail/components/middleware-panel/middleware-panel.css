@@ -1,0 +1,57 @@
+.middleware-panel {
+  overflow: hidden;
+}
+
+.middleware-editor-frame {
+  margin: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--canvas);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.middleware-editor-toolbar {
+  min-height: 48px;
+  padding: 7px 8px 7px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas-soft);
+}
+
+.middleware-editor-toolbar .button {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.middleware-editor-status {
+  min-width: 0;
+  color: var(--mute);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.middleware-saved-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green);
+}
+
+.middleware-editor-empty {
+  min-height: 560px;
+  display: grid;
+  place-items: center;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.middleware-error {
+  margin: 14px 0 0;
+}

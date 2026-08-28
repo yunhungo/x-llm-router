@@ -6,3 +6,13 @@
 .usage-key-link:hover {
   text-decoration: underline;
 }
+
+.usage-refresh-error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 7px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 12px;
+}

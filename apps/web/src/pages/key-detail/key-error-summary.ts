@@ -14,7 +14,7 @@ export function groupKeyErrors(
   const logsByCode = new Map<string, KeyUsageLog[]>();
 
   for (const log of logs) {
-    if (log.success) continue;
+    if (log.success !== false) continue;
     const code = log.errorCode ?? String(log.statusCode);
     const matchedLogs = logsByCode.get(code) ?? [];
     if (matchedLogs.length < visibleLimit) matchedLogs.push(log);

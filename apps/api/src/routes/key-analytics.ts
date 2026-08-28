@@ -94,9 +94,10 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       pool.query(
         `WITH scope AS (
            SELECT u.*
-             FROM usage_logs u
+            FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
             WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND u.call_status IN ('completed', 'failed')
               AND ($3::text IS NULL OR u.model = $3::text)
               AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          ), per_minute AS (
@@ -167,6 +168,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
             WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND u.call_status IN ('completed', 'failed')
               AND ($3::text IS NULL OR u.model = $3::text)
               AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          )
@@ -217,6 +219,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
             WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+              AND u.call_status IN ('completed', 'failed')
               AND ($3::text IS NULL OR u.model = $3::text)
               AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
          )
@@ -255,6 +258,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND u.call_status IN ('completed', 'failed')
             AND ($3::text IS NULL OR u.model = $3::text)
             AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
           GROUP BY u.model, p.provider ORDER BY calls DESC, u.model`,
@@ -268,6 +272,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND u.call_status IN ('completed', 'failed')
             AND ($3::text IS NULL OR u.model = $3::text)
             AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
           GROUP BY u.endpoint ORDER BY calls DESC`,
@@ -278,6 +283,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
            FROM usage_logs u
            LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
           WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
+            AND u.call_status IN ('completed', 'failed')
             AND ($3::text IS NULL OR u.model = $3::text)
             AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
             AND NOT u.success
@@ -287,7 +293,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       pool.query(
         `SELECT u.id, u.request_id AS "requestId", u.endpoint,
                 u.requested_model AS "requestedModel", u.model,
-                u.status_code AS "statusCode", u.success,
+                u.call_status AS "callStatus", u.status_code AS "statusCode", u.success,
                 u.input_tokens AS "inputTokens",
                 u.cached_input_tokens AS "cachedInputTokens",
                 u.output_tokens AS "outputTokens", u.reasoning_tokens AS "reasoningTokens",
@@ -436,7 +442,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
        )
        SELECT f.id, f.request_id AS "requestId", f.endpoint,
               f.requested_model AS "requestedModel", f.model,
-              f.status_code AS "statusCode", f.success,
+              f.call_status AS "callStatus", f.status_code AS "statusCode", f.success,
               f.input_tokens AS "inputTokens", f.cached_input_tokens AS "cachedInputTokens",
               f.output_tokens AS "outputTokens", f.reasoning_tokens AS "reasoningTokens",
               CASE WHEN f.reasoning_tokens IS NULL THEN NULL

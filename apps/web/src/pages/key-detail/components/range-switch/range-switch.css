@@ -1,0 +1,29 @@
+.range-switch {
+  height: 36px;
+  padding: 3px;
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--canvas);
+}
+
+.range-switch button {
+  min-width: 42px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mute);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.range-switch button:hover {
+  color: var(--ink);
+}
+
+.range-switch button.active {
+  background: var(--ink);
+  color: var(--on-solid);
+}

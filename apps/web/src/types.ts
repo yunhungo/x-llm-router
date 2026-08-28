@@ -99,8 +99,9 @@ export interface UsageLog {
   endpoint: string;
   requestedModel: string;
   model: string;
-  statusCode: number;
-  success: boolean;
+  callStatus: 'processing' | 'thinking' | 'responding' | 'completed' | 'failed';
+  statusCode: number | null;
+  success: boolean | null;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;

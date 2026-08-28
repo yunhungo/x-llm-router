@@ -10,6 +10,7 @@ function usageLog(overrides: Partial<KeyUsageLog>): KeyUsageLog {
     endpoint: 'responses',
     requestedModel: 'gpt-5',
     model: 'gpt-5',
+    callStatus: 'failed',
     statusCode: 500,
     success: false,
     inputTokens: 0,
@@ -33,6 +34,15 @@ function usageLog(overrides: Partial<KeyUsageLog>): KeyUsageLog {
 }
 
 describe('key error summary', () => {
+  it('does not treat an in-progress call as a failed call', () => {
+    const groups = groupKeyErrors(
+      [{ code: '500', calls: 1 }],
+      [usageLog({ callStatus: 'thinking', statusCode: null, success: null })],
+    );
+
+    expect(groups[0]?.logs).toEqual([]);
+  });
+
   it('matches failed logs by error code first and falls back to status code', () => {
     const groups = groupKeyErrors(
       [
