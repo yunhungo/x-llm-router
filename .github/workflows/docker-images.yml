@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -46,6 +48,8 @@ jobs:
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v6
+        env:
+          DOCKER_METADATA_SHORT_SHA_LENGTH: 7
         with:
           images: |
             ghcr.io/${{ github.repository }}
@@ -71,3 +75,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=x-llm-router
           cache-to: type=gha,mode=max,scope=x-llm-router
+
+      - name: Report runtime image layer delta
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          CURRENT_SHA: ${{ github.sha }}
+          IMAGE_REPOSITORY: ${{ vars.DOCKERHUB_USERNAME || github.repository_owner }}/x-llm-router
+          PREVIOUS_SHA: ${{ github.event.before }}
+        run: |
+          layer_budget_mib=5
+          if [[ ! "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || [[ "$PREVIOUS_SHA" =~ ^0+$ ]] \
+            || ! git cat-file -e "${PREVIOUS_SHA}^{commit}" \
+            || ! git diff --quiet "$PREVIOUS_SHA" "$CURRENT_SHA" -- \
+              Dockerfile \
+              package.json \
+              pnpm-lock.yaml \
+              pnpm-workspace.yaml \
+              apps/api/package.json \
+              apps/web/package.json \
+              packages/contracts/package.json; then
+            layer_budget_mib=75
+          fi
+
+          node scripts/report-image-layer-delta.mjs \
+            "$IMAGE_REPOSITORY" \
+            "sha-${CURRENT_SHA:0:7}" \
+            "sha-${PREVIOUS_SHA:0:7}" \
+            "$layer_budget_mib"
