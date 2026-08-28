@@ -202,6 +202,7 @@ ALTER TABLE usage_logs
   ALTER COLUMN requested_model SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS usage_logs_created_idx ON usage_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS usage_logs_created_id_idx ON usage_logs(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS usage_logs_key_created_idx ON usage_logs(virtual_api_key_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_logs_model_created_idx ON usage_logs(model, created_at DESC);
 

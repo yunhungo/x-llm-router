@@ -7,7 +7,13 @@ import { api, ApiError } from '../../api';
 import { UsageLogDetailPanel } from '../../components/usage-log-detail-panel';
 import { isUsageLogActive, UsageLogStatusBadge } from '../../components/usage-log-status';
 import { Button, PageHeader, Skeleton } from '../../components/ui';
-import type { UsageLog } from '../../types';
+import type { UsageLog, UsageLogsPage } from '../../types';
+import {
+  appendUniqueUsageLogs,
+  calculateUsageLogBatchSize,
+  ESTIMATED_USAGE_LOG_ROW_HEIGHT,
+  shouldLoadMoreUsageLogs,
+} from './usage-pagination';
 import './usage.css';
 
 const money = new Intl.NumberFormat('en-US', {
@@ -29,44 +35,91 @@ export function UsagePage() {
   const [logs, setLogs] = useState<UsageLog[]>();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState('');
+  const [hasMore, setHasMore] = useState(true);
   const [expandedId, setExpandedId] = useState<string>();
   const loadController = useRef<AbortController | undefined>(undefined);
+  const nextCursor = useRef<string | null>(null);
+  const hasMoreRef = useRef(true);
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const load = useCallback(async (showRefreshing = true) => {
-    loadController.current?.abort();
+
+  const load = useCallback(async (mode: 'reset' | 'append' = 'reset') => {
+    if (mode === 'append' && (!hasMoreRef.current || loadController.current)) return;
+    if (mode === 'reset') loadController.current?.abort();
     const controller = new AbortController();
     loadController.current = controller;
-    if (showRefreshing) setRefreshing(true);
+    if (mode === 'reset') {
+      setRefreshing(true);
+      setLoadingMore(false);
+      setRefreshError('');
+      setLoadMoreError('');
+    } else {
+      setLoadingMore(true);
+      setLoadMoreError('');
+    }
     try {
-      const response = await api<{ logs: UsageLog[] }>('/api/admin/usage/logs?limit=100', {
+      const viewportHeight = tableContainerRef.current?.clientHeight ?? window.innerHeight;
+      const search = new URLSearchParams({
+        limit: String(calculateUsageLogBatchSize(viewportHeight)),
+      });
+      if (mode === 'append' && nextCursor.current) search.set('cursor', nextCursor.current);
+      const response = await api<UsageLogsPage>(`/api/admin/usage/logs?${search}`, {
         signal: controller.signal,
       });
-      setLogs(response.logs);
-      setRefreshError('');
+      const canLoadMore = response.hasMore && Boolean(response.nextCursor);
+      nextCursor.current = response.nextCursor;
+      hasMoreRef.current = canLoadMore;
+      setHasMore(canLoadMore);
+      if (mode === 'reset') {
+        setLogs(response.logs);
+        setExpandedId(undefined);
+        if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
+      } else {
+        setLogs((current) => appendUniqueUsageLogs(current ?? [], response.logs));
+      }
     } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
-        setRefreshError(caught instanceof ApiError ? caught.message : '调用记录刷新失败。');
+        const message = caught instanceof ApiError ? caught.message : '调用记录加载失败。';
+        if (mode === 'reset') setRefreshError(message);
+        else setLoadMoreError(message);
       }
     } finally {
       if (loadController.current === controller) {
         loadController.current = undefined;
-        if (showRefreshing) setRefreshing(false);
+        if (mode === 'reset') setRefreshing(false);
+        else setLoadingMore(false);
       }
     }
   }, []);
+
+  const handleTableScroll = useCallback(() => {
+    const container = tableContainerRef.current;
+    if (!container || loadingMore || loadMoreError || !hasMore) return;
+    if (
+      shouldLoadMoreUsageLogs({
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+      })
+    ) {
+      void load('append');
+    }
+  }, [hasMore, load, loadMoreError, loadingMore]);
 
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
     count: logs?.length ?? 0,
     getScrollElement: () => tableContainerRef.current,
     getItemKey: (index) => logs?.[index]?.id ?? index,
-    estimateSize: (index) => (logs?.[index]?.id === expandedId ? 420 : 68),
+    estimateSize: (index) =>
+      logs?.[index]?.id === expandedId ? 420 : ESTIMATED_USAGE_LOG_ROW_HEIGHT,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 8,
     useFlushSync: false,
   });
 
   useEffect(() => {
-    void load();
+    void load('reset');
     return () => {
       loadController.current?.abort();
     };
@@ -77,7 +130,7 @@ export function UsagePage() {
       <PageHeader
         title="调用记录"
         action={
-          <Button variant="secondary" loading={refreshing} onClick={() => void load()}>
+          <Button variant="secondary" loading={refreshing} onClick={() => void load('reset')}>
             <RefreshCcw size={14} /> 刷新
           </Button>
         }
@@ -91,7 +144,12 @@ export function UsagePage() {
         <Skeleton height={420} />
       ) : (
         <section className="panel flush-panel">
-          <div ref={tableContainerRef} className="table-wrap usage-table">
+          <div
+            ref={tableContainerRef}
+            className="table-wrap usage-table"
+            onScroll={handleTableScroll}
+            aria-busy={refreshing || loadingMore}
+          >
             <table className="usage-virtual-table">
               <thead>
                 <tr>
@@ -236,6 +294,26 @@ export function UsagePage() {
                 )}
               </tbody>
             </table>
+            {logs.length && (loadingMore || loadMoreError || !hasMore) ? (
+              <div
+                className={`usage-load-status${loadMoreError ? ' error' : ''}`}
+                role={loadMoreError ? 'alert' : 'status'}
+                aria-live={loadMoreError ? 'assertive' : 'polite'}
+              >
+                {loadingMore ? '正在加载下一批调用记录…' : null}
+                {loadMoreError ? (
+                  <>
+                    <span>{loadMoreError}</span>
+                    <Button variant="secondary" onClick={() => void load('append')}>
+                      重试
+                    </Button>
+                  </>
+                ) : null}
+                {!loadingMore && !loadMoreError && !hasMore
+                  ? `已加载全部 ${logs.length} 条调用记录。`
+                  : null}
+              </div>
+            ) : null}
           </div>
         </section>
       )}

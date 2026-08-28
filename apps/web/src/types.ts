@@ -119,6 +119,12 @@ export interface UsageLog {
   detailAvailable: boolean;
 }
 
+export interface UsageLogsPage {
+  logs: UsageLog[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
 export interface UsageCallDetail {
   id: string;
   requestId: string;

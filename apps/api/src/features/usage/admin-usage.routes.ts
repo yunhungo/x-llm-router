@@ -4,8 +4,38 @@ import { z } from 'zod';
 import { getPool } from '../../db/client';
 
 const usageLogQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).default(50),
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+  cursor: z.string().trim().min(1).max(512).optional(),
 });
+
+const usageLogCursorSchema = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+});
+
+type UsageLogCursor = z.infer<typeof usageLogCursorSchema>;
+
+interface UsageLogRow {
+  id: string;
+  createdAt: Date | string;
+  cursorCreatedAt: string;
+  [key: string]: unknown;
+}
+
+function encodeUsageLogCursor(cursor: UsageLogCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function decodeUsageLogCursor(value: string | undefined): UsageLogCursor | null | false {
+  if (!value) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown;
+    const parsed = usageLogCursorSchema.safeParse(decoded);
+    return parsed.success ? parsed.data : false;
+  } catch {
+    return false;
+  }
+}
 
 export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/usage/summary', async () => {
@@ -46,9 +76,20 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
     return { summary: summary.rows[0], series: series.rows, models: models.rows };
   });
 
-  app.get('/api/admin/usage/logs', async (request) => {
-    const query = usageLogQuerySchema.parse(request.query);
-    const result = await getPool().query(
+  app.get('/api/admin/usage/logs', async (request, reply) => {
+    const parsedQuery = usageLogQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        error: { code: 'invalid_request', message: '调用记录分页参数无效。' },
+      });
+    }
+    const cursor = decodeUsageLogCursor(parsedQuery.data.cursor);
+    if (cursor === false) {
+      return reply.code(400).send({
+        error: { code: 'invalid_cursor', message: '调用记录游标无效或已损坏。' },
+      });
+    }
+    const result = await getPool().query<UsageLogRow>(
       `SELECT u.id, u.request_id AS "requestId", u.endpoint,
               u.requested_model AS "requestedModel", u.model,
               u.call_status AS "callStatus", u.status_code AS "statusCode",
@@ -61,15 +102,34 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
               u.latency_ms AS "latencyMs", u.time_to_first_token_ms AS "timeToFirstTokenMs",
               u.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
               u.error_code AS "errorCode", u.created_at AS "createdAt",
+              to_char(
+                u.created_at AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+              ) AS "cursorCreatedAt",
               k.id AS "apiKeyId", k.name AS "apiKeyName", p.name AS "providerName",
               (d.usage_log_id IS NOT NULL) AS "detailAvailable"
          FROM usage_logs u
          LEFT JOIN virtual_api_keys k ON k.id = u.virtual_api_key_id
          LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
          LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
-        ORDER BY u.created_at DESC LIMIT $1`,
-      [query.limit],
+        WHERE $1::timestamptz IS NULL
+           OR u.created_at < $1::timestamptz
+           OR (u.created_at = $1::timestamptz AND u.id < $2::uuid)
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT $3`,
+      [cursor?.createdAt ?? null, cursor?.id ?? null, parsedQuery.data.limit + 1],
     );
-    return { logs: result.rows };
+    const hasMore = result.rows.length > parsedQuery.data.limit;
+    const pageRows = result.rows.slice(0, parsedQuery.data.limit);
+    const lastRow = pageRows.at(-1);
+    const logs = pageRows.map(({ cursorCreatedAt: _cursorCreatedAt, ...log }) => log);
+    return {
+      logs,
+      hasMore,
+      nextCursor:
+        hasMore && lastRow
+          ? encodeUsageLogCursor({ createdAt: lastRow.cursorCreatedAt, id: lastRow.id })
+          : null,
+    };
   });
 }
