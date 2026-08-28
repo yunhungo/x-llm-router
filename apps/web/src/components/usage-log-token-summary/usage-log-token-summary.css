@@ -1,0 +1,36 @@
+.usage-token-summary {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  gap: 4px;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.usage-token-primary {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 0;
+}
+
+.usage-token-primary strong {
+  display: inline;
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.usage-token-primary span,
+.usage-token-summary small {
+  color: var(--mute);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.usage-token-summary small {
+  margin: 0;
+  white-space: normal;
+}

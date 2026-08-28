@@ -25,8 +25,7 @@
   color: var(--mute);
 }
 
-.usage-filter-search:focus-within,
-.usage-time-filters label:focus-within {
+.usage-filter-search:focus-within {
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
@@ -54,38 +53,15 @@
   width: 150px;
 }
 
-.usage-time-filters {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.usage-time-filters label {
-  min-height: 36px;
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 6px;
-  background: var(--canvas);
-}
-
-.usage-time-filters span,
 .usage-filter-count {
   color: var(--mute);
   font-size: 10px;
   white-space: nowrap;
 }
 
-.usage-time-filters input {
-  width: 142px;
-  border: 0;
-  background: transparent;
-  color: var(--body);
-  font: inherit;
-  font-size: 10px;
-  outline: 0;
+.usage-filter-toolbar > .usage-range-trigger {
+  flex: 1 1 295px;
+  max-width: 360px;
 }
 
 .usage-filter-reset {
@@ -134,18 +110,9 @@
     flex-basis: 100%;
   }
 
-  .usage-time-filters {
+  .usage-filter-toolbar > .usage-range-trigger {
     width: 100%;
-  }
-
-  .usage-time-filters label {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .usage-time-filters input {
-    min-width: 0;
-    width: 100%;
+    max-width: none;
   }
 }
 

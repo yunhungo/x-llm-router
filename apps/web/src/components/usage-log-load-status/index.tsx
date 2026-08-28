@@ -4,17 +4,13 @@ import './usage-log-load-status.css';
 export function UsageLogLoadStatus({
   loading,
   error,
-  hasMore,
-  count,
   onRetry,
 }: {
   loading: boolean;
   error: string;
-  hasMore: boolean;
-  count: number;
   onRetry: () => void;
 }) {
-  if (!count || (!loading && !error && hasMore)) return null;
+  if (!loading && !error) return null;
   return (
     <div
       className={`usage-load-status${error ? ' error' : ''}`}
@@ -30,7 +26,6 @@ export function UsageLogLoadStatus({
           </Button>
         </>
       ) : null}
-      {!loading && !error && !hasMore ? `已加载全部 ${count} 条调用记录。` : null}
     </div>
   );
 }

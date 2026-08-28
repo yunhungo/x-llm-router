@@ -465,7 +465,6 @@ export function KeyDetailPage() {
           onRetry={() => void logPagination.refresh()}
           loadingMore={logPagination.loadingMore}
           loadMoreError={logPagination.loadMoreError}
-          hasMore={logPagination.hasMore}
           onRetryLoadMore={() => void logPagination.retryLoadMore()}
           scrollContainerRef={logPagination.containerRef}
           onScroll={logPagination.onScroll}

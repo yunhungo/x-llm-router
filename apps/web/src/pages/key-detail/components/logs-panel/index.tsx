@@ -6,6 +6,7 @@ import { UsageLogFilters } from '../../../../components/usage-log-filters';
 import { UsageLogDetailPanel } from '../../../../components/usage-log-detail-panel';
 import { UsageLogLoadStatus } from '../../../../components/usage-log-load-status';
 import { isUsageLogActive, UsageLogStatusBadge } from '../../../../components/usage-log-status';
+import { UsageLogTokenSummary } from '../../../../components/usage-log-token-summary';
 import { Button, Skeleton } from '../../../../components/ui';
 import type { UsageLogFiltersState } from '../../../../features/usage/usage-log-pagination';
 import { ESTIMATED_USAGE_LOG_ROW_HEIGHT } from '../../../../features/usage/usage-log-pagination';
@@ -35,7 +36,6 @@ interface LogsPanelProps {
   onRetry: () => void;
   loadingMore: boolean;
   loadMoreError: string;
-  hasMore: boolean;
   onRetryLoadMore: () => void;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   onScroll: UIEventHandler<HTMLDivElement>;
@@ -58,7 +58,6 @@ export function LogsPanel({
   onRetry,
   loadingMore,
   loadMoreError,
-  hasMore,
   onRetryLoadMore,
   scrollContainerRef,
   onScroll,
@@ -174,26 +173,16 @@ export function LogsPanel({
                             <small>{log.errorCode}</small>
                           ) : null}
                         </td>
-                        <td>
+                        <td className="usage-token-cell">
                           {active ? (
                             <>
                               —<small>Usage pending</small>
                             </>
                           ) : (
-                            <>
-                              {integer.format(log.totalTokens)}
-                              <small>
-                                {integer.format(log.inputTokens)} in ·{' '}
-                                {integer.format(log.cachedInputTokens)} cached ·{' '}
-                                {integer.format(log.outputTokens)} out
-                                {log.reasoningTokens === null
-                                  ? ''
-                                  : ` · ${integer.format(log.reasoningTokens)} reasoning`}
-                              </small>
-                            </>
+                            <UsageLogTokenSummary {...log} />
                           )}
                         </td>
-                        <td>
+                        <td className="usage-performance-cell">
                           {active ? (
                             '—'
                           ) : (
@@ -250,8 +239,6 @@ export function LogsPanel({
             <UsageLogLoadStatus
               loading={loadingMore}
               error={loadMoreError}
-              hasMore={hasMore}
-              count={logs.length}
               onRetry={onRetryLoadMore}
             />
           </div>

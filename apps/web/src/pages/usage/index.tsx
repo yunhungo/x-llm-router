@@ -7,6 +7,7 @@ import { UsageLogFilters } from '../../components/usage-log-filters';
 import { UsageLogDetailPanel } from '../../components/usage-log-detail-panel';
 import { UsageLogLoadStatus } from '../../components/usage-log-load-status';
 import { isUsageLogActive, UsageLogStatusBadge } from '../../components/usage-log-status';
+import { UsageLogTokenSummary } from '../../components/usage-log-token-summary';
 import { Button, PageHeader, Skeleton } from '../../components/ui';
 import {
   createDefaultUsageLogFilters,
@@ -175,25 +176,16 @@ export function UsagePage() {
                             'Deleted key'
                           )}
                         </td>
-                        <td>
+                        <td className="usage-token-cell">
                           {active ? (
                             <>
                               —<small>Usage pending</small>
                             </>
                           ) : (
-                            <>
-                              {log.totalTokens.toLocaleString()}
-                              <small>
-                                {log.inputTokens} in · {log.cachedInputTokens} cached ·{' '}
-                                {log.outputTokens} out
-                                {log.reasoningTokens === null
-                                  ? ''
-                                  : ` · ${log.reasoningTokens} reasoning`}
-                              </small>
-                            </>
+                            <UsageLogTokenSummary {...log} />
                           )}
                         </td>
-                        <td>
+                        <td className="usage-performance-cell">
                           {active
                             ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
                             : `${log.latencyMs.toLocaleString()} ms`}
@@ -254,8 +246,6 @@ export function UsagePage() {
             <UsageLogLoadStatus
               loading={pagination.loadingMore}
               error={pagination.loadMoreError}
-              hasMore={pagination.hasMore}
-              count={logs.length}
               onRetry={() => void pagination.retryLoadMore()}
             />
           </div>

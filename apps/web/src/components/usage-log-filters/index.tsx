@@ -4,7 +4,7 @@ import type {
   UsageLogFiltersState,
   UsageLogStatusFilter,
 } from '../../features/usage/usage-log-pagination';
-import { datetimeLocalIso, datetimeLocalValue } from '../../features/usage/usage-log-pagination';
+import { UsageLogRangePicker } from '../usage-log-range-picker';
 import './usage-log-filters.css';
 
 function endpointLabel(endpoint: string) {
@@ -84,32 +84,10 @@ export function UsageLogFilters({
             </option>
           ))}
         </select>
-        <div className="usage-time-filters">
-          <label>
-            <span>从</span>
-            <input
-              type="datetime-local"
-              step="60"
-              value={datetimeLocalValue(filters.from)}
-              onChange={(event) =>
-                onChange({ ...filters, from: datetimeLocalIso(event.target.value) })
-              }
-              aria-label="调用记录开始时间"
-            />
-          </label>
-          <label>
-            <span>至</span>
-            <input
-              type="datetime-local"
-              step="60"
-              value={datetimeLocalValue(filters.to)}
-              onChange={(event) =>
-                onChange({ ...filters, to: datetimeLocalIso(event.target.value) })
-              }
-              aria-label="调用记录结束时间"
-            />
-          </label>
-        </div>
+        <UsageLogRangePicker
+          value={{ from: filters.from, to: filters.to }}
+          onApply={(range) => onChange({ ...filters, ...range })}
+        />
         <button type="button" className="usage-filter-reset" onClick={onReset}>
           <X size={13} /> 重置
         </button>
