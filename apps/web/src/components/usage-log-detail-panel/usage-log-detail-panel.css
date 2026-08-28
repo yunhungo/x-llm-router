@@ -99,11 +99,20 @@
   font-size: 11px;
   line-height: 18px;
 }
-.usage-detail-copy {
+.usage-detail-code-wrap.has-multiple-copy-actions pre {
+  padding-top: 56px;
+}
+.usage-detail-copy-actions {
   position: absolute;
   z-index: 1;
   top: 10px;
   right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.usage-detail-copy {
   height: 30px;
   padding: 0 9px;
   display: flex;
@@ -115,6 +124,10 @@
   color: #bbb;
   font-size: 10px;
   cursor: pointer;
+}
+.usage-detail-copy:hover {
+  border-color: #555;
+  color: #eee;
 }
 .usage-detail-models {
   min-height: 39px;
