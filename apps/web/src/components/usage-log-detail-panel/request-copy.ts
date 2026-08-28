@@ -1,23 +1,21 @@
-const ROUTER_API_TOKEN = '<ROUTER_API_KEY>';
-
-interface ClientRequestSnapshot {
+interface RequestSnapshot {
   method?: unknown;
   url?: unknown;
   body?: unknown;
 }
 
-function clientRequestSnapshot(value: unknown): ClientRequestSnapshot {
+function requestSnapshot(value: unknown): RequestSnapshot {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as ClientRequestSnapshot)
+    ? (value as RequestSnapshot)
     : {};
 }
 
-export function clientRequestJson(value: unknown): string {
+export function requestJson(value: unknown): string {
   return value === null || value === undefined ? '暂无数据' : JSON.stringify(value, null, 2);
 }
 
-export function clientRequestJavaScript(value: unknown): string {
-  const request = clientRequestSnapshot(value);
+export function requestJavaScript(value: unknown, apiToken: string): string {
+  const request = requestSnapshot(value);
   const method =
     typeof request.method === 'string' && request.method.trim()
       ? request.method.trim().toUpperCase()
@@ -33,7 +31,7 @@ export function clientRequestJavaScript(value: unknown): string {
       : 'application/json';
 
   return [
-    `const apiToken = '${ROUTER_API_TOKEN}';`,
+    `const apiToken = ${JSON.stringify(apiToken)};`,
     '',
     `const response = await fetch(${JSON.stringify(url)}, {`,
     `  method: ${JSON.stringify(method)},`,
@@ -48,6 +46,12 @@ export function clientRequestJavaScript(value: unknown): string {
       .join('\n')}),`,
     '});',
     '',
-    "if (!response.ok) throw new Error(`Request failed: ${response.status}`);",
+    'if (!response.ok) throw new Error(`Request failed: ${response.status}`);',
   ].join('\n');
+}
+
+export const clientRequestJson = requestJson;
+
+export function clientRequestJavaScript(value: unknown): string {
+  return requestJavaScript(value, '<ROUTER_API_KEY>');
 }

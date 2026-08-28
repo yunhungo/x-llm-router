@@ -5,9 +5,17 @@ import { getPool } from '../db/client';
 import { requireAdmin } from '../lib/admin-auth';
 import { decryptJson } from '../lib/crypto';
 import { mergeStoredSseSnapshot } from '../services/sse';
-import { buildStoredRequestCurl, prepareStoredRequest } from '../services/usage-details';
+import {
+  buildStoredRequestCurl,
+  buildStoredRequestJavaScript,
+  prepareStoredRequest,
+} from '../services/usage-details';
 
 const paramsSchema = z.object({ id: z.string().uuid() });
+const copyQuerySchema = z.object({
+  scope: z.enum(['client', 'upstream']),
+  format: z.enum(['curl', 'javascript']),
+});
 
 export async function usageDetailRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAdmin);
@@ -109,5 +117,55 @@ export async function usageDetailRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return { curl };
+  });
+
+  app.get('/api/admin/usage/logs/:id/detail/copy-with-key', async (request, reply) => {
+    const parsedParams = paramsSchema.safeParse(request.params);
+    const parsedQuery = copyQuerySchema.safeParse(request.query);
+    if (!parsedParams.success || !parsedQuery.success) {
+      return reply.code(400).send({
+        error: { code: 'invalid_request', message: '复制请求参数无效。' },
+      });
+    }
+    const result = await getPool().query(
+      `SELECT u.request_id AS "requestId",
+              d.client_request AS "clientRequest",
+              d.upstream_request AS "upstreamRequest",
+              d.router_api_token_ciphertext AS "routerApiTokenCiphertext",
+              d.upstream_api_token_ciphertext AS "upstreamApiTokenCiphertext"
+         FROM usage_logs u
+         JOIN usage_log_details d
+           ON d.usage_log_id = u.id AND d.expires_at > now()
+        WHERE u.id = $1`,
+      [parsedParams.data.id],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: '调用明细不存在或已过期。' },
+      });
+    }
+    const { scope, format } = parsedQuery.data;
+    const ciphertext =
+      scope === 'client' ? row.routerApiTokenCiphertext : row.upstreamApiTokenCiphertext;
+    if (!ciphertext) {
+      return reply.code(409).send({
+        error: { code: 'credential_unavailable', message: '该历史调用未保留 API Key。' },
+      });
+    }
+    const storedRequest = prepareStoredRequest(
+      scope === 'client' ? row.clientRequest : row.upstreamRequest,
+    );
+    const apiToken = decryptJson<string>(ciphertext);
+    const content =
+      format === 'curl'
+        ? buildStoredRequestCurl(storedRequest, apiToken, row.requestId)
+        : buildStoredRequestJavaScript(storedRequest, apiToken);
+    if (!content) {
+      return reply.code(409).send({
+        error: { code: 'request_unavailable', message: '该调用无法生成请求代码。' },
+      });
+    }
+    return { content };
   });
 }

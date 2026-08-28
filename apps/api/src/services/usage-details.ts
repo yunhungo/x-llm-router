@@ -243,6 +243,45 @@ export function buildStoredRequestCurl(
   });
 }
 
+export function buildStoredRequestJavaScript(
+  value: unknown,
+  authorization: string,
+): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const request = value as Record<string, unknown>;
+  if (typeof request.url !== 'string' || !request.url) return undefined;
+  const method =
+    typeof request.method === 'string' && request.method.trim()
+      ? request.method.trim().toUpperCase()
+      : 'POST';
+  const body = redactSensitive(request.body ?? {});
+  const bodyRecord =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : undefined;
+  const accept = bodyRecord?.stream === true ? 'text/event-stream' : 'application/json';
+  const bodySource = JSON.stringify(body, null, 2)
+    .split('\n')
+    .map((line, index) => (index === 0 ? line : `  ${line}`))
+    .join('\n');
+
+  return [
+    `const apiToken = ${JSON.stringify(authorization)};`,
+    '',
+    `const response = await fetch(${JSON.stringify(request.url)}, {`,
+    `  method: ${JSON.stringify(method)},`,
+    '  headers: {',
+    "    'Authorization': \`Bearer \${apiToken}\`,",
+    "    'Content-Type': 'application/json',",
+    `    'Accept': ${JSON.stringify(accept)},`,
+    '  },',
+    `  body: JSON.stringify(${bodySource}),`,
+    '});',
+    '',
+    'if (!response.ok) throw new Error(`Request failed: ${response.status}`);',
+  ].join('\n');
+}
+
 export class SseDetailCollector {
   private readonly decoder = new TextDecoder();
   private buffer = '';

@@ -890,6 +890,12 @@ async function gatewayHandler(
         details: {
           gatewayCurl,
           ...(request.routerApiToken ? { routerApiToken: request.routerApiToken } : {}),
+          ...(provider
+            ? {
+                upstreamApiToken:
+                  provider.apiKey ?? provider.authorization.replace(/^Bearer\s+/i, ''),
+              }
+            : {}),
           ...(upstreamCurl ? { upstreamCurl } : {}),
           clientRequest,
           ...(upstreamRequest !== undefined ? { upstreamRequest } : {}),

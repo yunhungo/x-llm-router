@@ -31,6 +31,19 @@
   min-width: 0;
 }
 
+.key-detail-page-fill {
+  min-height: 100dvh;
+  padding-bottom: 42px;
+  display: flex;
+  flex-direction: column;
+}
+
+.key-detail-page-fill .middleware-tab-panel {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+
 .compact-panel-heading {
   min-height: 52px;
   padding: 12px 17px;
@@ -65,6 +78,11 @@
 }
 
 @media (max-width: 760px) {
+  .key-detail-page-fill {
+    min-height: calc(100dvh - 56px);
+    padding-bottom: 34px;
+  }
+
   .key-detail-page .page-header {
     gap: 12px;
   }

@@ -418,7 +418,9 @@ export function KeyDetailPage() {
   };
 
   return (
-    <div className="page-wrap key-detail-page">
+    <div
+      className={`page-wrap key-detail-page${activeTab === 'middleware' ? ' key-detail-page-fill' : ''}`}
+    >
       <PageHeader
         title={key.name}
         action={

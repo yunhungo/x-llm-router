@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, RefreshCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -30,6 +31,7 @@ export function UsagePage() {
   const [refreshError, setRefreshError] = useState('');
   const [expandedId, setExpandedId] = useState<string>();
   const loadController = useRef<AbortController | undefined>(undefined);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const load = useCallback(async (showRefreshing = true) => {
     loadController.current?.abort();
     const controller = new AbortController();
@@ -52,6 +54,17 @@ export function UsagePage() {
       }
     }
   }, []);
+
+  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
+    count: logs?.length ?? 0,
+    getScrollElement: () => tableContainerRef.current,
+    getItemKey: (index) => logs?.[index]?.id ?? index,
+    estimateSize: (index) => (logs?.[index]?.id === expandedId ? 420 : 68),
+    measureElement: (element) => element.getBoundingClientRect().height,
+    overscan: 8,
+    useFlushSync: false,
+  });
+
   useEffect(() => {
     void load();
     const interval = window.setInterval(() => {
@@ -82,8 +95,8 @@ export function UsagePage() {
         <Skeleton height={420} />
       ) : (
         <section className="panel flush-panel">
-          <div className="table-wrap usage-table">
-            <table>
+          <div ref={tableContainerRef} className="table-wrap usage-table">
+            <table className="usage-virtual-table">
               <thead>
                 <tr>
                   <th>状态</th>
@@ -97,122 +110,125 @@ export function UsagePage() {
                   <th />
                 </tr>
               </thead>
-              <tbody>
+              <tbody
+                style={logs.length ? { height: `${rowVirtualizer.getTotalSize()}px` } : undefined}
+              >
                 {logs.length ? (
-                  logs.map((log) => {
+                  rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const log = logs[virtualRow.index]!;
                     const active = isUsageLogActive(log.callStatus);
                     return (
-                      <Fragment key={log.id}>
-                        <tr
-                          className={`usage-log-row${active ? ' usage-log-row-active' : ''}`}
-                          aria-expanded={active ? undefined : expandedId === log.id}
-                          onClick={() => {
-                            if (!active) {
-                              setExpandedId((current) => (current === log.id ? undefined : log.id));
-                            }
-                          }}
-                        >
-                          <td>
-                            <UsageLogStatusBadge
-                              callStatus={log.callStatus}
-                              statusCode={log.statusCode}
-                            />
-                          </td>
-                          <td>
-                            <div className="stack-cell">
-                              <code>
-                                {log.endpoint === 'responses' ? '/responses' : '/chat/completions'}
-                              </code>
-                              <span title={log.requestId}>{log.requestId.slice(0, 14)}…</span>
-                            </div>
-                          </td>
-                          <td>
-                            <code>{log.model}</code>
-                            {log.requestedModel !== log.model ? (
-                              <small>请求 {log.requestedModel}</small>
-                            ) : null}
-                          </td>
-                          <td>
-                            {log.apiKeyId && log.apiKeyName ? (
-                              <Link
-                                className="usage-key-link"
-                                to={`/keys/${log.apiKeyId}`}
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                {log.apiKeyName}
-                              </Link>
-                            ) : (
-                              'Deleted key'
-                            )}
-                          </td>
-                          <td>
-                            {active ? (
-                              <>
-                                —<small>Usage pending</small>
-                              </>
-                            ) : (
-                              <>
-                                {log.totalTokens.toLocaleString()}
-                                <small>
-                                  {log.inputTokens} in · {log.cachedInputTokens} cached ·{' '}
-                                  {log.outputTokens} out
-                                  {log.reasoningTokens === null
-                                    ? ''
-                                    : ` · ${log.reasoningTokens} reasoning`}
-                                </small>
-                              </>
-                            )}
-                          </td>
-                          <td>
-                            {active
-                              ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
-                              : `${log.latencyMs.toLocaleString()} ms`}
-                            {active ? (
-                              <small>Elapsed</small>
-                            ) : log.timeToFirstTokenMs !== null ? (
+                      <tr
+                        key={log.id}
+                        ref={(element) => rowVirtualizer.measureElement(element)}
+                        data-index={virtualRow.index}
+                        className={`usage-log-row usage-virtual-row${active ? ' usage-log-row-active' : ''}`}
+                        aria-expanded={active ? undefined : expandedId === log.id}
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        onClick={() => {
+                          if (!active) {
+                            setExpandedId((current) => (current === log.id ? undefined : log.id));
+                          }
+                        }}
+                      >
+                        <td>
+                          <UsageLogStatusBadge
+                            callStatus={log.callStatus}
+                            statusCode={log.statusCode}
+                          />
+                        </td>
+                        <td>
+                          <div className="stack-cell">
+                            <code>
+                              {log.endpoint === 'responses' ? '/responses' : '/chat/completions'}
+                            </code>
+                            <span title={log.requestId}>{log.requestId.slice(0, 14)}…</span>
+                          </div>
+                        </td>
+                        <td>
+                          <code>{log.model}</code>
+                          {log.requestedModel !== log.model ? (
+                            <small>请求 {log.requestedModel}</small>
+                          ) : null}
+                        </td>
+                        <td>
+                          {log.apiKeyId && log.apiKeyName ? (
+                            <Link
+                              className="usage-key-link"
+                              to={`/keys/${log.apiKeyId}`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {log.apiKeyName}
+                            </Link>
+                          ) : (
+                            'Deleted key'
+                          )}
+                        </td>
+                        <td>
+                          {active ? (
+                            <>
+                              —<small>Usage pending</small>
+                            </>
+                          ) : (
+                            <>
+                              {log.totalTokens.toLocaleString()}
                               <small>
-                                TPS{' '}
-                                {tokensPerSecond(log) === null
-                                  ? '—'
-                                  : decimal.format(tokensPerSecond(log) ?? 0)}{' '}
-                                · TTFT {log.timeToFirstTokenMs.toLocaleString()} ms
+                                {log.inputTokens} in · {log.cachedInputTokens} cached ·{' '}
+                                {log.outputTokens} out
+                                {log.reasoningTokens === null
+                                  ? ''
+                                  : ` · ${log.reasoningTokens} reasoning`}
                               </small>
-                            ) : null}
-                          </td>
-                          <td>{active ? '—' : money.format(log.costUsd)}</td>
-                          <td>
-                            {new Date(log.createdAt).toLocaleString('zh-CN', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </td>
-                          <td>
-                            {active ? null : (
-                              <button
-                                className="usage-expand-button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setExpandedId((current) =>
-                                    current === log.id ? undefined : log.id,
-                                  );
-                                }}
-                                aria-label={expandedId === log.id ? '收起调用明细' : '展开调用明细'}
-                              >
-                                <ChevronDown size={15} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          {active
+                            ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
+                            : `${log.latencyMs.toLocaleString()} ms`}
+                          {active ? (
+                            <small>Elapsed</small>
+                          ) : log.timeToFirstTokenMs !== null ? (
+                            <small>
+                              TPS{' '}
+                              {tokensPerSecond(log) === null
+                                ? '—'
+                                : decimal.format(tokensPerSecond(log) ?? 0)}{' '}
+                              · TTFT {log.timeToFirstTokenMs.toLocaleString()} ms
+                            </small>
+                          ) : null}
+                        </td>
+                        <td>{active ? '—' : money.format(log.costUsd)}</td>
+                        <td>
+                          {new Date(log.createdAt).toLocaleString('zh-CN', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td>
+                          {active ? null : (
+                            <button
+                              className="usage-expand-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpandedId((current) =>
+                                  current === log.id ? undefined : log.id,
+                                );
+                              }}
+                              aria-label={expandedId === log.id ? '收起调用明细' : '展开调用明细'}
+                            >
+                              <ChevronDown size={15} />
+                            </button>
+                          )}
+                        </td>
                         {expandedId === log.id ? (
-                          <tr className="usage-detail-row">
-                            <td colSpan={9}>
-                              <UsageLogDetailPanel usageLogId={log.id} />
-                            </td>
-                          </tr>
+                          <td className="usage-virtual-detail-cell">
+                            <UsageLogDetailPanel usageLogId={log.id} />
+                          </td>
                         ) : null}
-                      </Fragment>
+                      </tr>
                     );
                   })
                 ) : (

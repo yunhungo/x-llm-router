@@ -85,6 +85,7 @@ describe('usage call lifecycle', () => {
       details: {
         gatewayCurl: 'curl gateway',
         routerApiToken: 'xr_test-secret',
+        upstreamApiToken: 'upstream_test-secret',
         clientRequest: { body: { model: 'gpt-test' } },
       },
     });
@@ -98,6 +99,7 @@ describe('usage call lifecycle', () => {
     );
     expect(detailWrite?.[1]?.[0]).toBe('persisted-log-id');
     expect(decryptJson(detailWrite?.[1]?.[2] as string)).toBe('xr_test-secret');
+    expect(decryptJson(detailWrite?.[1]?.[3] as string)).toBe('upstream_test-secret');
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(release).toHaveBeenCalledOnce();
   });

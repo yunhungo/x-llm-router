@@ -18,6 +18,7 @@ import { usageDetailRoutes } from './usage-details';
 
 const usageLogId = '11111111-1111-4111-8111-111111111111';
 const rawKey = 'xr_test-secret';
+const rawUpstreamKey = 'upstream-test-secret';
 
 function detailRow() {
   return {
@@ -28,19 +29,25 @@ function detailRow() {
     upstreamModel: 'gpt-upstream',
     createdAt: '2026-08-28T00:00:00.000Z',
     gatewayCurl: 'curl placeholder',
-    upstreamCurl: null,
+    upstreamCurl: 'curl upstream placeholder',
     clientRequest: {
       method: 'POST',
       url: 'https://router.test/v1/chat/completions',
       headers: { authorization: '[REDACTED]' },
       body: { model: 'gpt-test' },
     },
-    upstreamRequest: null,
+    upstreamRequest: {
+      method: 'POST',
+      url: 'https://upstream.test/v1/messages',
+      headers: { authorization: '[REDACTED]' },
+      body: { model: 'gpt-upstream', stream: false },
+    },
     upstreamResponse: null,
     error: null,
     capturedAt: '2026-08-28T00:00:00.000Z',
     expiresAt: '2026-09-27T00:00:00.000Z',
     routerApiTokenCiphertext: encryptJson(rawKey),
+    upstreamApiTokenCiphertext: encryptJson(rawUpstreamKey),
   };
 }
 
@@ -83,6 +90,34 @@ describe('usage detail credentials', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().curl).toContain(`Authorization: Bearer ${rawKey}`);
     expect(response.json().curl).not.toContain('<ROUTER_API_KEY>');
+  });
+
+  it.each([
+    ['client', 'curl', rawKey, 'https://router.test/v1/chat/completions'],
+    ['client', 'javascript', rawKey, 'https://router.test/v1/chat/completions'],
+    ['upstream', 'curl', rawUpstreamKey, 'https://upstream.test/v1/messages'],
+    ['upstream', 'javascript', rawUpstreamKey, 'https://upstream.test/v1/messages'],
+  ])('copies %s %s with its preserved key', async (scope, format, key, url) => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/admin/usage/logs/${usageLogId}/detail/copy-with-key?scope=${scope}&format=${format}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().content).toContain(key);
+    expect(response.json().content).toContain(url);
+    expect(response.json().content).not.toContain('[REDACTED]');
+  });
+
+  it('keeps both client and upstream keys out of default detail responses', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/admin/usage/logs/${usageLogId}/detail`,
+    });
+
+    expect(response.body).not.toContain(rawKey);
+    expect(response.body).not.toContain(rawUpstreamKey);
+    expect(response.json().detail.upstreamCurl).toContain('Bearer <UPSTREAM_CREDENTIAL>');
   });
 
   it('reports that older details do not have a preserved key', async () => {

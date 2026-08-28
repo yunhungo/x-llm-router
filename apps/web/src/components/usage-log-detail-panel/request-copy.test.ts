@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clientRequestJavaScript, clientRequestJson } from './request-copy';
+import { clientRequestJavaScript, clientRequestJson, requestJavaScript } from './request-copy';
 
 describe('usage request copy formats', () => {
   const request = {
@@ -17,11 +17,20 @@ describe('usage request copy formats', () => {
   it('builds a JavaScript fetch request with an API token placeholder', () => {
     const javascript = clientRequestJavaScript(request);
 
-    expect(javascript).toContain("const apiToken = '<ROUTER_API_KEY>';");
+    expect(javascript).toContain('const apiToken = "<ROUTER_API_KEY>";');
     expect(javascript).toContain("'Authorization': `Bearer ${apiToken}`");
-    expect(javascript).toContain("'Accept': \"text/event-stream\"");
+    expect(javascript).toContain('\'Accept\': "text/event-stream"');
     expect(javascript).toContain('https://example.test/v1/chat/completions');
     expect(javascript).toContain('"model": "gpt-test"');
     expect(javascript).not.toContain('[REDACTED]');
+  });
+
+  it('builds upstream and preserve-key JavaScript variants', () => {
+    expect(requestJavaScript(request, '<UPSTREAM_CREDENTIAL>')).toContain(
+      'const apiToken = "<UPSTREAM_CREDENTIAL>";',
+    );
+    expect(requestJavaScript(request, 'actual-secret')).toContain(
+      'const apiToken = "actual-secret";',
+    );
   });
 });

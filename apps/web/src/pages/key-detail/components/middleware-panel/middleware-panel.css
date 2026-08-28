@@ -1,14 +1,33 @@
 .middleware-panel {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .middleware-editor-frame {
+  min-height: 420px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   background: var(--canvas);
   box-shadow: var(--shadow-1);
   overflow: hidden;
+}
+
+.middleware-code-editor,
+.middleware-code-editor > div,
+.middleware-code-editor .cm-editor {
+  min-height: 0;
+  height: 100%;
+}
+
+.middleware-code-editor {
+  flex: 1;
 }
 
 .middleware-editor-toolbar {

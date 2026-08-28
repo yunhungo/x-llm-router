@@ -70,7 +70,7 @@ export default function MiddlewareCodeEditor({
     <div className="middleware-code-editor">
       <CodeMirror
         value={value}
-        height="560px"
+        height="100%"
         theme={resolvedTheme}
         extensions={extensions}
         basicSetup={{
