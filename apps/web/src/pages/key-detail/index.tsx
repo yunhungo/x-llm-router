@@ -1539,18 +1539,6 @@ export function KeyDetailPage() {
           aria-labelledby="key-tab-middleware"
         >
           <section className="middleware-panel">
-            <div className="middleware-intro">
-              <div>
-                <div className="middleware-title-row">
-                  <h2>请求 / 响应中间件</h2>
-                </div>
-                <p>
-                  固定暴露 <code>onRequest(ctx)</code> 与 <code>onResponse(ctx)</code> 两个 async
-                  函数。保存成功后，下一个请求立即使用新代码。
-                </p>
-              </div>
-            </div>
-
             <div className="middleware-editor-frame">
               <div className="middleware-editor-toolbar">
                 <div className="middleware-editor-status" aria-live="polite">

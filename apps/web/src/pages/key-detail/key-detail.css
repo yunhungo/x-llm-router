@@ -560,38 +560,6 @@
   overflow: hidden;
 }
 
-.middleware-intro {
-  padding: 0 0 16px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.middleware-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.middleware-title-row h2 {
-  margin: 0;
-  font-size: 15px;
-}
-
-.middleware-intro p {
-  max-width: 760px;
-  margin: 8px 0 0;
-  color: var(--mute);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.middleware-intro p code {
-  color: var(--ink);
-  font-family: 'Geist Mono Variable', monospace;
-}
-
 .middleware-editor-frame {
   margin: 0;
   border: 1px solid var(--hairline-strong);
@@ -825,11 +793,6 @@
 
   .general-setting-wide {
     grid-column: auto;
-  }
-
-  .middleware-intro {
-    flex-direction: column;
-    gap: 12px;
   }
 
   .key-header-prefix {
