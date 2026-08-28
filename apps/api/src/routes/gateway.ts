@@ -889,6 +889,7 @@ async function gatewayHandler(
         metadata: { providerAuthType: provider?.authType ?? null },
         details: {
           gatewayCurl,
+          ...(request.routerApiToken ? { routerApiToken: request.routerApiToken } : {}),
           ...(upstreamCurl ? { upstreamCurl } : {}),
           clientRequest,
           ...(upstreamRequest !== undefined ? { upstreamRequest } : {}),

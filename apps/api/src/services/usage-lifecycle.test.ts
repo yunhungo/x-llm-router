@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setRuntimeSecretsForTests } from '../runtime-secrets';
+
 const { poolQuery, clientQuery, connect, release } = vi.hoisted(() => {
   const poolQuery = vi.fn();
   const clientQuery = vi.fn();
@@ -17,6 +19,7 @@ vi.mock('../db/client', () => ({
 }));
 
 import { beginUsage, emptyUsage, recordUsage, updateUsageCallStatus } from './usage';
+import { decryptJson } from '../lib/crypto';
 
 describe('usage call lifecycle', () => {
   beforeEach(() => {
@@ -26,6 +29,10 @@ describe('usage call lifecycle', () => {
     release.mockReset();
     poolQuery.mockResolvedValue({ rows: [], rowCount: 1 });
     clientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+    setRuntimeSecretsForTests({
+      ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
+      JWT_SECRET: 'test-jwt-secret-with-enough-length',
+    });
   });
 
   it('creates a processing record before the request completes', async () => {
@@ -77,6 +84,7 @@ describe('usage call lifecycle', () => {
       reportedCostUsd: 0,
       details: {
         gatewayCurl: 'curl gateway',
+        routerApiToken: 'xr_test-secret',
         clientRequest: { body: { model: 'gpt-test' } },
       },
     });
@@ -89,6 +97,7 @@ describe('usage call lifecycle', () => {
       String(sql).includes('INSERT INTO usage_log_details'),
     );
     expect(detailWrite?.[1]?.[0]).toBe('persisted-log-id');
+    expect(decryptJson(detailWrite?.[1]?.[2] as string)).toBe('xr_test-secret');
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(release).toHaveBeenCalledOnce();
   });

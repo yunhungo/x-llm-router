@@ -133,7 +133,7 @@ const canonicalHeaderNames = new Map([
 
 function curlHeaders(
   source: Record<string, CurlHeaderValue> | undefined,
-  authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>',
+  authorization: string,
   accept?: string,
   requestId?: string,
 ): Array<[name: string, value: string]> {
@@ -184,7 +184,7 @@ function curlHeaders(
 export function buildCurl(input: {
   url: string;
   body: unknown;
-  authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>';
+  authorization: string;
   method?: string;
   headers?: Record<string, CurlHeaderValue>;
   accept?: string;
@@ -220,7 +220,7 @@ function storedCurlHeaders(value: unknown): Record<string, CurlHeaderValue> | un
 
 export function buildStoredRequestCurl(
   value: unknown,
-  authorization: '<ROUTER_API_KEY>' | '<UPSTREAM_CREDENTIAL>',
+  authorization: string,
   requestId?: string,
 ): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;

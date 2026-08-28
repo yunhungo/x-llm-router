@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { getPool } from '../db/client';
 import { requireAdmin } from '../lib/admin-auth';
+import { decryptJson } from '../lib/crypto';
 import { mergeStoredSseSnapshot } from '../services/sse';
 import { buildStoredRequestCurl, prepareStoredRequest } from '../services/usage-details';
 
@@ -70,5 +71,43 @@ export async function usageDetailRoutes(app: FastifyInstance): Promise<void> {
       },
       expired: false,
     };
+  });
+
+  app.get('/api/admin/usage/logs/:id/detail/curl-with-key', async (request, reply) => {
+    const parsed = paramsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: { code: 'invalid_request', message: '调用记录 ID 无效。' },
+      });
+    }
+    const result = await getPool().query(
+      `SELECT u.request_id AS "requestId", d.client_request AS "clientRequest",
+              d.router_api_token_ciphertext AS "routerApiTokenCiphertext"
+         FROM usage_logs u
+         JOIN usage_log_details d
+           ON d.usage_log_id = u.id AND d.expires_at > now()
+        WHERE u.id = $1`,
+      [parsed.data.id],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return reply.code(404).send({
+        error: { code: 'not_found', message: '调用明细不存在或已过期。' },
+      });
+    }
+    if (!row.routerApiTokenCiphertext) {
+      return reply.code(409).send({
+        error: { code: 'credential_unavailable', message: '该历史调用未保留 API Key。' },
+      });
+    }
+    const clientRequest = prepareStoredRequest(row.clientRequest);
+    const routerApiToken = decryptJson<string>(row.routerApiTokenCiphertext);
+    const curl = buildStoredRequestCurl(clientRequest, routerApiToken, row.requestId);
+    if (!curl) {
+      return reply.code(409).send({
+        error: { code: 'request_unavailable', message: '该调用无法生成 CURL。' },
+      });
+    }
+    return { curl };
   });
 }

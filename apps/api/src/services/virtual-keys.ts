@@ -169,6 +169,7 @@ export async function requireVirtualApiKey(
     ...(row.middleware_code ? { middlewareCode: row.middleware_code } : {}),
     ...(langfuse ? { langfuse } : {}),
   };
+  request.routerApiToken = rawKey;
 }
 
 export async function touchApiKey(id: string): Promise<void> {

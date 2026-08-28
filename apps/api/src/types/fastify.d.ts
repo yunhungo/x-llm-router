@@ -13,5 +13,6 @@ declare module '@fastify/jwt' {
 declare module 'fastify' {
   interface FastifyRequest {
     routerKey?: VirtualApiKeyRecord;
+    routerApiToken?: string;
   }
 }

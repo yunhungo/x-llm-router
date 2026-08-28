@@ -1,4 +1,4 @@
-export const schemaVersion = 13;
+export const schemaVersion = 14;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -208,6 +208,7 @@ CREATE INDEX IF NOT EXISTS usage_logs_model_created_idx ON usage_logs(model, cre
 CREATE TABLE IF NOT EXISTS usage_log_details (
   usage_log_id uuid PRIMARY KEY REFERENCES usage_logs(id) ON DELETE CASCADE,
   gateway_curl text NOT NULL,
+  router_api_token_ciphertext text,
   upstream_curl text,
   client_request jsonb NOT NULL DEFAULT '{}'::jsonb,
   upstream_request jsonb,
@@ -216,6 +217,9 @@ CREATE TABLE IF NOT EXISTS usage_log_details (
   captured_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days')
 );
+
+ALTER TABLE usage_log_details
+  ADD COLUMN IF NOT EXISTS router_api_token_ciphertext text;
 
 CREATE INDEX IF NOT EXISTS usage_log_details_expires_idx ON usage_log_details(expires_at);
 

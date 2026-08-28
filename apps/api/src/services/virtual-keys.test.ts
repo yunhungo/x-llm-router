@@ -63,6 +63,7 @@ describe('virtual API key RPM limits', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(reply.code).not.toHaveBeenCalled();
     expect(request.routerKey).toMatchObject({ rpmLimit: 0 });
+    expect(request.routerApiToken).toBe('xr_test-secret');
     expect(query.mock.calls[0]?.[0]).toContain('middleware_code');
   });
 

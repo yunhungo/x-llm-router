@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Copy, ShieldCheck } from 'lucide-react';
 
 import { api, ApiError } from '../../api';
 import { copyText } from '../../clipboard';
@@ -9,7 +9,7 @@ import { clientRequestJavaScript, clientRequestJson } from './request-copy';
 import './usage-log-detail-panel.css';
 
 type DetailTab = 'client' | 'upstream' | 'response' | 'error';
-type CopyAction = 'detail' | 'json' | 'curl' | 'javascript';
+type CopyAction = 'detail' | 'json' | 'curl-redacted' | 'curl-key' | 'javascript';
 
 const tabLabels: Record<DetailTab, string> = {
   client: '客户端请求',
@@ -36,6 +36,10 @@ export function UsageLogDetailPanel({
     action: CopyAction;
     succeeded: boolean;
   }>();
+  const [copyError, setCopyError] = useState('');
+  const [curlMenuOpen, setCurlMenuOpen] = useState(false);
+  const [curlKeyLoading, setCurlKeyLoading] = useState(false);
+  const curlMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -79,8 +83,45 @@ export function UsageLogDetailPanel({
     return () => window.clearTimeout(timer);
   }, [copyResult]);
 
+  useEffect(() => {
+    if (!curlMenuOpen) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!curlMenuRef.current?.contains(event.target as Node)) setCurlMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCurlMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnPointerDown);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [curlMenuOpen]);
+
   const copy = (action: CopyAction, value: string) => {
+    setCopyError('');
     void copyText(value).then((succeeded) => setCopyResult({ action, succeeded }));
+  };
+
+  const copyCurlWithKey = async () => {
+    setCurlMenuOpen(false);
+    setCopyError('');
+    setCopyResult(undefined);
+    setCurlKeyLoading(true);
+    try {
+      const result = await api<{ curl: string }>(
+        `/api/admin/usage/logs/${usageLogId}/detail/curl-with-key`,
+      );
+      const succeeded = await copyText(result.curl);
+      setCopyResult({ action: 'curl-key', succeeded });
+      if (!succeeded) setCopyError('复制失败，请重试。');
+    } catch (caught: unknown) {
+      setCopyResult({ action: 'curl-key', succeeded: false });
+      setCopyError(caught instanceof ApiError ? caught.message : '保留 Key 的 CURL 生成失败。');
+    } finally {
+      setCurlKeyLoading(false);
+    }
   };
 
   const copyLabel = (action: CopyAction, label: string) => {
@@ -112,6 +153,8 @@ export function UsageLogDetailPanel({
               onClick={() => {
                 setTab(value);
                 setCopyResult(undefined);
+                setCopyError('');
+                setCurlMenuOpen(false);
               }}
             >
               {tabLabels[value]}
@@ -141,18 +184,59 @@ export function UsageLogDetailPanel({
                 )}
                 {copyLabel('json', '复制 JSON')}
               </button>
-              <button
-                className="usage-detail-copy"
-                onClick={() => copy('curl', detail.gatewayCurl)}
-                aria-label="复制带 API token 的 CURL 请求"
-              >
-                {copyResult?.action === 'curl' && copyResult.succeeded ? (
-                  <Check size={14} />
-                ) : (
-                  <Copy size={14} />
-                )}
-                {copyLabel('curl', '复制 CURL')}
-              </button>
+              <div className="usage-detail-copy-menu" ref={curlMenuRef}>
+                <div className="usage-detail-split-copy">
+                  <button
+                    className="usage-detail-copy usage-detail-copy-main"
+                    onClick={() => copy('curl-redacted', detail.gatewayCurl)}
+                    aria-label="复制 CURL（脱敏）"
+                    disabled={curlKeyLoading}
+                  >
+                    {(copyResult?.action === 'curl-redacted' ||
+                      copyResult?.action === 'curl-key') &&
+                    copyResult.succeeded ? (
+                      <Check size={14} />
+                    ) : (
+                      <Copy size={14} />
+                    )}
+                    {curlKeyLoading
+                      ? '正在生成…'
+                      : copyResult &&
+                    (copyResult.action === 'curl-redacted' || copyResult.action === 'curl-key')
+                      ? copyResult.succeeded
+                        ? '已复制'
+                        : '复制失败'
+                      : '复制 CURL（脱敏）'}
+                  </button>
+                  <button
+                    className="usage-detail-copy-toggle"
+                    onClick={() => setCurlMenuOpen((open) => !open)}
+                    aria-label="选择 CURL 复制方式"
+                    aria-haspopup="menu"
+                    aria-expanded={curlMenuOpen}
+                    disabled={curlKeyLoading}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                </div>
+                {curlMenuOpen ? (
+                  <div className="usage-detail-copy-dropdown" role="menu">
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setCurlMenuOpen(false);
+                        copy('curl-redacted', detail.gatewayCurl);
+                      }}
+                    >
+                      <span>复制 CURL（脱敏）</span>
+                      <small>默认</small>
+                    </button>
+                    <button role="menuitem" onClick={() => void copyCurlWithKey()}>
+                      复制 CURL（保留 Key）
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 className="usage-detail-copy"
                 onClick={() =>
@@ -183,6 +267,11 @@ export function UsageLogDetailPanel({
             </button>
           )}
         </div>
+        {copyError ? (
+          <div className="usage-detail-copy-error" role="alert">
+            {copyError}
+          </div>
+        ) : null}
         <pre>
           <code>{content}</code>
         </pre>

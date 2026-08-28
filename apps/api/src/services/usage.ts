@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getPool } from '../db/client';
+import { encryptJson } from '../lib/crypto';
 import { prepareStoredJson, prepareStoredRequest } from './usage-details';
 
 export interface TokenUsage {
@@ -72,6 +73,7 @@ export interface ModelPrice {
 
 export interface UsageCallDetails {
   gatewayCurl: string;
+  routerApiToken?: string;
   upstreamCurl?: string;
   clientRequest: unknown;
   upstreamRequest?: unknown;
@@ -247,11 +249,12 @@ export async function recordUsage(input: {
     if (usageLogId && input.details) {
       await client.query(
         `INSERT INTO usage_log_details(
-           usage_log_id, gateway_curl, upstream_curl, client_request,
-           upstream_request, upstream_response, error
-         ) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7::jsonb)
+           usage_log_id, gateway_curl, router_api_token_ciphertext, upstream_curl,
+           client_request, upstream_request, upstream_response, error
+         ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8::jsonb)
          ON CONFLICT (usage_log_id) DO UPDATE SET
            gateway_curl = EXCLUDED.gateway_curl,
+           router_api_token_ciphertext = EXCLUDED.router_api_token_ciphertext,
            upstream_curl = EXCLUDED.upstream_curl,
            client_request = EXCLUDED.client_request,
            upstream_request = EXCLUDED.upstream_request,
@@ -262,6 +265,7 @@ export async function recordUsage(input: {
         [
           usageLogId,
           input.details.gatewayCurl,
+          input.details.routerApiToken ? encryptJson(input.details.routerApiToken) : null,
           input.details.upstreamCurl ?? null,
           JSON.stringify(prepareStoredRequest(input.details.clientRequest)),
           input.details.upstreamRequest === undefined
