@@ -30,7 +30,7 @@ export function UsageLogStatusBadge({
       <Badge tone={presentation.tone}>
         {active ? <LoaderCircle className="usage-status-spinner" size={12} aria-hidden /> : null}
         {presentation.label}
-        {!active && statusCode !== null ? ` · ${statusCode}` : ''}
+        {callStatus === 'failed' && statusCode !== null ? ` · ${statusCode}` : ''}
       </Badge>
     </span>
   );

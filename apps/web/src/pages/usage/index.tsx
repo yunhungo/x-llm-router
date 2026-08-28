@@ -67,11 +67,7 @@ export function UsagePage() {
 
   useEffect(() => {
     void load();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && !loadController.current) void load(false);
-    }, 1_500);
     return () => {
-      window.clearInterval(interval);
       loadController.current?.abort();
     };
   }, [load]);
