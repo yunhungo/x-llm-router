@@ -1,0 +1,23 @@
+.usage-load-status {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-top: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--canvas) 94%, transparent);
+  color: var(--mute);
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.usage-load-status.error {
+  color: var(--danger-text);
+}

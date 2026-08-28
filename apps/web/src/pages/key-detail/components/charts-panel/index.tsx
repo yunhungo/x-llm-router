@@ -61,10 +61,7 @@ export function ChartsPanel({
     : 0;
   const p50Tps = finiteMetric(summary?.p50Tps, finiteMetric(summary?.averageTps));
   const p10Tps = finiteMetric(summary?.p10Tps, p50Tps);
-  const streamingCalls = finiteMetric(
-    summary?.streamingCalls,
-    data?.logs.filter((log) => log.timeToFirstTokenMs !== null).length ?? 0,
-  );
+  const streamingCalls = finiteMetric(summary?.streamingCalls);
   const p50TtftMs = finiteMetric(summary?.p50TtftMs, finiteMetric(summary?.averageTtftMs));
   const p95TtftMs = finiteMetric(summary?.p95TtftMs, p50TtftMs);
   const p99TtftMs = finiteMetric(summary?.p99TtftMs, p95TtftMs);

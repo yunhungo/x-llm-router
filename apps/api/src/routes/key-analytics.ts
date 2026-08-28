@@ -8,7 +8,6 @@ import { decryptLangfuseSettings, publicLangfuseSettings } from '../services/lan
 const paramsSchema = z.object({ id: z.string().uuid() });
 const querySchema = z.object({
   range: z.enum(['24h', '7d', '30d']).default('24h'),
-  limit: z.coerce.number().int().min(10).max(200).default(100),
   model: z.string().trim().min(1).max(120).optional(),
   provider: z.string().trim().min(1).max(40).optional(),
 });
@@ -70,7 +69,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const { id } = parsedParams.data;
-    const { range, limit, model, provider } = parsedQuery.data;
+    const { range, model, provider } = parsedQuery.data;
     const rangeConfig = ranges[range];
     const pool = getPool();
     const keyResult = await pool.query(
@@ -291,44 +290,6 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         [id, rangeConfig.interval, model ?? null, provider ?? null],
       ),
       pool.query(
-        `SELECT u.id, u.request_id AS "requestId", u.endpoint,
-                u.requested_model AS "requestedModel", u.model,
-                u.call_status AS "callStatus", u.status_code AS "statusCode", u.success,
-                u.input_tokens AS "inputTokens",
-                u.cached_input_tokens AS "cachedInputTokens",
-                u.output_tokens AS "outputTokens", u.reasoning_tokens AS "reasoningTokens",
-                CASE WHEN u.reasoning_tokens IS NULL THEN NULL
-                  ELSE GREATEST(u.output_tokens - u.reasoning_tokens, 0) END AS "visibleOutputTokens",
-                u.total_tokens AS "totalTokens",
-                u.cost_usd::float8 AS "costUsd", u.latency_ms AS "latencyMs",
-                u.time_to_first_token_ms AS "timeToFirstTokenMs",
-                u.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
-                u.error_code AS "errorCode",
-                u.created_at AS "createdAt", p.name AS "providerName",
-                (d.usage_log_id IS NOT NULL) AS "detailAvailable",
-                CASE WHEN u.output_tokens > 0
-                       AND u.time_to_first_token_ms IS NOT NULL
-                       AND u.latency_ms > u.time_to_first_token_ms
-                  THEN u.output_tokens * 1000.0 /
-                       (u.latency_ms - u.time_to_first_token_ms)
-                  ELSE NULL END::float8 AS tps,
-                CASE WHEN u.reasoning_tokens IS NOT NULL
-                       AND u.output_tokens > u.reasoning_tokens
-                       AND u.time_to_first_visible_token_ms IS NOT NULL
-                       AND u.latency_ms > u.time_to_first_visible_token_ms
-                  THEN (u.output_tokens - u.reasoning_tokens) * 1000.0 /
-                       (u.latency_ms - u.time_to_first_visible_token_ms)
-                  ELSE NULL END::float8 AS "visibleTps"
-           FROM usage_logs u
-          LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
-          LEFT JOIN usage_log_details d ON d.usage_log_id = u.id AND d.expires_at > now()
-          WHERE u.virtual_api_key_id = $1 AND u.created_at >= now() - $2::interval
-            AND ($3::text IS NULL OR u.model = $3::text)
-            AND ($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)
-          ORDER BY u.created_at DESC LIMIT $5`,
-        [id, rangeConfig.interval, model ?? null, provider ?? null, limit],
-      ),
-      pool.query(
         `WITH used_models AS (
            SELECT DISTINCT COALESCE(p.provider, 'unknown') AS provider, u.model
              FROM usage_logs u
@@ -366,7 +327,7 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
         [id],
       ),
     ]);
-    const [summary, series, modelSeries, models, endpoints, errors, logs, prices] = analytics;
+    const [summary, series, modelSeries, models, endpoints, errors, prices] = analytics;
 
     const { langfuseConfigCiphertext, ...key } = keyRow;
     return {
@@ -381,7 +342,6 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       models: models.rows,
       endpoints: endpoints.rows,
       errors: errors.rows,
-      logs: logs.rows,
       prices: prices.rows,
     };
   });

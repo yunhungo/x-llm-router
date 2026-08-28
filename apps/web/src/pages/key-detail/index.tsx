@@ -14,10 +14,19 @@ import { Badge, Button, PageHeader, Skeleton } from '../../components/ui';
 import type {
   KeyAnalyticsRange,
   KeyAnalyticsResponse,
-  KeyUsageLogsResponse,
+  KeyUsageLog,
   KeyUsagePoint,
   Provider,
 } from '../../types';
+import {
+  createDefaultUsageLogFilters,
+  usageLogFilterSearchParams,
+  usageLogTimeRangeError,
+} from '../../features/usage/usage-log-pagination';
+import {
+  useDebouncedValue,
+  useUsageLogPagination,
+} from '../../features/usage/use-usage-log-pagination';
 import { ChartsPanel } from './components/charts-panel';
 import { KeyDetailTabs } from './components/key-detail-tabs';
 import { LogsPanel } from './components/logs-panel';
@@ -37,10 +46,22 @@ import {
   type DetailTab,
   type GeneralDraft,
   type LogDrilldown,
-  type LogStatusFilter,
   type ModelAnalyticsState,
 } from './key-detail-model';
 import './key-detail.css';
+
+const analyticsRangeMs: Record<KeyAnalyticsRange, number> = {
+  '24h': 86_400_000,
+  '7d': 7 * 86_400_000,
+  '30d': 30 * 86_400_000,
+};
+
+function analyticsLogTimeRange(range: KeyAnalyticsRange, now = new Date()) {
+  return {
+    from: new Date(now.getTime() - analyticsRangeMs[range]).toISOString(),
+    to: now.toISOString(),
+  };
+}
 
 export function KeyDetailPage() {
   const { id } = useParams();
@@ -72,16 +93,28 @@ export function KeyDetailPage() {
   const modelAnalyticsRequest = useRef(0);
   const mainLoadRequest = useRef(0);
   const mainLoadController = useRef<AbortController | undefined>(undefined);
-  const liveLogsController = useRef<AbortController | undefined>(undefined);
-  const drilldownRequest = useRef(0);
-  const drilldownController = useRef<AbortController | undefined>(undefined);
   const [drilldown, setDrilldown] = useState<LogDrilldown>();
-  const [focusedLogs, setFocusedLogs] = useState<KeyUsageLogsResponse>();
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [logSearch, setLogSearch] = useState('');
-  const [logStatus, setLogStatus] = useState<LogStatusFilter>('all');
-  const [logModel, setLogModel] = useState('all');
-  const [logEndpoint, setLogEndpoint] = useState('all');
+  const [logFilters, setLogFilters] = useState(createDefaultUsageLogFilters);
+  const debouncedLogSearch = useDebouncedValue(logFilters.search);
+  const logTimeError = usageLogTimeRangeError(logFilters);
+  const logQuery = useMemo(() => {
+    if (!id || logTimeError) return '';
+    const params = usageLogFilterSearchParams({
+      ...logFilters,
+      search: debouncedLogSearch,
+    });
+    params.set('keyId', id);
+    if (drilldown) {
+      params.set('metric', drilldown.metric);
+      if (drilldown.threshold !== undefined) params.set('threshold', String(drilldown.threshold));
+      if (drilldown.provider) params.set('provider', drilldown.provider);
+    }
+    return params.toString();
+  }, [debouncedLogSearch, drilldown, id, logFilters, logTimeError]);
+  const logPagination = useUsageLogPagination<KeyUsageLog>({
+    query: logQuery,
+    enabled: activeTab === 'logs' && Boolean(id) && !logTimeError,
+  });
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -89,18 +122,12 @@ export function KeyDetailPage() {
     mainLoadController.current?.abort();
     const controller = new AbortController();
     mainLoadController.current = controller;
-    drilldownController.current?.abort();
-    drilldownRequest.current += 1;
     setLoading(true);
     setData((current) => (current?.key.id === id && current.range === range ? current : undefined));
-    setLogsLoading(false);
     setError('');
-    setDrilldown(undefined);
-    setFocusedLogs(undefined);
-    setExpandedLogId(undefined);
     try {
       const [response, providerResponse] = await Promise.all([
-        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}&limit=100`, {
+        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}`, {
           signal: controller.signal,
         }),
         api<{ providers: Provider[] }>('/api/admin/providers', { signal: controller.signal }),
@@ -127,44 +154,8 @@ export function KeyDetailPage() {
     return () => {
       mainLoadController.current?.abort();
       mainLoadRequest.current += 1;
-      liveLogsController.current?.abort();
-      drilldownController.current?.abort();
-      drilldownRequest.current += 1;
     };
   }, [load]);
-
-  useEffect(() => {
-    if (activeTab !== 'logs' || !id || drilldown) return;
-    const refreshLogs = async () => {
-      if (document.visibilityState !== 'visible' || liveLogsController.current) return;
-      const controller = new AbortController();
-      liveLogsController.current = controller;
-      try {
-        const response = await api<KeyUsageLogsResponse>(
-          `/api/admin/keys/${id}/analytics/logs?range=${range}&limit=100&metric=recent`,
-          { signal: controller.signal },
-        );
-        setData((current) =>
-          current?.key.id === id && current.range === range
-            ? { ...current, logs: response.logs }
-            : current,
-        );
-      } catch (caught) {
-        if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
-          console.warn('Failed to refresh live usage logs', caught);
-        }
-      } finally {
-        if (liveLogsController.current === controller) liveLogsController.current = undefined;
-      }
-    };
-    void refreshLogs();
-    const interval = window.setInterval(() => void refreshLogs(), 1_500);
-    return () => {
-      window.clearInterval(interval);
-      liveLogsController.current?.abort();
-      liveLogsController.current = undefined;
-    };
-  }, [activeTab, drilldown, id, range]);
 
   const chartModelOptions = useMemo(
     () => (data && data.key.id === id ? analyticsModelOptions(data, providers) : []),
@@ -174,6 +165,14 @@ export function KeyDetailPage() {
   useEffect(() => {
     setChartModel(allModelsValue);
   }, [id]);
+
+  useEffect(() => {
+    setLogFilters(createDefaultUsageLogFilters());
+    setDrilldown(undefined);
+    setExpandedLogId(undefined);
+  }, [id]);
+
+  useEffect(() => setExpandedLogId(undefined), [logQuery]);
 
   useEffect(() => {
     if (!data || data.key.id !== id) return;
@@ -201,7 +200,6 @@ export function KeyDetailPage() {
     const controller = new AbortController();
     const params = new URLSearchParams({
       range,
-      limit: '100',
       model: selectedModel.model,
       provider: selectedModel.provider,
     });
@@ -230,66 +228,36 @@ export function KeyDetailPage() {
     };
   }, [activeTab, chartModel, chartRefreshKey, id, range]);
 
-  const loadDrilldown = async (next: LogDrilldown) => {
+  const loadDrilldown = (next: LogDrilldown) => {
     if (!id) return;
-    const requestId = ++drilldownRequest.current;
-    drilldownController.current?.abort();
-    const controller = new AbortController();
-    drilldownController.current = controller;
+    const fallbackRange = analyticsLogTimeRange(range);
     setActiveTab('logs');
-    setLogsLoading(true);
     setError('');
     setDrilldown(next);
-    setFocusedLogs(undefined);
     setExpandedLogId(undefined);
-    setLogSearch('');
-    setLogStatus('all');
-    setLogModel('all');
-    setLogEndpoint('all');
-    const params = new URLSearchParams({ range, limit: '100', metric: next.metric });
-    if (next.threshold !== undefined) params.set('threshold', String(next.threshold));
-    if (next.from) params.set('from', next.from);
-    if (next.to) params.set('to', next.to);
-    if (next.model) params.set('model', next.model);
-    if (next.provider) params.set('provider', next.provider);
-    try {
-      const response = await api<KeyUsageLogsResponse>(
-        `/api/admin/keys/${id}/analytics/logs?${params.toString()}`,
-        { signal: controller.signal },
-      );
-      if (drilldownRequest.current !== requestId) return;
-      setFocusedLogs(response);
-      requestAnimationFrame(() => {
-        if (drilldownRequest.current !== requestId) return;
-        document.getElementById('key-usage-logs')?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        });
-      });
-    } catch (caught) {
-      if (drilldownRequest.current !== requestId) return;
-      if (caught instanceof DOMException && caught.name === 'AbortError') return;
-      setError(caught instanceof ApiError ? caught.message : '调用明细查询失败。');
-    } finally {
-      if (drilldownRequest.current === requestId) {
-        if (drilldownController.current === controller) drilldownController.current = undefined;
-        setLogsLoading(false);
-      }
-    }
+    setLogFilters({
+      ...createDefaultUsageLogFilters(),
+      from: next.from ?? fallbackRange.from,
+      to: next.to ?? fallbackRange.to,
+      model: next.model ?? 'all',
+    });
+    requestAnimationFrame(() =>
+      document.getElementById('key-usage-logs')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      }),
+    );
   };
 
   const clearDrilldown = () => {
-    drilldownController.current?.abort();
-    drilldownRequest.current += 1;
-    setLogsLoading(false);
     setDrilldown(undefined);
-    setFocusedLogs(undefined);
+    setLogFilters(createDefaultUsageLogFilters());
     setExpandedLogId(undefined);
   };
 
   const selectBucket = (point: KeyUsagePoint) => {
     const selectedModel = parseModelIdentity(chartModel);
-    void loadDrilldown({
+    loadDrilldown({
       label: formatDate(point.bucket),
       metric: 'recent',
       from: point.bucket,
@@ -300,7 +268,7 @@ export function KeyDetailPage() {
 
   const loadModelDrilldown = (next: LogDrilldown) => {
     const selectedModel = parseModelIdentity(chartModel);
-    void loadDrilldown({ ...next, ...selectedModel });
+    loadDrilldown({ ...next, ...selectedModel });
   };
 
   const saveGeneral = async (event: FormEvent<HTMLFormElement>) => {
@@ -395,12 +363,9 @@ export function KeyDetailPage() {
       : data.key.id === id
         ? data
         : undefined;
-  const visibleLogs = drilldown ? (focusedLogs?.logs ?? []) : data.logs;
   const resetLocalLogFilters = () => {
-    setLogSearch('');
-    setLogStatus('all');
-    setLogModel('all');
-    setLogEndpoint('all');
+    setDrilldown(undefined);
+    setLogFilters(createDefaultUsageLogFilters());
   };
   const currentGeneral = generalSettings ?? generalDraft(key);
   const generalChanged = !sameGeneralDraft(currentGeneral, generalDraft(key));
@@ -437,6 +402,7 @@ export function KeyDetailPage() {
               onClick={() => {
                 setChartRefreshKey((current) => current + 1);
                 void load();
+                if (activeTab === 'logs' && !logTimeError) void logPagination.refresh();
               }}
             >
               <RefreshCcw size={14} /> 刷新
@@ -485,23 +451,24 @@ export function KeyDetailPage() {
 
       {activeTab === 'logs' ? (
         <LogsPanel
-          logs={visibleLogs}
-          modelNames={data.models.map((model) => model.model)}
-          endpoints={data.endpoints.map((endpoint) => endpoint.endpoint)}
-          range={range}
-          onRangeChange={setRange}
+          logs={logPagination.logs}
+          modelNames={logPagination.facets.models}
+          endpoints={logPagination.facets.endpoints}
+          filters={logFilters}
+          onFiltersChange={setLogFilters}
+          timeError={logTimeError}
+          onResetFilters={resetLocalLogFilters}
           drilldown={drilldown}
           onClearDrilldown={clearDrilldown}
-          loading={logsLoading}
-          search={logSearch}
-          onSearchChange={setLogSearch}
-          status={logStatus}
-          onStatusChange={setLogStatus}
-          model={logModel}
-          onModelChange={setLogModel}
-          endpoint={logEndpoint}
-          onEndpointChange={setLogEndpoint}
-          onResetFilters={resetLocalLogFilters}
+          loading={logPagination.refreshing}
+          error={logPagination.error}
+          onRetry={() => void logPagination.refresh()}
+          loadingMore={logPagination.loadingMore}
+          loadMoreError={logPagination.loadMoreError}
+          hasMore={logPagination.hasMore}
+          onRetryLoadMore={() => void logPagination.retryLoadMore()}
+          scrollContainerRef={logPagination.containerRef}
+          onScroll={logPagination.onScroll}
           expandedLogId={expandedLogId}
           onToggleExpandedLog={toggleExpandedLog}
         />

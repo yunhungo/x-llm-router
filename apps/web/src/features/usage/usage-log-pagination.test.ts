@@ -4,11 +4,15 @@ import type { UsageLog } from '../../types';
 import {
   appendUniqueUsageLogs,
   calculateUsageLogBatchSize,
+  createDefaultUsageLogFilters,
+  DEFAULT_USAGE_LOG_WINDOW_DAYS,
   ESTIMATED_USAGE_LOG_ROW_HEIGHT,
   MIN_USAGE_LOG_BATCH_SIZE,
   shouldLoadMoreUsageLogs,
+  usageLogFilterSearchParams,
+  usageLogTimeRangeError,
   USAGE_LOG_PREFETCH_ROWS,
-} from './usage-pagination';
+} from './usage-log-pagination';
 
 function usageLog(id: string): UsageLog {
   return {
@@ -38,6 +42,45 @@ function usageLog(id: string): UsageLog {
     detailAvailable: false,
   };
 }
+
+describe('usage log filters', () => {
+  it('defaults to the seven days ending now', () => {
+    const now = new Date('2026-08-28T12:00:00.000Z');
+    const filters = createDefaultUsageLogFilters(now);
+
+    expect(filters.to).toBe(now.toISOString());
+    expect(new Date(filters.to).getTime() - new Date(filters.from).getTime()).toBe(
+      DEFAULT_USAGE_LOG_WINDOW_DAYS * 86_400_000,
+    );
+  });
+
+  it('serializes search and server-side filters with the selected time window', () => {
+    const params = usageLogFilterSearchParams({
+      ...createDefaultUsageLogFilters(new Date('2026-08-28T12:00:00.000Z')),
+      search: ' request-123 ',
+      status: 'failed',
+      model: 'gpt-5',
+      endpoint: 'responses',
+    });
+
+    expect(params.get('from')).toBe('2026-08-21T12:00:00.000Z');
+    expect(params.get('to')).toBe('2026-08-28T12:00:00.000Z');
+    expect(params.get('search')).toBe('request-123');
+    expect(params.get('status')).toBe('failed');
+    expect(params.get('model')).toBe('gpt-5');
+    expect(params.get('endpoint')).toBe('responses');
+  });
+
+  it('rejects incomplete and reversed time windows before requesting', () => {
+    expect(usageLogTimeRangeError({ from: '', to: '' })).toContain('完整');
+    expect(
+      usageLogTimeRangeError({
+        from: '2026-08-28T12:00:00.000Z',
+        to: '2026-08-21T12:00:00.000Z',
+      }),
+    ).toContain('早于');
+  });
+});
 
 describe('usage log pagination', () => {
   it('requests more than two visible pages for each batch', () => {

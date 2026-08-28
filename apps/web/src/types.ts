@@ -119,10 +119,14 @@ export interface UsageLog {
   detailAvailable: boolean;
 }
 
-export interface UsageLogsPage {
-  logs: UsageLog[];
+export interface UsageLogsPage<TLog extends Pick<UsageLog, 'id'> = UsageLog> {
+  logs: TLog[];
   hasMore: boolean;
   nextCursor: string | null;
+  facets?: {
+    models: string[];
+    endpoints: string[];
+  };
 }
 
 export interface UsageCallDetail {
@@ -286,6 +290,5 @@ export interface KeyAnalyticsResponse {
   models: KeyModelUsage[];
   endpoints: KeyEndpointUsage[];
   errors: KeyErrorUsage[];
-  logs: KeyUsageLog[];
   prices: ModelPriceMatch[];
 }

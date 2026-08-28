@@ -18,7 +18,6 @@ export const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1
 export const allModelsValue = '__all_models__';
 
 export type DetailTab = 'overview' | 'charts' | 'logs' | 'settings' | 'middleware';
-export type LogStatusFilter = 'all' | 'active' | 'success' | 'failed';
 
 const detailTabValues: DetailTab[] = ['overview', 'charts', 'logs', 'settings', 'middleware'];
 

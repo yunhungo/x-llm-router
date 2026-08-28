@@ -1,9 +1,15 @@
-import { Fragment } from 'react';
-import { ChevronDown, Search, X } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { ChevronDown, X } from 'lucide-react';
+import type { RefObject, UIEventHandler } from 'react';
 
+import { UsageLogFilters } from '../../../../components/usage-log-filters';
 import { UsageLogDetailPanel } from '../../../../components/usage-log-detail-panel';
+import { UsageLogLoadStatus } from '../../../../components/usage-log-load-status';
 import { isUsageLogActive, UsageLogStatusBadge } from '../../../../components/usage-log-status';
-import type { KeyAnalyticsRange, KeyUsageLog } from '../../../../types';
+import { Button, Skeleton } from '../../../../components/ui';
+import type { UsageLogFiltersState } from '../../../../features/usage/usage-log-pagination';
+import { ESTIMATED_USAGE_LOG_ROW_HEIGHT } from '../../../../features/usage/usage-log-pagination';
+import type { KeyUsageLog } from '../../../../types';
 import {
   decimal,
   endpointLabel,
@@ -11,29 +17,28 @@ import {
   integer,
   money,
   type LogDrilldown,
-  type LogStatusFilter,
 } from '../../key-detail-model';
-import { RangeSwitch } from '../range-switch';
 import './logs-panel.css';
 
 interface LogsPanelProps {
-  logs: KeyUsageLog[];
+  logs: KeyUsageLog[] | undefined;
   modelNames: string[];
   endpoints: string[];
-  range: KeyAnalyticsRange;
-  onRangeChange: (range: KeyAnalyticsRange) => void;
+  filters: UsageLogFiltersState;
+  onFiltersChange: (filters: UsageLogFiltersState) => void;
+  timeError: string;
+  onResetFilters: () => void;
   drilldown: LogDrilldown | undefined;
   onClearDrilldown: () => void;
   loading: boolean;
-  search: string;
-  onSearchChange: (value: string) => void;
-  status: LogStatusFilter;
-  onStatusChange: (value: LogStatusFilter) => void;
-  model: string;
-  onModelChange: (value: string) => void;
-  endpoint: string;
-  onEndpointChange: (value: string) => void;
-  onResetFilters: () => void;
+  error: string;
+  onRetry: () => void;
+  loadingMore: boolean;
+  loadMoreError: string;
+  hasMore: boolean;
+  onRetryLoadMore: () => void;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  onScroll: UIEventHandler<HTMLDivElement>;
   expandedLogId: string | undefined;
   onToggleExpandedLog: (id: string) => void;
 }
@@ -42,44 +47,34 @@ export function LogsPanel({
   logs,
   modelNames,
   endpoints,
-  range,
-  onRangeChange,
+  filters,
+  onFiltersChange,
+  timeError,
+  onResetFilters,
   drilldown,
   onClearDrilldown,
   loading,
-  search,
-  onSearchChange,
-  status,
-  onStatusChange,
-  model,
-  onModelChange,
-  endpoint,
-  onEndpointChange,
-  onResetFilters,
+  error,
+  onRetry,
+  loadingMore,
+  loadMoreError,
+  hasMore,
+  onRetryLoadMore,
+  scrollContainerRef,
+  onScroll,
   expandedLogId,
   onToggleExpandedLog,
 }: LogsPanelProps) {
-  const normalizedSearch = search.trim().toLowerCase();
-  const filteredLogs = logs.filter((log) => {
-    const active = isUsageLogActive(log.callStatus);
-    if (status === 'active' && !active) return false;
-    if (status === 'success' && log.success !== true) return false;
-    if (status === 'failed' && log.success !== false) return false;
-    if (model !== 'all' && log.model !== model) return false;
-    if (endpoint !== 'all' && log.endpoint !== endpoint) return false;
-    if (!normalizedSearch) return true;
-    return [
-      log.requestId,
-      log.model,
-      log.requestedModel,
-      log.providerName,
-      log.errorCode,
-      log.callStatus,
-      endpointLabel(log.endpoint),
-      log.statusCode === null ? '' : String(log.statusCode),
-    ].some((value) => value?.toLowerCase().includes(normalizedSearch));
+  const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
+    count: logs?.length ?? 0,
+    getScrollElement: () => scrollContainerRef.current,
+    getItemKey: (index) => logs?.[index]?.id ?? index,
+    estimateSize: (index) =>
+      logs?.[index]?.id === expandedLogId ? 420 : ESTIMATED_USAGE_LOG_ROW_HEIGHT,
+    measureElement: (element) => element.getBoundingClientRect().height,
+    overscan: 8,
+    useFlushSync: false,
   });
-  const hasFilters = Boolean(search) || status !== 'all' || model !== 'all' || endpoint !== 'all';
 
   return (
     <div
@@ -89,63 +84,15 @@ export function LogsPanel({
       aria-labelledby="key-tab-logs"
     >
       <section className="panel flush-panel logs-panel" id="key-usage-logs">
-        <div className="logs-toolbar">
-          <label className="log-search">
-            <Search size={14} />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="请求 ID、模型、错误码"
-              aria-label="搜索调用记录"
-            />
-          </label>
-          <select
-            className="input log-filter-select"
-            value={status}
-            onChange={(event) => onStatusChange(event.target.value as LogStatusFilter)}
-            aria-label="按状态筛选"
-          >
-            <option value="all">All statuses</option>
-            <option value="active">In progress</option>
-            <option value="success">Succeeded</option>
-            <option value="failed">Failed</option>
-          </select>
-          <select
-            className="input log-filter-select model-filter"
-            value={model}
-            onChange={(event) => onModelChange(event.target.value)}
-            aria-label="按模型筛选"
-          >
-            <option value="all">全部模型</option>
-            {[...new Set(modelNames)].map((modelName) => (
-              <option value={modelName} key={modelName}>
-                {modelName}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input log-filter-select"
-            value={endpoint}
-            onChange={(event) => onEndpointChange(event.target.value)}
-            aria-label="按端点筛选"
-          >
-            <option value="all">全部端点</option>
-            {endpoints.map((endpointName) => (
-              <option value={endpointName} key={endpointName}>
-                {endpointLabel(endpointName)}
-              </option>
-            ))}
-          </select>
-          {hasFilters ? (
-            <button type="button" className="clear-filter-button" onClick={onResetFilters}>
-              <X size={13} /> 重置
-            </button>
-          ) : null}
-          <div className="logs-range-control">
-            <span>{filteredLogs.length} 条</span>
-            <RangeSwitch value={range} onChange={onRangeChange} />
-          </div>
-        </div>
+        <UsageLogFilters
+          filters={filters}
+          models={modelNames}
+          endpoints={endpoints}
+          loadedCount={logs?.length ?? 0}
+          timeError={timeError}
+          onChange={onFiltersChange}
+          onReset={onResetFilters}
+        />
         {drilldown ? (
           <div className="drilldown-bar">
             <span>{drilldown.label}</span>
@@ -154,31 +101,57 @@ export function LogsPanel({
             </button>
           </div>
         ) : null}
-        {loading ? <div className="log-query-progress">查询中…</div> : null}
-        <div className="table-wrap usage-table key-detail-table">
-          <table>
-            <thead>
-              <tr>
-                <th>状态</th>
-                <th>请求</th>
-                <th>模型</th>
-                <th>Token</th>
-                <th>TPS / TTFT</th>
-                <th>延迟</th>
-                <th>成本</th>
-                <th>时间</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLogs.length ? (
-                filteredLogs.map((log) => {
-                  const active = isUsageLogActive(log.callStatus);
-                  return (
-                    <Fragment key={log.id}>
+        {loading && logs ? <div className="log-query-progress">正在刷新调用记录…</div> : null}
+        {error ? (
+          <div className="log-query-error" role="alert">
+            <span>{error}</span>
+            <Button variant="secondary" onClick={onRetry}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+        {timeError ? (
+          <div className="log-filter-placeholder">请修正时间范围后加载调用记录。</div>
+        ) : !logs ? (
+          <div className="log-list-skeleton">
+            <Skeleton height={360} />
+          </div>
+        ) : (
+          <div
+            ref={scrollContainerRef}
+            className="table-wrap usage-table key-detail-table"
+            onScroll={onScroll}
+            aria-busy={loading || loadingMore}
+          >
+            <table className="key-usage-virtual-table">
+              <thead>
+                <tr>
+                  <th>状态</th>
+                  <th>请求</th>
+                  <th>模型</th>
+                  <th>Token</th>
+                  <th>TPS / TTFT</th>
+                  <th>延迟</th>
+                  <th>成本</th>
+                  <th>时间</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody
+                style={logs.length ? { height: `${rowVirtualizer.getTotalSize()}px` } : undefined}
+              >
+                {logs.length ? (
+                  rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const log = logs[virtualRow.index]!;
+                    const active = isUsageLogActive(log.callStatus);
+                    return (
                       <tr
-                        className={`usage-log-row${active ? ' usage-log-row-active' : ''}`}
+                        key={log.id}
+                        ref={(element) => rowVirtualizer.measureElement(element)}
+                        data-index={virtualRow.index}
+                        className={`usage-log-row key-usage-virtual-row${active ? ' usage-log-row-active' : ''}`}
                         aria-expanded={active ? undefined : expandedLogId === log.id}
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
                         onClick={() => {
                           if (!active) onToggleExpandedLog(log.id);
                         }}
@@ -257,27 +230,32 @@ export function LogsPanel({
                             </button>
                           )}
                         </td>
-                      </tr>
-                      {expandedLogId === log.id ? (
-                        <tr className="usage-detail-row">
-                          <td colSpan={9}>
+                        {expandedLogId === log.id ? (
+                          <td className="key-usage-virtual-detail-cell">
                             <UsageLogDetailPanel usageLogId={log.id} />
                           </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={9} className="table-empty">
-                    暂无匹配记录
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                        ) : null}
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="table-empty">
+                      暂无匹配记录
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <UsageLogLoadStatus
+              loading={loadingMore}
+              error={loadMoreError}
+              hasMore={hasMore}
+              count={logs.length}
+              onRetry={onRetryLoadMore}
+            />
+          </div>
+        )}
       </section>
     </div>
   );

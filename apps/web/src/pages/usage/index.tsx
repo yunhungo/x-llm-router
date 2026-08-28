@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, RefreshCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { api, ApiError } from '../../api';
+import { UsageLogFilters } from '../../components/usage-log-filters';
 import { UsageLogDetailPanel } from '../../components/usage-log-detail-panel';
+import { UsageLogLoadStatus } from '../../components/usage-log-load-status';
 import { isUsageLogActive, UsageLogStatusBadge } from '../../components/usage-log-status';
 import { Button, PageHeader, Skeleton } from '../../components/ui';
-import type { UsageLog, UsageLogsPage } from '../../types';
 import {
-  appendUniqueUsageLogs,
-  calculateUsageLogBatchSize,
+  createDefaultUsageLogFilters,
   ESTIMATED_USAGE_LOG_ROW_HEIGHT,
-  shouldLoadMoreUsageLogs,
-} from './usage-pagination';
+  usageLogFilterSearchParams,
+  usageLogTimeRangeError,
+} from '../../features/usage/usage-log-pagination';
+import {
+  useDebouncedValue,
+  useUsageLogPagination,
+} from '../../features/usage/use-usage-log-pagination';
+import type { UsageLog } from '../../types';
 import './usage.css';
 
 const money = new Intl.NumberFormat('en-US', {
@@ -32,84 +37,23 @@ function tokensPerSecond(log: UsageLog) {
 }
 
 export function UsagePage() {
-  const [logs, setLogs] = useState<UsageLog[]>();
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState('');
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState('');
-  const [hasMore, setHasMore] = useState(true);
+  const [filters, setFilters] = useState(createDefaultUsageLogFilters);
   const [expandedId, setExpandedId] = useState<string>();
-  const loadController = useRef<AbortController | undefined>(undefined);
-  const nextCursor = useRef<string | null>(null);
-  const hasMoreRef = useRef(true);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(async (mode: 'reset' | 'append' = 'reset') => {
-    if (mode === 'append' && (!hasMoreRef.current || loadController.current)) return;
-    if (mode === 'reset') loadController.current?.abort();
-    const controller = new AbortController();
-    loadController.current = controller;
-    if (mode === 'reset') {
-      setRefreshing(true);
-      setLoadingMore(false);
-      setRefreshError('');
-      setLoadMoreError('');
-    } else {
-      setLoadingMore(true);
-      setLoadMoreError('');
-    }
-    try {
-      const viewportHeight = tableContainerRef.current?.clientHeight ?? window.innerHeight;
-      const search = new URLSearchParams({
-        limit: String(calculateUsageLogBatchSize(viewportHeight)),
-      });
-      if (mode === 'append' && nextCursor.current) search.set('cursor', nextCursor.current);
-      const response = await api<UsageLogsPage>(`/api/admin/usage/logs?${search}`, {
-        signal: controller.signal,
-      });
-      const canLoadMore = response.hasMore && Boolean(response.nextCursor);
-      nextCursor.current = response.nextCursor;
-      hasMoreRef.current = canLoadMore;
-      setHasMore(canLoadMore);
-      if (mode === 'reset') {
-        setLogs(response.logs);
-        setExpandedId(undefined);
-        if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
-      } else {
-        setLogs((current) => appendUniqueUsageLogs(current ?? [], response.logs));
-      }
-    } catch (caught) {
-      if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
-        const message = caught instanceof ApiError ? caught.message : '调用记录加载失败。';
-        if (mode === 'reset') setRefreshError(message);
-        else setLoadMoreError(message);
-      }
-    } finally {
-      if (loadController.current === controller) {
-        loadController.current = undefined;
-        if (mode === 'reset') setRefreshing(false);
-        else setLoadingMore(false);
-      }
-    }
-  }, []);
-
-  const handleTableScroll = useCallback(() => {
-    const container = tableContainerRef.current;
-    if (!container || loadingMore || loadMoreError || !hasMore) return;
-    if (
-      shouldLoadMoreUsageLogs({
-        scrollHeight: container.scrollHeight,
-        scrollTop: container.scrollTop,
-        clientHeight: container.clientHeight,
-      })
-    ) {
-      void load('append');
-    }
-  }, [hasMore, load, loadMoreError, loadingMore]);
+  const debouncedSearch = useDebouncedValue(filters.search);
+  const timeError = usageLogTimeRangeError(filters);
+  const query = useMemo(
+    () =>
+      timeError
+        ? ''
+        : usageLogFilterSearchParams({ ...filters, search: debouncedSearch }).toString(),
+    [debouncedSearch, filters, timeError],
+  );
+  const pagination = useUsageLogPagination<UsageLog>({ query, enabled: !timeError });
+  const logs = pagination.logs;
 
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
     count: logs?.length ?? 0,
-    getScrollElement: () => tableContainerRef.current,
+    getScrollElement: () => pagination.containerRef.current,
     getItemKey: (index) => logs?.[index]?.id ?? index,
     estimateSize: (index) =>
       logs?.[index]?.id === expandedId ? 420 : ESTIMATED_USAGE_LOG_ROW_HEIGHT,
@@ -118,37 +62,50 @@ export function UsagePage() {
     useFlushSync: false,
   });
 
-  useEffect(() => {
-    void load('reset');
-    return () => {
-      loadController.current?.abort();
-    };
-  }, [load]);
+  useEffect(() => setExpandedId(undefined), [query]);
 
   return (
     <div className="page-wrap">
       <PageHeader
         title="调用记录"
         action={
-          <Button variant="secondary" loading={refreshing} onClick={() => void load('reset')}>
+          <Button
+            variant="secondary"
+            loading={pagination.refreshing}
+            disabled={Boolean(timeError)}
+            onClick={() => void pagination.refresh()}
+          >
             <RefreshCcw size={14} /> 刷新
           </Button>
         }
       />
-      {refreshError ? (
+      {pagination.error ? (
         <div className="usage-refresh-error" role="alert">
-          {refreshError} 可点击“刷新”重试。
+          {pagination.error} 可点击“刷新”重试。
         </div>
       ) : null}
-      {!logs ? (
-        <Skeleton height={420} />
-      ) : (
-        <section className="panel flush-panel">
+      <section className="panel flush-panel">
+        <UsageLogFilters
+          filters={filters}
+          models={pagination.facets.models}
+          endpoints={pagination.facets.endpoints}
+          loadedCount={logs?.length ?? 0}
+          timeError={timeError}
+          onChange={setFilters}
+          onReset={() => setFilters(createDefaultUsageLogFilters())}
+        />
+        {timeError ? (
+          <div className="usage-filter-placeholder">请修正时间范围后加载调用记录。</div>
+        ) : !logs ? (
+          <div className="usage-list-skeleton">
+            <Skeleton height={360} />
+          </div>
+        ) : (
           <div
-            ref={tableContainerRef}
+            ref={pagination.containerRef}
             className="table-wrap usage-table"
-            onScroll={handleTableScroll}
-            aria-busy={refreshing || loadingMore}
+            onScroll={pagination.onScroll}
+            aria-busy={pagination.refreshing || pagination.loadingMore}
           >
             <table className="usage-virtual-table">
               <thead>
@@ -294,29 +251,16 @@ export function UsagePage() {
                 )}
               </tbody>
             </table>
-            {logs.length && (loadingMore || loadMoreError || !hasMore) ? (
-              <div
-                className={`usage-load-status${loadMoreError ? ' error' : ''}`}
-                role={loadMoreError ? 'alert' : 'status'}
-                aria-live={loadMoreError ? 'assertive' : 'polite'}
-              >
-                {loadingMore ? '正在加载下一批调用记录…' : null}
-                {loadMoreError ? (
-                  <>
-                    <span>{loadMoreError}</span>
-                    <Button variant="secondary" onClick={() => void load('append')}>
-                      重试
-                    </Button>
-                  </>
-                ) : null}
-                {!loadingMore && !loadMoreError && !hasMore
-                  ? `已加载全部 ${logs.length} 条调用记录。`
-                  : null}
-              </div>
-            ) : null}
+            <UsageLogLoadStatus
+              loading={pagination.loadingMore}
+              error={pagination.loadMoreError}
+              hasMore={pagination.hasMore}
+              count={logs.length}
+              onRetry={() => void pagination.retryLoadMore()}
+            />
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

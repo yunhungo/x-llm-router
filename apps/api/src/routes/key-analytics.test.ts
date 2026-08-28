@@ -86,7 +86,6 @@ describe('key analytics route', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
     const response = await app.inject({
@@ -95,7 +94,9 @@ describe('key analytics route', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().modelSeries).toEqual([modelPoint]);
+    expect(response.json()).toMatchObject({ modelSeries: [modelPoint] });
+    expect(response.json()).not.toHaveProperty('logs');
+    expect(query).toHaveBeenCalledTimes(8);
     const modelSeriesCall = query.mock.calls[3];
     expect(modelSeriesCall?.[0]).toContain('GROUP BY bucket, provider, model');
     expect(modelSeriesCall?.[0]).toContain('u.latency_ms > u.time_to_first_token_ms');
@@ -104,12 +105,12 @@ describe('key analytics route', () => {
       "($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)",
     );
     expect(modelSeriesCall?.[1]).toEqual([keyId, '7 days', 'gpt-5', 'openai', '6 hours']);
-    for (const analyticsCall of query.mock.calls.slice(1, 8)) {
+    for (const analyticsCall of query.mock.calls.slice(1, 7)) {
       expect(analyticsCall[0]).toContain("COALESCE(p.provider, 'unknown')");
       expect(analyticsCall[1]).toContain('gpt-5');
       expect(analyticsCall[1]).toContain('openai');
     }
-    const pricesCall = query.mock.calls[8];
+    const pricesCall = query.mock.calls[7];
     expect(pricesCall?.[0]).toContain('jsonb_array_elements_text(p.available_models)');
     expect(pricesCall?.[0]).toContain('SELECT p.provider, available.model');
     expect(pricesCall?.[0]).toContain("WHERE p.status = 'active'");
