@@ -27,7 +27,7 @@
 
 .usage-virtual-table {
   --usage-table-columns: 100px minmax(110px, 1.25fr) minmax(100px, 1fr) minmax(80px, 0.7fr)
-    minmax(140px, 1.3fr) minmax(125px, 1fr) 84px 102px 36px;
+    minmax(140px, 1.3fr) minmax(125px, 1fr) 84px 102px 44px;
   display: grid;
   min-width: 880px;
 }
@@ -68,6 +68,15 @@
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
+}
+
+.usage-virtual-table .usage-expand-header,
+.usage-virtual-row > .usage-expand-cell {
+  padding-inline: 0;
+}
+
+.usage-virtual-row > .usage-expand-cell {
+  align-items: center;
 }
 
 .usage-virtual-row code,

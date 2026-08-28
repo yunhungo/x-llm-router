@@ -119,7 +119,7 @@ export function UsagePage() {
                   <th>延迟</th>
                   <th>成本</th>
                   <th>时间</th>
-                  <th />
+                  <th className="usage-expand-header" />
                 </tr>
               </thead>
               <tbody
@@ -210,7 +210,7 @@ export function UsagePage() {
                             minute: '2-digit',
                           })}
                         </td>
-                        <td>
+                        <td className="usage-expand-cell">
                           {active ? null : (
                             <button
                               className="usage-expand-button"
