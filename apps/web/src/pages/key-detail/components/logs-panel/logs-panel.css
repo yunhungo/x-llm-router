@@ -74,10 +74,10 @@
 }
 
 .key-usage-virtual-table {
-  --key-usage-table-columns: 100px minmax(120px, 1.25fr) minmax(110px, 1.1fr) minmax(145px, 1.35fr)
-    minmax(125px, 1.1fr) 90px 84px 102px 36px;
+  --key-usage-table-columns: 44px 100px minmax(120px, 1.25fr) minmax(110px, 1.1fr)
+    minmax(145px, 1.35fr) minmax(125px, 1.1fr) 90px 84px 102px;
   display: grid;
-  min-width: 915px;
+  min-width: 920px;
 }
 
 .key-usage-virtual-table thead {
@@ -116,6 +116,15 @@
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
+}
+
+.key-usage-virtual-table .usage-expand-header,
+.key-usage-virtual-row > .usage-expand-cell {
+  padding-inline: 7px;
+}
+
+.key-usage-virtual-row > .usage-expand-cell {
+  align-items: center;
 }
 
 .key-usage-virtual-row code,

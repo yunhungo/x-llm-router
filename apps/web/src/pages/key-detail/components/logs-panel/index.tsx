@@ -125,6 +125,7 @@ export function LogsPanel({
             <table className="key-usage-virtual-table">
               <thead>
                 <tr>
+                  <th className="usage-expand-header" />
                   <th>状态</th>
                   <th>请求</th>
                   <th>模型</th>
@@ -133,7 +134,6 @@ export function LogsPanel({
                   <th>延迟</th>
                   <th>成本</th>
                   <th>时间</th>
-                  <th />
                 </tr>
               </thead>
               <tbody
@@ -155,6 +155,22 @@ export function LogsPanel({
                           if (!active) onToggleExpandedLog(log.id);
                         }}
                       >
+                        <td className="usage-expand-cell">
+                          {active ? null : (
+                            <button
+                              className="usage-expand-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onToggleExpandedLog(log.id);
+                              }}
+                              aria-label={
+                                expandedLogId === log.id ? '收起调用明细' : '展开调用明细'
+                              }
+                            >
+                              <ChevronDown size={15} />
+                            </button>
+                          )}
+                        </td>
                         <td>
                           <UsageLogStatusBadge
                             callStatus={log.callStatus}
@@ -203,22 +219,6 @@ export function LogsPanel({
                         </td>
                         <td>{active ? '—' : money.format(log.costUsd)}</td>
                         <td>{formatDate(log.createdAt)}</td>
-                        <td>
-                          {active ? null : (
-                            <button
-                              className="usage-expand-button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onToggleExpandedLog(log.id);
-                              }}
-                              aria-label={
-                                expandedLogId === log.id ? '收起调用明细' : '展开调用明细'
-                              }
-                            >
-                              <ChevronDown size={15} />
-                            </button>
-                          )}
-                        </td>
                         {expandedLogId === log.id ? (
                           <td className="key-usage-virtual-detail-cell">
                             <UsageLogDetailPanel usageLogId={log.id} />
