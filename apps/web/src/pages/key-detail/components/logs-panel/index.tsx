@@ -220,7 +220,10 @@ export function LogsPanel({
                         <td>{active ? '—' : money.format(log.costUsd)}</td>
                         <td>{formatDate(log.createdAt)}</td>
                         {expandedLogId === log.id ? (
-                          <td className="key-usage-virtual-detail-cell">
+                          <td
+                            className="key-usage-virtual-detail-cell"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <UsageLogDetailPanel usageLogId={log.id} />
                           </td>
                         ) : null}

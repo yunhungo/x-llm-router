@@ -227,7 +227,10 @@ export function UsagePage() {
                           )}
                         </td>
                         {expandedId === log.id ? (
-                          <td className="usage-virtual-detail-cell">
+                          <td
+                            className="usage-virtual-detail-cell"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <UsageLogDetailPanel usageLogId={log.id} />
                           </td>
                         ) : null}
