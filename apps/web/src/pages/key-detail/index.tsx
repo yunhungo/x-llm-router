@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { KeyRound, RefreshCcw } from 'lucide-react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../../api';
@@ -11,7 +10,7 @@ import {
   langfusePayload,
   type LangfuseDraft,
 } from '../../components/langfuse-fields';
-import { Badge, Button, PageHeader, Skeleton } from '../../components/ui';
+import { Skeleton } from '../../components/ui';
 import type {
   KeyAnalyticsRange,
   KeyAnalyticsResponse,
@@ -436,31 +435,6 @@ export function KeyDetailPage() {
     <div
       className={`page-wrap key-detail-page${activeTab === 'middleware' ? ' key-detail-page-fill' : ''}`}
     >
-      <PageHeader
-        title={key.name}
-        action={
-          <div className="detail-actions">
-            <code className="key-header-prefix">
-              <KeyRound size={13} /> {key.keyPrefix}
-            </code>
-            <Badge tone={key.status === 'active' ? 'success' : 'danger'}>
-              {key.status === 'active' ? '启用' : '已撤销'}
-            </Badge>
-            <Button
-              variant="secondary"
-              loading={loading}
-              onClick={() => {
-                setChartRefreshKey((current) => current + 1);
-                void load();
-                if (activeTab === 'logs' && !logTimeError) void logPagination.refresh();
-              }}
-            >
-              <RefreshCcw size={14} /> 刷新
-            </Button>
-          </div>
-        }
-      />
-
       <KeyDetailTabs value={activeTab} onChange={setActiveTab} />
 
       {error ? <div className="form-error detail-message">{error}</div> : null}
