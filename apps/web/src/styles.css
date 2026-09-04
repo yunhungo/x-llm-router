@@ -4,11 +4,12 @@
   --ink: #171717;
   --body: #4d4d4d;
   --mute: #888;
-  --hairline: #e8e8e8;
-  --hairline-strong: #c9c9c9;
+  --hairline: #e5e7eb;
+  --hairline-strong: #d1d5db;
+  --page-bg: #f4f5f7;
   --canvas: #fff;
-  --canvas-soft: #fafafa;
-  --canvas-soft-2: #f5f5f5;
+  --canvas-soft: #f8f9fb;
+  --canvas-soft-2: #eef1f5;
   --blue: #0070f3;
   --red: #e00;
   --green: #16825d;
@@ -17,10 +18,10 @@
   --solid-hover: #333;
   --placeholder: #aaa;
   --icon-muted: #707070;
-  --surface-hover: #fdfdfd;
-  --nav-active: #f2f2f2;
-  --neutral-bg: #f1f1f1;
-  --neutral-border: #e5e5e5;
+  --surface-hover: #f6f8fa;
+  --nav-active: #eceff3;
+  --neutral-bg: #f0f2f5;
+  --neutral-border: #e5e7eb;
   --neutral-text: #555;
   --success-bg: #eaf7f1;
   --success-border: #c9ebdd;
@@ -43,8 +44,8 @@
   --mobile-bar: rgba(255, 255, 255, 0.9);
   --switch-track: #ccc;
   --switch-thumb: #fff;
-  --skeleton-start: #f2f2f2;
-  --skeleton-mid: #fafafa;
+  --skeleton-start: #eef1f5;
+  --skeleton-mid: #f8f9fb;
   --chart-blue: #2563eb;
   --chart-teal: #0f766e;
   --chart-purple: #7c3aed;
@@ -56,14 +57,11 @@
   --code-muted: #999;
   --code-text: #e6e6e6;
   --editor-selection-bg: #0067d6;
-  --shadow-1:
-    0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 1px rgba(0, 0, 0, 0.02), 0 2px 2px rgba(0, 0, 0, 0.04);
-  --shadow-3:
-    0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04),
-    0 8px 16px -8px rgba(0, 0, 0, 0.08);
+  --shadow-1: 0 1px 2px rgba(20, 30, 50, 0.04), 0 3px 8px rgba(20, 30, 50, 0.02);
+  --shadow-3: 0 2px 4px rgba(20, 30, 50, 0.04), 0 8px 24px -8px rgba(20, 30, 50, 0.12);
   --sidebar-width: 244px;
   color: var(--ink);
-  background: var(--canvas-soft);
+  background: var(--page-bg);
 }
 
 :root[data-theme='dark'] {
@@ -72,6 +70,7 @@
   --mute: #858585;
   --hairline: #292929;
   --hairline-strong: #414141;
+  --page-bg: #0a0a0a;
   --canvas: #111;
   --canvas-soft: #0a0a0a;
   --canvas-soft-2: #191919;
@@ -135,14 +134,14 @@
 
 html {
   min-width: 320px;
-  background: var(--canvas-soft);
+  background: var(--page-bg);
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--canvas-soft);
+  background: var(--page-bg);
   color: var(--ink);
 }
 

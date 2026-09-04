@@ -1,13 +1,15 @@
 .split-copy-button {
   position: relative;
   display: flex;
+  border-radius: 5px;
+  box-shadow: var(--shadow-1);
 }
 
 .split-copy-main,
 .split-copy-toggle {
   height: 30px;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid var(--hairline);
+  background: var(--canvas-soft-2);
   color: var(--body);
   cursor: pointer;
 }
@@ -30,16 +32,17 @@
   border-radius: 0 5px 5px 0;
 }
 
-.split-copy-main:hover,
-.split-copy-toggle:hover,
+.split-copy-main:hover:not(:disabled),
+.split-copy-toggle:hover:not(:disabled),
 .split-copy-toggle[aria-expanded='true'] {
   border-color: var(--hairline-strong);
+  background: var(--nav-active);
   color: var(--ink);
 }
 
 .split-copy-button button:disabled {
   cursor: wait;
-  opacity: 0.7;
+  color: var(--mute);
 }
 
 .split-copy-dropdown {

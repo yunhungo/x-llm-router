@@ -38,15 +38,17 @@
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
   border-radius: 5px;
-  background: transparent;
+  background: var(--canvas-soft-2);
+  box-shadow: var(--shadow-1);
   color: var(--body);
   cursor: pointer;
 }
 
 .json-code-fullscreen-toggle:hover {
   border-color: var(--hairline-strong);
+  background: var(--nav-active);
   color: var(--ink);
 }
 

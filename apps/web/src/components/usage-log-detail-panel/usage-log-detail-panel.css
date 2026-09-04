@@ -86,15 +86,17 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
   border-radius: 5px;
-  background: transparent;
+  background: var(--canvas-soft-2);
+  box-shadow: var(--shadow-1);
   color: var(--body);
   font-size: 10px;
   cursor: pointer;
 }
 .usage-detail-copy:hover {
   border-color: var(--hairline-strong);
+  background: var(--nav-active);
   color: var(--ink);
 }
 .usage-detail-copy-error {

@@ -39,7 +39,7 @@ export function applyTheme(theme: ResolvedTheme) {
   document.documentElement.style.colorScheme = theme;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#fafafa');
+    ?.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#f4f5f7');
 }
 
 export function initializeTheme() {
