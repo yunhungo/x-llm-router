@@ -16,7 +16,12 @@ vi.mock('../lib/admin-auth', () => ({
   requireAdmin: async () => undefined,
 }));
 
-import { keyAnalyticsRoutes, tokensPerSecond, visibleTokensPerSecond } from './key-analytics';
+import {
+  analyticsTimeWindow,
+  keyAnalyticsRoutes,
+  tokensPerSecond,
+  visibleTokensPerSecond,
+} from './key-analytics';
 
 describe('key analytics metrics', () => {
   it('calculates generation TPS after TTFT', () => {
@@ -100,13 +105,18 @@ describe('key analytics route', () => {
     const modelSeriesCall = query.mock.calls[3];
     expect(modelSeriesCall?.[0]).toContain('GROUP BY bucket, provider, model');
     expect(modelSeriesCall?.[0]).toContain('u.latency_ms > u.time_to_first_token_ms');
-    expect(modelSeriesCall?.[0]).toContain('($3::text IS NULL OR u.model = $3::text)');
+    expect(modelSeriesCall?.[0]).toContain('($4::text IS NULL OR u.model = $4::text)');
     expect(modelSeriesCall?.[0]).toContain(
-      "($4::text IS NULL OR COALESCE(p.provider, 'unknown') = $4::text)",
+      "($5::text IS NULL OR COALESCE(p.provider, 'unknown') = $5::text)",
     );
-    expect(modelSeriesCall?.[1]).toEqual([keyId, '7 days', 'gpt-5', 'openai', '6 hours']);
+    const { from, to } = response.json();
+    expect(Date.parse(to) - Date.parse(from)).toBe(7 * 86_400_000);
+    expect(modelSeriesCall?.[1]).toEqual([keyId, from, to, 'gpt-5', 'openai', '6 hours']);
     for (const analyticsCall of query.mock.calls.slice(1, 7)) {
       expect(analyticsCall[0]).toContain("COALESCE(p.provider, 'unknown')");
+      expect(analyticsCall[0]).toContain('u.created_at >= $2::timestamptz');
+      expect(analyticsCall[0]).toContain('u.created_at < $3::timestamptz');
+      expect(analyticsCall[1]?.slice(1, 3)).toEqual([from, to]);
       expect(analyticsCall[1]).toContain('gpt-5');
       expect(analyticsCall[1]).toContain('openai');
     }
@@ -118,6 +128,47 @@ describe('key analytics route', () => {
     expect(pricesCall?.[0]).toContain('virtual_api_key_id IS NULL');
     expect(pricesCall?.[0]).not.toContain('$3::text');
     expect(pricesCall?.[1]).toEqual([keyId]);
+  });
+
+  it('queries historical custom bounds across every aggregate and clips drilldown buckets', async () => {
+    const keyId = '11111111-1111-4111-8111-111111111111';
+    const from = '2025-01-01T04:30:00.000Z';
+    const to = '2025-01-03T08:00:00.000Z';
+    query.mockResolvedValueOnce({
+      rows: [{ id: keyId, langfuseConfigCiphertext: null }],
+      rowCount: 1,
+    });
+    const params = new URLSearchParams({ from, to, model: 'gpt-5', provider: 'openai' });
+    const response = await app.inject(`/api/admin/keys/${keyId}/analytics?${params}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ from, to, range: '7d' });
+    for (const [sql, values] of query.mock.calls.slice(1, 7)) {
+      expect(values?.slice(0, 5)).toEqual([keyId, from, to, 'gpt-5', 'openai']);
+      expect(sql).toContain('u.created_at >= $2::timestamptz');
+      expect(sql).toContain('u.created_at < $3::timestamptz');
+      expect(sql).not.toContain('now() -');
+    }
+    const [seriesSql, seriesValues] = query.mock.calls[2]!;
+    expect(seriesValues?.at(-1)).toBe('6 hours');
+    expect(seriesSql).toContain('GREATEST(b.bucket, $2::timestamptz)');
+    expect(seriesSql).toContain('LEAST(b.bucket + $6::interval, $3::timestamptz)');
+    expect(seriesSql).toContain("$3::timestamptz - interval '1 microsecond'");
+  });
+
+  it.each([
+    { from: '2026-09-01T00:00:00.000Z' },
+    { to: '2026-09-01T00:00:00.000Z' },
+    { from: 'invalid', to: '2026-09-01T00:00:00.000Z' },
+    { from: '2026-09-01T00:00:00.000Z', to: '2026-09-01T00:00:00.000Z' },
+    { from: '2026-09-02T00:00:00.000Z', to: '2026-09-01T00:00:00.000Z' },
+  ])('rejects invalid custom bounds before querying: %j', async (bounds) => {
+    const params = new URLSearchParams(bounds);
+    const response = await app.inject(
+      `/api/admin/keys/11111111-1111-4111-8111-111111111111/analytics?${params}`,
+    );
+    expect(response.statusCode).toBe(400);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('applies model and unknown-provider filters to log drilldowns', async () => {
@@ -182,5 +233,36 @@ describe('key analytics route', () => {
     expect(analyticsResponse.statusCode).toBe(400);
     expect(logsResponse.statusCode).toBe(400);
     expect(query).not.toHaveBeenCalled();
+  });
+});
+
+describe('analytics time window', () => {
+  it.each([
+    ['24h', 1, '1 hour'],
+    ['7d', 7, '6 hours'],
+    ['30d', 30, '1 day'],
+  ] as const)('keeps the %s shortcut and a single end timestamp', (range, days, bucket) => {
+    const now = new Date('2026-09-04T04:00:00.000Z');
+    const window = analyticsTimeWindow({ range }, now);
+    expect(window.to).toBe(now.toISOString());
+    expect(Date.parse(window.to) - Date.parse(window.from)).toBe(days * 86_400_000);
+    expect(window.bucket).toBe(bucket);
+  });
+
+  it('uses hourly buckets for a custom day and bounded buckets for multiple years', () => {
+    expect(
+      analyticsTimeWindow({
+        range: '30d',
+        from: '2026-08-01T00:00:00.000Z',
+        to: '2026-08-02T00:00:00.000Z',
+      }),
+    ).toMatchObject({ range: '24h', bucket: '1 hour' });
+    expect(
+      analyticsTimeWindow({
+        range: '24h',
+        from: '2020-01-01T00:00:00.000Z',
+        to: '2026-01-01T00:00:00.000Z',
+      }),
+    ).toMatchObject({ range: '30d', bucket: '13 days' });
   });
 });

@@ -21,6 +21,7 @@ import './overview-panel.css';
 interface OverviewPanelProps {
   apiKey: KeyAnalyticsResponse['key'];
   range: KeyAnalyticsRange;
+  rangeLabel?: string | undefined;
   modelOptions: AnalyticsModelOption[];
   selectedModel: string;
   onSelectedModelChange: (identity: string) => void;
@@ -33,6 +34,7 @@ interface OverviewPanelProps {
 export function OverviewPanel({
   apiKey,
   range,
+  rangeLabel,
   modelOptions,
   selectedModel,
   onSelectedModelChange,
@@ -103,7 +105,7 @@ export function OverviewPanel({
               </option>
             ))}
           </select>
-          <span>{rangeLabels[range]}</span>
+          <span>{rangeLabel ?? rangeLabels[range]}</span>
         </div>
       </div>
       {error ? (

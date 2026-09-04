@@ -59,7 +59,7 @@ export interface AnalyticsModelOption {
 export interface ModelAnalyticsState {
   keyId: string;
   identity: string;
-  range: KeyAnalyticsRange;
+  query: string;
   data: KeyAnalyticsResponse;
 }
 

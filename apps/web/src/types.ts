@@ -283,6 +283,8 @@ export interface ModelPriceMatch {
 
 export interface KeyAnalyticsResponse {
   range: KeyAnalyticsRange;
+  from: string;
+  to: string;
   key: VirtualKey & { provider: string | null };
   summary: KeyAnalyticsSummary;
   series: KeyUsagePoint[];

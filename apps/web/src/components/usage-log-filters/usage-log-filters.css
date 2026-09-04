@@ -59,7 +59,7 @@
   white-space: nowrap;
 }
 
-.usage-filter-toolbar > .usage-range-trigger {
+.usage-filter-toolbar > .usage-filter-range {
   flex: 1 1 295px;
   max-width: 360px;
 }
@@ -110,7 +110,7 @@
     flex-basis: 100%;
   }
 
-  .usage-filter-toolbar > .usage-range-trigger {
+  .usage-filter-toolbar > .usage-filter-range {
     width: 100%;
     max-width: none;
   }

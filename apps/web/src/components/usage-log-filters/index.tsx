@@ -4,7 +4,7 @@ import type {
   UsageLogFiltersState,
   UsageLogStatusFilter,
 } from '../../features/usage/usage-log-pagination';
-import { UsageLogRangePicker } from '../usage-log-range-picker';
+import { DateRangePicker } from '../date-range-picker';
 import './usage-log-filters.css';
 
 function endpointLabel(endpoint: string) {
@@ -84,7 +84,10 @@ export function UsageLogFilters({
             </option>
           ))}
         </select>
-        <UsageLogRangePicker
+        <DateRangePicker
+          ariaLabel="选择调用记录日期区间"
+          className="usage-filter-range"
+          align="end"
           value={{ from: filters.from, to: filters.to }}
           onApply={(range) => onChange({ ...filters, ...range })}
         />

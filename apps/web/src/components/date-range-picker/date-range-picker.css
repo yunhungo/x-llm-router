@@ -1,4 +1,4 @@
-.usage-range-trigger {
+.date-range-trigger {
   min-width: 0;
   height: 36px;
   padding: 0 10px;
@@ -14,18 +14,18 @@
   cursor: pointer;
 }
 
-.usage-range-trigger:hover,
-.usage-range-trigger[aria-expanded='true'] {
+.date-range-trigger:hover,
+.date-range-trigger[aria-expanded='true'] {
   border-color: var(--ink);
 }
 
-.usage-range-trigger:focus-visible {
+.date-range-trigger:focus-visible {
   outline: 0;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.usage-range-trigger span {
+.date-range-trigger span {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
@@ -33,24 +33,26 @@
   white-space: nowrap;
 }
 
-.usage-range-trigger i {
+.date-range-trigger i {
   color: var(--mute);
   font-style: normal;
 }
 
-.usage-range-trigger > svg {
+.date-range-trigger > svg {
   flex: 0 0 auto;
 }
 
-.usage-range-trigger > svg:last-child {
+.date-range-trigger > svg:last-child {
   color: var(--mute);
 }
 
-.usage-range-popover {
+.date-range-popover {
   position: fixed;
   z-index: 1000;
   box-sizing: border-box;
   width: min(640px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
   padding: 14px;
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
@@ -58,48 +60,48 @@
   box-shadow: var(--shadow-3);
 }
 
-.usage-range-heading {
+.date-range-heading {
   min-height: 28px;
   display: flex;
   align-items: baseline;
   gap: 9px;
 }
 
-.usage-range-heading strong {
+.date-range-heading strong {
   color: var(--ink);
   font-size: 12px;
 }
 
-.usage-range-heading span {
+.date-range-heading span {
   color: var(--mute);
   font-size: 10px;
 }
 
-.usage-range-calendars {
+.date-range-calendars {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
-.usage-range-calendar {
+.date-range-calendar {
   min-width: 0;
 }
 
-.usage-range-calendar > header {
+.date-range-calendar > header {
   height: 34px;
   display: grid;
   grid-template-columns: 30px 1fr 30px;
   align-items: center;
 }
 
-.usage-range-calendar > header strong {
+.date-range-calendar > header strong {
   text-align: center;
   color: var(--body);
   font-size: 11px;
   font-weight: 500;
 }
 
-.usage-range-calendar > header button {
+.date-range-calendar > header button {
   width: 28px;
   height: 28px;
   display: grid;
@@ -111,22 +113,22 @@
   cursor: pointer;
 }
 
-.usage-range-calendar > header button:hover {
+.date-range-calendar > header button:hover {
   background: var(--canvas-soft);
   color: var(--ink);
 }
 
-.usage-range-calendar:first-child > header button:last-child {
+.date-range-calendar:first-child > header button:last-child {
   visibility: hidden;
 }
 
-.usage-range-weekdays,
-.usage-range-days {
+.date-range-weekdays,
+.date-range-days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
-.usage-range-weekdays span {
+.date-range-weekdays span {
   height: 26px;
   display: grid;
   place-items: center;
@@ -134,7 +136,7 @@
   font-size: 9px;
 }
 
-.usage-range-days button {
+.date-range-days button {
   height: 34px;
   padding: 0;
   border: 0;
@@ -145,33 +147,33 @@
   cursor: pointer;
 }
 
-.usage-range-days button:hover {
+.date-range-days button:hover {
   border-radius: 5px;
   background: var(--surface-hover);
 }
 
-.usage-range-days button.outside {
+.date-range-days button.outside {
   color: color-mix(in srgb, var(--mute) 45%, transparent);
 }
 
-.usage-range-days button.in-range {
+.date-range-days button.in-range {
   background: var(--canvas-soft-2);
 }
 
-.usage-range-days button.range-start,
-.usage-range-days button.range-end {
+.date-range-days button.range-start,
+.date-range-days button.range-end {
   border-radius: 5px;
   background: var(--ink);
   color: var(--canvas);
   font-weight: 600;
 }
 
-.usage-range-days button.today:not(.range-start, .range-end) {
+.date-range-days button.today:not(.range-start, .range-end) {
   color: var(--info-text);
   font-weight: 600;
 }
 
-.usage-range-footer {
+.date-range-footer {
   margin-top: 12px;
   padding-top: 12px;
   display: flex;
@@ -181,13 +183,13 @@
   border-top: 1px solid var(--hairline);
 }
 
-.usage-range-presets,
-.usage-range-actions {
+.date-range-presets,
+.date-range-actions {
   display: flex;
   gap: 6px;
 }
 
-.usage-range-presets button {
+.date-range-presets button {
   min-height: 30px;
   padding: 0 9px;
   border: 1px solid var(--hairline);
@@ -199,35 +201,30 @@
   cursor: pointer;
 }
 
-.usage-range-presets button:hover {
+.date-range-presets button:hover {
   border-color: var(--hairline-strong);
   background: var(--surface-hover);
 }
 
 @media (max-width: 620px) {
-  .usage-range-popover {
-    max-height: calc(100dvh - 24px);
-    overflow-y: auto;
-  }
-
-  .usage-range-calendars {
+  .date-range-calendars {
     grid-template-columns: 1fr;
   }
 
-  .usage-range-calendar:nth-child(2) {
+  .date-range-calendar:nth-child(2) {
     display: none;
   }
 
-  .usage-range-calendar:first-child > header button:last-child {
+  .date-range-calendar:first-child > header button:last-child {
     visibility: visible;
   }
 
-  .usage-range-footer {
+  .date-range-footer {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .usage-range-actions {
+  .date-range-actions {
     align-self: flex-end;
   }
 }

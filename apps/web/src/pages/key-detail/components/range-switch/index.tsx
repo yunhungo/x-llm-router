@@ -5,7 +5,7 @@ export function RangeSwitch({
   value,
   onChange,
 }: {
-  value: KeyAnalyticsRange;
+  value: KeyAnalyticsRange | undefined;
   onChange: (range: KeyAnalyticsRange) => void;
 }) {
   return (
@@ -21,6 +21,7 @@ export function RangeSwitch({
           type="button"
           key={range}
           className={value === range ? 'active' : ''}
+          aria-pressed={value === range}
           onClick={() => onChange(range)}
         >
           {label}

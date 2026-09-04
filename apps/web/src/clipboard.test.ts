@@ -61,4 +61,22 @@ describe('copyText', () => {
     await expect(copyText('xr_secret', { document })).resolves.toBe(false);
     expect(textarea.remove).toHaveBeenCalled();
   });
+
+  it('keeps fallback copying inside the fullscreen dialog and restores focus', async () => {
+    const { document, textarea } = fallbackEnvironment();
+    const dialog = { appendChild: vi.fn() };
+    const button = { focus: vi.fn() };
+    const querySelector = vi.fn(() => dialog);
+
+    await expect(
+      copyText('fullscreen JSON', {
+        secureContext: false,
+        document: { ...document, querySelector, activeElement: button },
+      }),
+    ).resolves.toBe(true);
+    expect(querySelector).toHaveBeenCalledWith('dialog:modal');
+    expect(dialog.appendChild).toHaveBeenCalledWith(textarea);
+    expect(document.body.appendChild).not.toHaveBeenCalled();
+    expect(button.focus).toHaveBeenCalled();
+  });
 });

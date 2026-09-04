@@ -19,6 +19,8 @@ interface CopyTextArea {
 
 interface CopyDocument {
   body: { appendChild(node: CopyTextArea): unknown };
+  querySelector?(selector: 'dialog:modal'): { appendChild(node: CopyTextArea): unknown } | null;
+  activeElement?: { focus(): void } | null;
   createElement(tagName: 'textarea'): CopyTextArea;
   execCommand(command: 'copy'): boolean;
 }
@@ -65,7 +67,10 @@ export async function copyText(
   textarea.style.top = '-9999px';
   textarea.style.opacity = '0';
   textarea.style.pointerEvents = 'none';
-  targetDocument.body.appendChild(textarea);
+  // Elements outside a modal dialog are inert and cannot receive the selection.
+  const container = targetDocument.querySelector?.('dialog:modal') ?? targetDocument.body;
+  const previousFocus = targetDocument.activeElement;
+  container.appendChild(textarea);
 
   try {
     textarea.focus();
@@ -76,5 +81,6 @@ export async function copyText(
     return false;
   } finally {
     textarea.remove();
+    previousFocus?.focus();
   }
 }

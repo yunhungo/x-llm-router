@@ -1,3 +1,5 @@
+import { relativeDateRange } from '../../date-range';
+export { dateRangeError as usageLogTimeRangeError } from '../../date-range';
 import type { UsageLog } from '../../types';
 
 export const ESTIMATED_USAGE_LOG_ROW_HEIGHT = 68;
@@ -23,8 +25,7 @@ export function createDefaultUsageLogFilters(now = new Date()): UsageLogFiltersS
     status: 'all',
     model: 'all',
     endpoint: 'all',
-    from: new Date(now.getTime() - DEFAULT_USAGE_LOG_WINDOW_DAYS * 86_400_000).toISOString(),
-    to: now.toISOString(),
+    ...relativeDateRange(DEFAULT_USAGE_LOG_WINDOW_DAYS, now),
   };
 }
 
@@ -40,15 +41,6 @@ export function datetimeLocalIso(value: string): string {
   if (!value) return '';
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
-}
-
-export function usageLogTimeRangeError(filters: Pick<UsageLogFiltersState, 'from' | 'to'>) {
-  if (!filters.from || !filters.to) return '请选择完整的开始和结束时间。';
-  const from = new Date(filters.from).getTime();
-  const to = new Date(filters.to).getTime();
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return '时间格式无效。';
-  if (from >= to) return '开始时间必须早于结束时间。';
-  return '';
 }
 
 export function usageLogFilterSearchParams(filters: UsageLogFiltersState): URLSearchParams {

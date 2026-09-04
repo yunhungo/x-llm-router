@@ -5,6 +5,8 @@ import {
   type PerformanceMetric,
 } from '../../../../components/key-performance-chart';
 import { Button, Skeleton } from '../../../../components/ui';
+import { DateRangePicker } from '../../../../components/date-range-picker';
+import type { DateRange } from '../../../../date-range';
 import type { KeyAnalyticsRange, KeyAnalyticsResponse, KeyUsagePoint } from '../../../../types';
 import {
   allModelsValue,
@@ -23,6 +25,9 @@ import './charts-panel.css';
 interface ChartsPanelProps {
   apiKey: KeyAnalyticsResponse['key'];
   range: KeyAnalyticsRange;
+  timeRange: DateRange;
+  customRange: boolean;
+  onCustomRangeChange: (range: DateRange) => void;
   onRangeChange: (range: KeyAnalyticsRange) => void;
   modelOptions: AnalyticsModelOption[];
   selectedModel: string;
@@ -41,6 +46,9 @@ interface ChartsPanelProps {
 export function ChartsPanel({
   apiKey,
   range,
+  timeRange,
+  customRange,
+  onCustomRangeChange,
   onRangeChange,
   modelOptions,
   selectedModel,
@@ -55,6 +63,7 @@ export function ChartsPanel({
   onBucketSelect,
   onDrilldown,
 }: ChartsPanelProps) {
+  const rangeLabel = customRange ? '所选时间范围' : rangeLabels[range];
   const summary = data?.summary;
   const cacheRate = summary?.inputTokens
     ? (summary.cachedInputTokens / summary.inputTokens) * 100
@@ -96,8 +105,13 @@ export function ChartsPanel({
             ))}
           </select>
         </label>
-        <span className="chart-range-label">{rangeLabels[range]}</span>
-        <RangeSwitch value={range} onChange={onRangeChange} />
+        <DateRangePicker
+          value={timeRange}
+          onApply={onCustomRangeChange}
+          label={customRange ? undefined : rangeLabel}
+          ariaLabel="选择图表日期区间"
+        />
+        <RangeSwitch value={customRange ? undefined : range} onChange={onRangeChange} />
       </div>
 
       {error ? (
@@ -263,14 +277,14 @@ export function ChartsPanel({
 
           <KeyPerformanceChart
             points={data.series}
-            range={range}
+            range={data.range}
             metric={metric}
             onMetricChange={onMetricChange}
             onBucketSelect={onBucketSelect}
             emptyLabel={
               selectedModelOption
-                ? `该模型在${rangeLabels[range]}暂无调用数据`
-                : `${rangeLabels[range]}暂无调用数据`
+                ? `该模型在${rangeLabel}暂无调用数据`
+                : `${rangeLabel}暂无调用数据`
             }
           />
 
@@ -322,7 +336,7 @@ export function ChartsPanel({
                   ) : (
                     <tr>
                       <td colSpan={7} className="table-empty">
-                        该模型在{rangeLabels[range]}暂无调用数据
+                        该模型在{rangeLabel}暂无调用数据
                       </td>
                     </tr>
                   )}

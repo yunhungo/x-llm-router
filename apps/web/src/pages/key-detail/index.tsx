@@ -3,6 +3,7 @@ import { KeyRound, RefreshCcw } from 'lucide-react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
 import { api, ApiError, jsonBody } from '../../api';
+import { relativeDateRange, type DateRange } from '../../date-range';
 import type { PerformanceMetric } from '../../components/key-performance-chart';
 import {
   emptyLangfuse,
@@ -50,19 +51,6 @@ import {
 } from './key-detail-model';
 import './key-detail.css';
 
-const analyticsRangeMs: Record<KeyAnalyticsRange, number> = {
-  '24h': 86_400_000,
-  '7d': 7 * 86_400_000,
-  '30d': 30 * 86_400_000,
-};
-
-function analyticsLogTimeRange(range: KeyAnalyticsRange, now = new Date()) {
-  return {
-    from: new Date(now.getTime() - analyticsRangeMs[range]).toISOString(),
-    to: now.toISOString(),
-  };
-}
-
 export function KeyDetailPage() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,6 +62,16 @@ export function KeyDetailPage() {
     [setSearchParams],
   );
   const [range, setRange] = useState<KeyAnalyticsRange>('24h');
+  const [customRange, setCustomRange] = useState<DateRange>();
+  const analyticsQuery = useMemo(() => {
+    const params = new URLSearchParams({ range });
+    if (customRange) {
+      params.set('from', customRange.from);
+      params.set('to', customRange.to);
+    }
+    return params.toString();
+  }, [range, customRange]);
+  const [dataQuery, setDataQuery] = useState('');
   const [data, setData] = useState<KeyAnalyticsResponse>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -123,17 +121,18 @@ export function KeyDetailPage() {
     const controller = new AbortController();
     mainLoadController.current = controller;
     setLoading(true);
-    setData((current) => (current?.key.id === id && current.range === range ? current : undefined));
+    setData((current) => (current?.key.id === id ? current : undefined));
     setError('');
     try {
       const [response, providerResponse] = await Promise.all([
-        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?range=${range}`, {
+        api<KeyAnalyticsResponse>(`/api/admin/keys/${id}/analytics?${analyticsQuery}`, {
           signal: controller.signal,
         }),
         api<{ providers: Provider[] }>('/api/admin/providers', { signal: controller.signal }),
       ]);
       if (mainLoadRequest.current !== requestId) return;
       setData(response);
+      setDataQuery(analyticsQuery);
       setProviders(providerResponse.providers.filter((provider) => provider.status === 'active'));
       setGeneralSettings(generalDraft(response.key));
       setLangfuseSettings(langfuseDraft(response.key.langfuse));
@@ -147,7 +146,7 @@ export function KeyDetailPage() {
         setLoading(false);
       }
     }
-  }, [id, range]);
+  }, [id, analyticsQuery]);
 
   useEffect(() => {
     void load();
@@ -187,6 +186,10 @@ export function KeyDetailPage() {
     if (
       (activeTab !== 'overview' && activeTab !== 'charts') ||
       !id ||
+      dataQuery !== analyticsQuery ||
+      data?.key.id !== id ||
+      !data?.from ||
+      !data.to ||
       chartModel === allModelsValue
     ) {
       setModelAnalyticsError('');
@@ -198,11 +201,11 @@ export function KeyDetailPage() {
 
     const requestId = ++modelAnalyticsRequest.current;
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      range,
-      model: selectedModel.model,
-      provider: selectedModel.provider,
-    });
+    const params = new URLSearchParams(analyticsQuery);
+    params.set('from', data.from);
+    params.set('to', data.to);
+    params.set('model', selectedModel.model);
+    params.set('provider', selectedModel.provider);
     setModelAnalyticsLoading(true);
     setModelAnalyticsError('');
 
@@ -211,7 +214,12 @@ export function KeyDetailPage() {
     })
       .then((response) => {
         if (modelAnalyticsRequest.current !== requestId) return;
-        setModelAnalytics({ keyId: id, identity: chartModel, range, data: response });
+        setModelAnalytics({
+          keyId: id,
+          identity: chartModel,
+          query: analyticsQuery,
+          data: response,
+        });
       })
       .catch((caught: unknown) => {
         if (modelAnalyticsRequest.current !== requestId) return;
@@ -226,11 +234,11 @@ export function KeyDetailPage() {
       controller.abort();
       if (modelAnalyticsRequest.current === requestId) modelAnalyticsRequest.current += 1;
     };
-  }, [activeTab, chartModel, chartRefreshKey, id, range]);
+  }, [activeTab, chartModel, chartRefreshKey, id, analyticsQuery, dataQuery, data?.from, data?.to]);
 
   const loadDrilldown = (next: LogDrilldown) => {
     if (!id) return;
-    const fallbackRange = analyticsLogTimeRange(range);
+    const fallbackRange = chartTimeRange;
     setActiveTab('logs');
     setError('');
     setDrilldown(next);
@@ -351,16 +359,28 @@ export function KeyDetailPage() {
   }
 
   const { key } = data;
+  const chartTimeRange =
+    customRange ??
+    (dataQuery === analyticsQuery && data.from && data.to
+      ? { from: data.from, to: data.to }
+      : relativeDateRange({ '24h': 1, '7d': 7, '30d': 30 }[range]));
+  const rangeLabel = customRange ? '所选时间范围' : undefined;
+  const retryAnalytics = () => {
+    setChartRefreshKey((value) => value + 1);
+    void load();
+  };
   const selectedModelOption = chartModelOptions.find((option) => option.identity === chartModel);
   const activeModelData =
     chartModel !== allModelsValue
       ? modelAnalytics &&
         modelAnalytics.keyId === id &&
         modelAnalytics.identity === chartModel &&
-        modelAnalytics.range === range
+        modelAnalytics.query === analyticsQuery &&
+        modelAnalytics.data.from === data.from &&
+        modelAnalytics.data.to === data.to
         ? modelAnalytics.data
         : undefined
-      : data.key.id === id
+      : data.key.id === id && dataQuery === analyticsQuery
         ? data
         : undefined;
   const resetLocalLogFilters = () => {
@@ -419,13 +439,14 @@ export function KeyDetailPage() {
         <OverviewPanel
           apiKey={key}
           range={range}
+          rangeLabel={rangeLabel}
           modelOptions={chartModelOptions}
           selectedModel={chartModel}
           onSelectedModelChange={setChartModel}
           summary={activeModelData?.summary}
-          loading={modelAnalyticsLoading}
-          error={modelAnalyticsError}
-          onRetry={() => setChartRefreshKey((value) => value + 1)}
+          loading={loading || modelAnalyticsLoading}
+          error={error || modelAnalyticsError}
+          onRetry={retryAnalytics}
         />
       ) : null}
 
@@ -433,15 +454,21 @@ export function KeyDetailPage() {
         <ChartsPanel
           apiKey={key}
           range={range}
-          onRangeChange={setRange}
+          timeRange={chartTimeRange}
+          customRange={Boolean(customRange)}
+          onCustomRangeChange={setCustomRange}
+          onRangeChange={(next) => {
+            setRange(next);
+            setCustomRange(undefined);
+          }}
           modelOptions={chartModelOptions}
           selectedModel={chartModel}
           selectedModelOption={selectedModelOption}
           onSelectedModelChange={setChartModel}
           data={activeModelData}
-          loading={modelAnalyticsLoading}
-          error={modelAnalyticsError}
-          onRetry={() => setChartRefreshKey((value) => value + 1)}
+          loading={loading || modelAnalyticsLoading}
+          error={error || modelAnalyticsError}
+          onRetry={retryAnalytics}
           metric={chartMetric}
           onMetricChange={setChartMetric}
           onBucketSelect={selectBucket}
