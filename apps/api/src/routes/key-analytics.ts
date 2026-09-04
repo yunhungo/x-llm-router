@@ -6,6 +6,24 @@ import { requireAdmin } from '../lib/admin-auth';
 import { decryptLangfuseSettings, publicLangfuseSettings } from '../services/langfuse';
 
 const paramsSchema = z.object({ id: z.string().uuid() });
+const dailyQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(9998),
+  timeZone: z
+    .string()
+    .min(1)
+    .max(100)
+    .default('UTC')
+    .transform((value, ctx) => {
+      try {
+        return new Intl.DateTimeFormat('en', { timeZone: value }).resolvedOptions().timeZone;
+      } catch {
+        ctx.addIssue({ code: 'custom', message: '时区无效。' });
+        return z.NEVER;
+      }
+    }),
+  model: z.string().trim().min(1).max(120).optional(),
+  provider: z.string().trim().min(1).max(40).optional(),
+});
 const querySchema = z
   .object({
     range: z.enum(['24h', '7d', '30d']).default('24h'),
@@ -88,6 +106,48 @@ export function visibleTokensPerSecond(
 
 export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAdmin);
+
+  app.get('/api/admin/keys/:id/analytics/daily', async (request, reply) => {
+    const parsedParams = paramsSchema.safeParse(request.params);
+    const parsedQuery = dailyQuerySchema.safeParse(request.query);
+    if (!parsedParams.success || !parsedQuery.success) {
+      return reply.code(400).send({
+        error: { code: 'invalid_request', message: 'Key ID、年份、时区或模型筛选无效。' },
+      });
+    }
+    const { id } = parsedParams.data;
+    const { year, timeZone, model, provider } = parsedQuery.data;
+    const pool = getPool();
+    const key = await pool.query('SELECT id FROM virtual_api_keys WHERE id = $1', [id]);
+    if (!key.rows.length) {
+      return reply.code(404).send({ error: { code: 'not_found', message: 'Key 不存在。' } });
+    }
+    // Keep the indexed timestamp predicate, then group by local calendar date.
+    // PostgreSQL applies the zone's historical DST rules at each midnight.
+    const result = await pool.query(
+      `SELECT to_char(u.created_at AT TIME ZONE $3, 'YYYY-MM-DD') AS day,
+              COALESCE(p.provider, 'unknown') AS provider, u.model,
+              count(*)::int AS calls,
+              count(*) FILTER (WHERE NOT u.success)::int AS "failedCalls",
+              COALESCE(sum(u.total_tokens), 0)::float8 AS "totalTokens",
+              COALESCE(sum(u.input_tokens), 0)::float8 AS "inputTokens",
+              COALESCE(sum(u.output_tokens), 0)::float8 AS "outputTokens",
+              COALESCE(sum(u.cached_input_tokens), 0)::float8 AS "cachedInputTokens",
+              COALESCE(sum(u.reasoning_tokens), 0)::float8 AS "reasoningTokens",
+              COALESCE(sum(u.cost_usd), 0)::float8 AS "costUsd"
+         FROM usage_logs u
+         LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
+        WHERE u.virtual_api_key_id = $1
+          AND u.created_at >= (make_date($2::int, 1, 1)::timestamp AT TIME ZONE $3)
+          AND u.created_at < (make_date($2::int + 1, 1, 1)::timestamp AT TIME ZONE $3)
+          AND u.call_status IN ('completed', 'failed')
+          AND ($4::text IS NULL OR u.model = $4)
+          AND ($5::text IS NULL OR COALESCE(p.provider, 'unknown') = $5)
+        GROUP BY 1, 2, u.model ORDER BY 1, "totalTokens" DESC, 2, u.model`,
+      [id, year, timeZone, model ?? null, provider ?? null],
+    );
+    return { year, timeZone, days: result.rows };
+  });
 
   app.get('/api/admin/keys/:id/analytics', async (request, reply) => {
     const parsedParams = paramsSchema.safeParse(request.params);

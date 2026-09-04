@@ -20,6 +20,7 @@ import {
   type LogDrilldown,
 } from '../../key-detail-model';
 import { RangeSwitch } from '../range-switch';
+import { TokenHeatmap } from '../token-heatmap';
 import './charts-panel.css';
 
 interface ChartsPanelProps {
@@ -41,6 +42,8 @@ interface ChartsPanelProps {
   onMetricChange: (metric: PerformanceMetric) => void;
   onBucketSelect: (point: KeyUsagePoint) => void;
   onDrilldown: (drilldown: LogDrilldown) => void;
+  refreshKey: number;
+  onDailyModelsLoaded: (options: AnalyticsModelOption[]) => void;
 }
 
 export function ChartsPanel({
@@ -62,6 +65,8 @@ export function ChartsPanel({
   onMetricChange,
   onBucketSelect,
   onDrilldown,
+  refreshKey,
+  onDailyModelsLoaded,
 }: ChartsPanelProps) {
   const rangeLabel = customRange ? '所选时间范围' : rangeLabels[range];
   const summary = data?.summary;
@@ -113,6 +118,15 @@ export function ChartsPanel({
         />
         <RangeSwitch value={customRange ? undefined : range} onChange={onRangeChange} />
       </div>
+
+      <TokenHeatmap
+        key={apiKey.id}
+        keyId={apiKey.id}
+        selectedModel={selectedModel}
+        refreshKey={refreshKey}
+        onDrilldown={onDrilldown}
+        onModelsLoaded={onDailyModelsLoaded}
+      />
 
       {error ? (
         <section className="panel chart-model-error">

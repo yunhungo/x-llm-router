@@ -55,6 +55,49 @@ describe('key analytics route', () => {
     await app.close();
   });
 
+  it('returns daily model totals scoped to a calendar year, timezone, key and provider', async () => {
+    const keyId = '11111111-1111-4111-8111-111111111111';
+    const day = {
+      day: '2026-09-04',
+      model: 'gpt-5',
+      provider: 'custom',
+      totalTokens: 320,
+      calls: 2,
+    };
+    query
+      .mockResolvedValueOnce({ rows: [{ id: keyId }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [day], rowCount: 1 });
+    const response = await app.inject(
+      `/api/admin/keys/${keyId}/analytics/daily?year=2026&timeZone=Asia%2FShanghai&model=%20gpt-5%20&provider=custom`,
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ year: 2026, timeZone: 'Asia/Shanghai', days: [day] });
+    expect(query.mock.calls[1]?.[1]).toEqual([keyId, 2026, 'Asia/Shanghai', 'gpt-5', 'custom']);
+  });
+
+  it.each([
+    'year=1999',
+    'year=2026.5',
+    'year=9999',
+    'year=2026&timeZone=Invalid%2FZone',
+    'year=2026&model=',
+    'year=2026&provider=' + 'p'.repeat(41),
+  ])('rejects invalid daily queries before accessing the database: %s', async (params) => {
+    const response = await app.inject(
+      `/api/admin/keys/11111111-1111-4111-8111-111111111111/analytics/daily?${params}`,
+    );
+    expect(response.statusCode).toBe(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('does not report an unknown key as an empty year', async () => {
+    const response = await app.inject(
+      '/api/admin/keys/11111111-1111-4111-8111-111111111111/analytics/daily?year=2026',
+    );
+    expect(response.statusCode).toBe(404);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it('returns per-bucket model and provider metrics with the selected range bucket', async () => {
     const keyId = '11111111-1111-4111-8111-111111111111';
     const modelPoint = {

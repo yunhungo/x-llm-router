@@ -45,6 +45,7 @@ import {
   sameGeneralDraft,
   sameLangfuseDraft,
   type DetailTab,
+  type AnalyticsModelOption,
   type GeneralDraft,
   type LogDrilldown,
   type ModelAnalyticsState,
@@ -84,6 +85,29 @@ export function KeyDetailPage() {
   const [expandedLogId, setExpandedLogId] = useState<string>();
   const [chartMetric, setChartMetric] = useState<PerformanceMetric>('calls');
   const [chartModel, setChartModel] = useState(allModelsValue);
+  const [dailyModelOptions, setDailyModelOptions] = useState<{
+    keyId: string;
+    options: AnalyticsModelOption[];
+  }>();
+  const onDailyModelsLoaded = useCallback(
+    (options: AnalyticsModelOption[]) => {
+      if (!id) return;
+      // Retain models discovered in other years so changing the year does not
+      // silently clear a historical model selection.
+      setDailyModelOptions((current) => ({
+        keyId: id,
+        options: [
+          ...new Map(
+            [...(current?.keyId === id ? current.options : []), ...options].map((option) => [
+              option.identity,
+              option,
+            ]),
+          ).values(),
+        ],
+      }));
+    },
+    [id],
+  );
   const [modelAnalytics, setModelAnalytics] = useState<ModelAnalyticsState>();
   const [modelAnalyticsLoading, setModelAnalyticsLoading] = useState(false);
   const [modelAnalyticsError, setModelAnalyticsError] = useState('');
@@ -156,10 +180,16 @@ export function KeyDetailPage() {
     };
   }, [load]);
 
-  const chartModelOptions = useMemo(
-    () => (data && data.key.id === id ? analyticsModelOptions(data, providers) : []),
-    [data, id, providers],
-  );
+  const chartModelOptions = useMemo(() => {
+    if (!data || data.key.id !== id) return [];
+    const options = analyticsModelOptions(data, providers);
+    if (dailyModelOptions?.keyId === id) {
+      for (const option of dailyModelOptions.options) {
+        if (!options.some((item) => item.identity === option.identity)) options.push(option);
+      }
+    }
+    return options;
+  }, [data, id, providers, dailyModelOptions]);
 
   useEffect(() => {
     setChartModel(allModelsValue);
@@ -276,7 +306,7 @@ export function KeyDetailPage() {
 
   const loadModelDrilldown = (next: LogDrilldown) => {
     const selectedModel = parseModelIdentity(chartModel);
-    loadDrilldown({ ...next, ...selectedModel });
+    loadDrilldown({ ...selectedModel, ...next });
   };
 
   const saveGeneral = async (event: FormEvent<HTMLFormElement>) => {
@@ -473,6 +503,8 @@ export function KeyDetailPage() {
           onMetricChange={setChartMetric}
           onBucketSelect={selectBucket}
           onDrilldown={loadModelDrilldown}
+          refreshKey={chartRefreshKey}
+          onDailyModelsLoaded={onDailyModelsLoaded}
         />
       ) : null}
 

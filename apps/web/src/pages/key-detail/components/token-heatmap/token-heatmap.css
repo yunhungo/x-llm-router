@@ -1,0 +1,58 @@
+.token-heatmap {
+  margin-bottom: 16px;
+  --token-0: var(--canvas-soft-2);
+  --token-1: color-mix(in srgb, var(--green) 22%, var(--canvas));
+  --token-2: color-mix(in srgb, var(--green) 45%, var(--canvas));
+  --token-3: color-mix(in srgb, var(--green) 70%, var(--canvas));
+  --token-4: var(--green);
+}
+
+.token-heatmap-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.token-heatmap-heading p {
+  margin: 5px 0 0;
+  color: var(--mute);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.token-heatmap-heading > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.token-heatmap-year {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.token-heatmap-year .button {
+  padding: 6px;
+  min-height: 28px;
+}
+.token-heatmap-year strong {
+  min-width: 40px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-heatmap-loading {
+  padding: 18px 20px;
+}
+
+.token-heatmap-message {
+  padding: 32px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--body);
+  font-size: 12px;
+}

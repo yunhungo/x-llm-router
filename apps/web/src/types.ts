@@ -152,6 +152,26 @@ export interface UsageCallDetailResponse {
 
 export type KeyAnalyticsRange = '24h' | '7d' | '30d';
 
+export interface KeyDailyModelUsage {
+  day: string;
+  provider: string;
+  model: string;
+  calls: number;
+  failedCalls: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number;
+}
+
+export interface KeyDailyUsageResponse {
+  year: number;
+  timeZone: string;
+  days: KeyDailyModelUsage[];
+}
+
 export interface KeyAnalyticsSummary {
   calls: number;
   successfulCalls: number;
