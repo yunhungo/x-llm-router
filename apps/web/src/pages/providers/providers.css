@@ -92,18 +92,6 @@
   white-space: nowrap;
 }
 
-.provider-error {
-  margin-top: 12px;
-  padding: 9px 10px;
-  display: flex;
-  gap: 7px;
-  border-radius: 5px;
-  background: var(--danger-bg);
-  color: var(--danger-text);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .provider-models {
   margin-top: 12px;
   padding: 12px;
@@ -158,20 +146,6 @@
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.provider-model-error {
-  margin-top: 9px;
-  display: flex;
-  gap: 6px;
-  color: var(--warning-text);
-  font-size: 10px;
-  line-height: 15px;
-  overflow-wrap: anywhere;
-}
-
-.provider-model-error svg {
-  flex: 0 0 auto;
 }
 
 .provider-actions {

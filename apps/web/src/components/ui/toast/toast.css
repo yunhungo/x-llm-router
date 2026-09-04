@@ -1,10 +1,12 @@
 .toast-viewport {
   position: fixed;
   top: max(20px, env(safe-area-inset-top));
-  left: 50%;
+  right: max(20px, env(safe-area-inset-right));
   z-index: 200;
-  width: min(560px, calc(100vw - 32px));
-  transform: translateX(-50%);
+  width: min(
+    560px,
+    calc(100vw - max(20px, env(safe-area-inset-left)) - max(20px, env(safe-area-inset-right)))
+  );
   pointer-events: none;
 }
 
@@ -100,6 +102,15 @@
 @media (max-width: 760px) {
   .toast-viewport {
     top: max(12px, env(safe-area-inset-top));
-    width: calc(100vw - 24px);
+    right: max(12px, env(safe-area-inset-right));
+    width: calc(
+      100vw - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right))
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
   }
 }

@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   Check,
-  CircleAlert,
   Copy,
   KeyRound,
   Link2,
@@ -40,6 +39,7 @@ interface DeviceFlow {
 
 type ConnectionMethod = 'api-key' | 'oauth';
 type ApiMode = 'responses' | 'chat.completions';
+type FeedbackTone = 'success' | 'warning' | 'danger';
 
 export function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>();
@@ -57,20 +57,30 @@ export function ProvidersPage() {
   const [flow, setFlow] = useState<DeviceFlow>();
   const [loading, setLoading] = useState(false);
   const [refreshingModels, setRefreshingModels] = useState('');
-  const [message, setMessage] = useState('');
-  const [toast, setToast] = useState<{ id: number; message: string }>();
-  const [modalError, setModalError] = useState('');
+  const [oauthStatus, setOAuthStatus] = useState('');
+  const [toast, setToast] = useState<{ id: number; message: string; tone: FeedbackTone }>();
+  const toastId = useRef(0);
 
   const dismissToast = useCallback(() => setToast(undefined), []);
+  const showToast = useCallback((message: string, tone: FeedbackTone) => {
+    setToast({ id: ++toastId.current, message, tone });
+  }, []);
 
   const load = useCallback(async () => {
-    const [connections, registered] = await Promise.all([
-      api<{ providers: Provider[] }>('/api/admin/providers'),
-      api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
-    ]);
-    setProviders(connections.providers);
-    setCatalog(registered.providers);
-  }, []);
+    try {
+      const [connections, registered] = await Promise.all([
+        api<{ providers: Provider[] }>('/api/admin/providers'),
+        api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
+      ]);
+      setProviders(connections.providers);
+      setCatalog(registered.providers);
+    } catch (error) {
+      showToast(
+        `连接列表加载失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
+        'danger',
+      );
+    }
+  }, [showToast]);
   useEffect(() => void load(), [load]);
 
   useEffect(() => {
@@ -96,26 +106,27 @@ export function ProvidersPage() {
         if (cancelled) return;
         if (result.status === 'complete') {
           setFlow(undefined);
+          setOAuthStatus('');
           setModal(null);
           if (result.modelsWarning) {
-            setMessage(`OpenAI OAuth 连接成功，但模型同步失败：${result.modelsWarning}`);
+            showToast(`OpenAI OAuth 连接成功，但模型同步失败：${result.modelsWarning}`, 'warning');
           } else {
-            setMessage('');
-            setToast({
-              id: Date.now(),
-              message: `OpenAI OAuth 连接成功，已同步 ${result.modelsCount ?? 0} 个模型。`,
-            });
+            showToast(
+              `OpenAI OAuth 连接成功，已同步 ${result.modelsCount ?? 0} 个模型。`,
+              'success',
+            );
           }
           void load();
           return;
         }
         if (result.status === 'expired' || result.status === 'failed') {
           setFlow(undefined);
-          setMessage('授权已过期或失败，请重新开始。');
+          setOAuthStatus('');
+          showToast('授权已过期或失败，请重新开始。', 'danger');
           return;
         }
         retryDelayMs = pollIntervalMs;
-        setMessage('');
+        setOAuthStatus('');
         schedule(pollIntervalMs);
       } catch (error) {
         if (cancelled) return;
@@ -128,11 +139,12 @@ export function ProvidersPage() {
         const detail = error instanceof ApiError ? error.message : '暂时无法检查 OAuth 状态';
         if (!retryable) {
           setFlow(undefined);
-          setMessage(detail);
+          setOAuthStatus('');
+          showToast(detail, 'danger');
           return;
         }
         retryDelayMs = Math.min(Math.max(retryDelayMs * 2, 10_000), maxRetryDelayMs);
-        setMessage(`${detail}；将自动重试。`);
+        setOAuthStatus(`${detail}；将自动重试。`);
         schedule(retryDelayMs);
       }
     };
@@ -142,12 +154,12 @@ export function ProvidersPage() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [flow, load]);
+  }, [flow, load, showToast]);
 
   const startOAuth = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setMessage('');
+    setOAuthStatus('');
     try {
       const response = await api<DeviceFlow>('/api/admin/providers/oauth/start', {
         method: 'POST',
@@ -156,7 +168,7 @@ export function ProvidersPage() {
       setFlow(response);
       window.open(response.verificationUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      setMessage(error instanceof ApiError ? error.message : '无法开始 OAuth。');
+      showToast(error instanceof ApiError ? error.message : '无法开始 OAuth。', 'danger');
     } finally {
       setLoading(false);
     }
@@ -165,7 +177,6 @@ export function ProvidersPage() {
   const createApiKeyProvider = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setMessage('');
     try {
       await api('/api/admin/providers/api-key', {
         method: 'POST',
@@ -181,10 +192,10 @@ export function ProvidersPage() {
       });
       setModal(null);
       setApiKey('');
-      setToast({ id: Date.now(), message: 'API Key 连接已添加。' });
+      showToast('API Key 连接已添加。', 'success');
       await load();
     } catch (error) {
-      setMessage(error instanceof ApiError ? error.message : '保存失败。');
+      showToast(error instanceof ApiError ? error.message : '保存失败。', 'danger');
     } finally {
       setLoading(false);
     }
@@ -195,6 +206,7 @@ export function ProvidersPage() {
     if (method === 'oauth') setProviderId('openai');
     setName(method === 'api-key' ? 'OpenAI API' : 'OpenAI OAuth');
     setFlow(undefined);
+    setOAuthStatus('');
   };
 
   const openAddProviderModal = () => {
@@ -207,7 +219,6 @@ export function ProvidersPage() {
     setPriority('100');
     setFlow(undefined);
     setEditingProvider(undefined);
-    setModalError('');
     setModal('add');
   };
 
@@ -231,7 +242,6 @@ export function ProvidersPage() {
     setDefaultModel(provider.defaultModel ?? '');
     setPriority(String(provider.priority));
     setFlow(undefined);
-    setModalError('');
     setModal('edit');
   };
 
@@ -239,7 +249,6 @@ export function ProvidersPage() {
     event.preventDefault();
     if (!editingProvider) return;
     setLoading(true);
-    setModalError('');
     try {
       const nextApiKey = apiKey.trim();
       await api(`/api/admin/providers/${editingProvider.id}`, {
@@ -260,34 +269,45 @@ export function ProvidersPage() {
       setModal(null);
       setEditingProvider(undefined);
       setApiKey('');
-      setMessage(`连接“${name.trim()}”已更新。`);
+      showToast(`连接“${name.trim()}”已更新。`, 'success');
       await load();
     } catch (error) {
-      setModalError(error instanceof ApiError ? error.message : '保存失败，请稍后重试。');
+      showToast(error instanceof ApiError ? error.message : '保存失败，请稍后重试。', 'danger');
     } finally {
       setLoading(false);
     }
   };
 
   const toggle = async (provider: Provider) => {
-    await api(`/api/admin/providers/${provider.id}`, {
-      method: 'PATCH',
-      ...jsonBody({ status: provider.status === 'active' ? 'disabled' : 'active' }),
-    });
-    await load();
+    const action = provider.status === 'active' ? '停用' : '启用';
+    try {
+      await api(`/api/admin/providers/${provider.id}`, {
+        method: 'PATCH',
+        ...jsonBody({ status: provider.status === 'active' ? 'disabled' : 'active' }),
+      });
+      showToast(`连接“${provider.name}”已${action}。`, 'success');
+      await load();
+    } catch (error) {
+      showToast(
+        `${action}失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
+        'danger',
+      );
+    }
   };
   const refreshModels = async (provider: Provider) => {
     setRefreshingModels(provider.id);
-    setMessage('');
     try {
       const result = await api<{ models: string[]; refreshedAt: string }>(
         `/api/admin/providers/${provider.id}/models/refresh`,
         { method: 'POST' },
       );
-      setMessage(`模型同步成功，共 ${result.models.length} 个。`);
+      showToast(`“${provider.name}”模型同步成功，共 ${result.models.length} 个。`, 'success');
       await load();
     } catch (error) {
-      setMessage(`模型同步失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`);
+      showToast(
+        `“${provider.name}”模型同步失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
+        'danger',
+      );
       await load();
     } finally {
       setRefreshingModels('');
@@ -295,14 +315,27 @@ export function ProvidersPage() {
   };
   const remove = async (provider: Provider) => {
     if (!window.confirm(`确定删除连接“${provider.name}”吗？关联 Key 将回退到默认连接。`)) return;
-    await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE' });
-    await load();
+    try {
+      await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE' });
+      showToast(`连接“${provider.name}”已删除。`, 'success');
+      await load();
+    } catch (error) {
+      showToast(
+        `删除失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
+        'danger',
+      );
+    }
   };
 
   return (
     <div className="page-wrap">
       {toast ? (
-        <Toast key={toast.id} tone="success" onDismiss={dismissToast}>
+        <Toast
+          key={toast.id}
+          tone={toast.tone}
+          durationMs={toast.tone === 'success' ? 4_000 : 5_000}
+          onDismiss={dismissToast}
+        >
           {toast.message}
         </Toast>
       ) : null}
@@ -314,17 +347,6 @@ export function ProvidersPage() {
           </Button>
         }
       />
-      {message ? (
-        <div
-          className={
-            message.includes('成功') && !message.includes('失败')
-              ? 'notice success'
-              : 'notice warning'
-          }
-        >
-          {message}
-        </div>
-      ) : null}
       {!providers ? (
         <Skeleton height={300} />
       ) : providers.length ? (
@@ -435,17 +457,7 @@ export function ProvidersPage() {
                   ) : (
                     <p>点击刷新以同步或恢复此 Provider 当前可用的模型。</p>
                   )}
-                  {provider.modelsRefreshError ? (
-                    <div className="provider-model-error">
-                      <CircleAlert size={13} /> {provider.modelsRefreshError}
-                    </div>
-                  ) : null}
                 </section>
-              ) : null}
-              {provider.lastError ? (
-                <div className="provider-error">
-                  <CircleAlert size={14} /> {provider.lastError}
-                </div>
               ) : null}
               <div className="provider-actions">
                 <Button variant="secondary" onClick={() => void toggle(provider)}>
@@ -490,6 +502,11 @@ export function ProvidersPage() {
                   </p>
                 </div>
               </div>
+              {oauthStatus ? (
+                <div className="notice warning" role="status">
+                  {oauthStatus}
+                </div>
+              ) : null}
               <button
                 type="button"
                 className="device-code"
@@ -652,7 +669,6 @@ export function ProvidersPage() {
           onClose={() => {
             setModal(null);
             setEditingProvider(undefined);
-            setModalError('');
           }}
         >
           <form className="modal-body" onSubmit={(event) => void saveProvider(event)}>
@@ -760,7 +776,6 @@ export function ProvidersPage() {
               </div>
             )}
 
-            {modalError ? <div className="form-error">{modalError}</div> : null}
             <div className="modal-actions">
               <Button
                 type="button"
@@ -768,7 +783,6 @@ export function ProvidersPage() {
                 onClick={() => {
                   setModal(null);
                   setEditingProvider(undefined);
-                  setModalError('');
                 }}
               >
                 取消
