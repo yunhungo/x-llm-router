@@ -1,8 +1,8 @@
 .json-code-viewer {
   position: relative;
   min-width: 0;
-  background: #111;
-  color: #e8e8e8;
+  background: var(--canvas);
+  color: var(--ink);
 }
 
 .json-code-toolbar,
@@ -14,10 +14,17 @@
 }
 
 .json-code-toolbar {
-  position: relative;
+  position: absolute;
+  top: 10px;
+  right: 10px;
   z-index: 2;
-  flex: 0 0 auto;
-  padding: 10px;
+  max-width: calc(100% - 20px);
+  pointer-events: none;
+}
+
+.json-code-actions > *,
+.json-code-fullscreen-toggle {
+  pointer-events: auto;
 }
 
 .json-code-actions {
@@ -31,20 +38,20 @@
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border: 1px solid #333;
+  border: 1px solid transparent;
   border-radius: 5px;
-  background: #1d1d1d;
-  color: #bbb;
+  background: transparent;
+  color: var(--body);
   cursor: pointer;
 }
 
 .json-code-fullscreen-toggle:hover {
-  border-color: #555;
-  color: #eee;
+  border-color: var(--hairline-strong);
+  color: var(--ink);
 }
 
 .json-code-viewer button:focus-visible {
-  outline: 2px solid #82aaff;
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
@@ -55,7 +62,15 @@
 
 .json-code-editor .cm-editor,
 .json-code-editor .cm-gutters {
-  background: #111;
+  background: var(--canvas);
+}
+
+.json-code-editor .cm-editor {
+  color: var(--ink);
+}
+
+.json-code-editor .cm-gutters {
+  color: var(--mute);
 }
 
 .json-code-editor .cm-scroller {
@@ -74,13 +89,13 @@
   margin: 0;
   padding: 0;
   border: 0;
-  background: #111;
-  color: #e8e8e8;
+  background: var(--canvas);
+  color: var(--ink);
   overflow: hidden;
 }
 
 .json-code-fullscreen::backdrop {
-  background: #111;
+  background: var(--canvas);
 }
 
 .json-code-fullscreen .json-code-viewer {

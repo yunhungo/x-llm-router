@@ -86,16 +86,16 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid #333;
+  border: 1px solid transparent;
   border-radius: 5px;
-  background: #1d1d1d;
-  color: #bbb;
+  background: transparent;
+  color: var(--body);
   font-size: 10px;
   cursor: pointer;
 }
 .usage-detail-copy:hover {
-  border-color: #555;
-  color: #eee;
+  border-color: var(--hairline-strong);
+  color: var(--ink);
 }
 .usage-detail-copy-error {
   align-self: flex-end;
@@ -104,8 +104,8 @@
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
   border-radius: 5px;
-  background: #251616;
-  color: #ffaaaa;
+  background: var(--danger-bg);
+  color: var(--danger-text);
   font-size: 10px;
 }
 .usage-detail-models {

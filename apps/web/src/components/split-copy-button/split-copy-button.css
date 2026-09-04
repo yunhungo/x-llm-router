@@ -6,9 +6,9 @@
 .split-copy-main,
 .split-copy-toggle {
   height: 30px;
-  border: 1px solid #333;
-  background: #1d1d1d;
-  color: #bbb;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--body);
   cursor: pointer;
 }
 
@@ -33,8 +33,8 @@
 .split-copy-main:hover,
 .split-copy-toggle:hover,
 .split-copy-toggle[aria-expanded='true'] {
-  background: #292929;
-  color: #fff;
+  border-color: var(--hairline-strong);
+  color: var(--ink);
 }
 
 .split-copy-button button:disabled {
@@ -49,10 +49,10 @@
   right: 0;
   width: 160px;
   padding: 4px;
-  border: 1px solid #3b3b3b;
+  border: 1px solid var(--hairline-strong);
   border-radius: 6px;
-  background: #1d1d1d;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  background: var(--canvas);
+  box-shadow: var(--shadow-3);
 }
 
 .split-copy-dropdown button {
@@ -66,7 +66,7 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #ddd;
+  color: var(--body);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -74,5 +74,5 @@
 
 .split-copy-dropdown button:hover,
 .split-copy-dropdown button:focus-visible {
-  background: #303030;
+  background: var(--canvas-soft-2);
 }

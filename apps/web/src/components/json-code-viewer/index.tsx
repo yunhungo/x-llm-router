@@ -5,6 +5,7 @@ import { Maximize, Minimize } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useTheme } from '../theme-provider';
 import './json-code-viewer.css';
 
 const extensions = [
@@ -12,7 +13,7 @@ const extensions = [
   EditorView.lineWrapping,
   EditorView.contentAttributes.of({ 'aria-label': 'JSON 代码', tabindex: '0' }),
   EditorView.theme({
-    '&': { backgroundColor: '#111', color: '#e8e8e8', fontSize: '12px' },
+    '&': { backgroundColor: 'var(--canvas)', color: 'var(--ink)', fontSize: '12px' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
       fontFamily: "'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace",
@@ -21,7 +22,7 @@ const extensions = [
     },
     '.cm-content': { padding: '12px 0 20px' },
     '.cm-line': { padding: '0 20px' },
-    '.cm-gutters': { backgroundColor: '#111', color: '#666', border: 'none' },
+    '.cm-gutters': { backgroundColor: 'var(--canvas)', color: 'var(--mute)', border: 'none' },
   }),
 ];
 
@@ -43,6 +44,7 @@ export function JsonCodeViewer({
   actions: ReactNode;
   feedback?: ReactNode;
 }) {
+  const { resolvedTheme } = useTheme();
   const [fullscreen, setFullscreen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -90,7 +92,7 @@ export function JsonCodeViewer({
       <CodeMirror
         className="json-code-editor"
         value={value}
-        theme="dark"
+        theme={resolvedTheme}
         editable={false}
         readOnly
         {...(fullscreen ? { height: '100%' } : { minHeight: '210px', maxHeight: '520px' })}
