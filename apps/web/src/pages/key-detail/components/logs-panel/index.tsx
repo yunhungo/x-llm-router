@@ -1,3 +1,10 @@
+/**
+ * @created 2026-08-28
+ * @description 展示 API Key 调用记录、性能指标及明细。
+ * @author yunhungo
+ */
+import { UsageLogPerformance } from '@/components/UsageLogPerformance/UsageLogPerformance';
+
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, X } from 'lucide-react';
 import type { RefObject, UIEventHandler } from 'react';
@@ -12,14 +19,13 @@ import type { UsageLogFiltersState } from '../../../../features/usage/usage-log-
 import { ESTIMATED_USAGE_LOG_ROW_HEIGHT } from '../../../../features/usage/usage-log-pagination';
 import type { KeyUsageLog } from '../../../../types';
 import {
-  decimal,
   endpointLabel,
   formatDate,
   integer,
   money,
   type LogDrilldown,
 } from '../../key-detail-model';
-import './logs-panel.css';
+import './logs-panel.scss';
 
 interface LogsPanelProps {
   logs: KeyUsageLog[] | undefined;
@@ -130,7 +136,7 @@ export function LogsPanel({
                   <th>请求</th>
                   <th>模型</th>
                   <th>Token</th>
-                  <th>TPS / TTFT</th>
+                  <th>输出性能</th>
                   <th>延迟</th>
                   <th>成本</th>
                   <th>时间</th>
@@ -202,12 +208,11 @@ export function LogsPanel({
                           {active ? (
                             '—'
                           ) : (
-                            <>
-                              TPS {log.tps === null ? '—' : decimal.format(log.tps)} ·{' '}
-                              {log.timeToFirstTokenMs === null
-                                ? 'TTFT —'
-                                : `TTFT ${integer.format(log.timeToFirstTokenMs)} ms`}
-                            </>
+                            <UsageLogPerformance
+                              tps={log.tps}
+                              timeToFirstTokenMs={log.timeToFirstTokenMs}
+                              timeToFirstVisibleTokenMs={log.timeToFirstVisibleTokenMs}
+                            />
                           )}
                         </td>
                         <td>

@@ -1,0 +1,50 @@
+/**
+ * @created 2026-09-05
+ * @description 定义调用性能指标的紧凑对齐布局。
+ * @author yunhungo
+ */
+.usage-log-performance {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+
+  &__metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    white-space: nowrap;
+  }
+
+  dt {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+    cursor: help;
+  }
+  dt:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  dd {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  &__label {
+    min-width: 31px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  &__hint,
+  &__unit {
+    color: var(--mute);
+    font-size: 10px;
+    font-weight: 400;
+  }
+}

@@ -1,3 +1,10 @@
+/**
+ * @created 2026-08-10
+ * @description 展示全局调用记录、性能指标及明细。
+ * @author yunhungo
+ */
+import { UsageLogPerformance } from '@/components/UsageLogPerformance/UsageLogPerformance';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, RefreshCcw } from 'lucide-react';
@@ -20,7 +27,7 @@ import {
   useUsageLogPagination,
 } from '../../features/usage/use-usage-log-pagination';
 import type { UsageLog } from '../../types';
-import './usage.css';
+import './usage.scss';
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -28,7 +35,6 @@ const money = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 4,
   maximumFractionDigits: 8,
 });
-const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
 function tokensPerSecond(log: UsageLog) {
   if (log.timeToFirstTokenMs === null) return null;
@@ -116,7 +122,7 @@ export function UsagePage() {
                   <th>模型</th>
                   <th>API Key</th>
                   <th>Token</th>
-                  <th>延迟</th>
+                  <th>延迟 / 输出性能</th>
                   <th>成本</th>
                   <th>时间</th>
                   <th className="usage-expand-header" />
@@ -186,20 +192,21 @@ export function UsagePage() {
                           )}
                         </td>
                         <td className="usage-performance-cell">
-                          {active
-                            ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
-                            : `${log.latencyMs.toLocaleString()} ms`}
+                          <div className='usage-total-latency'>
+                            <span>{active ? '已耗时' : '总耗时'}</span>
+                            <span>{active
+                              ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
+                              : `${log.latencyMs.toLocaleString()} ms`}</span>
+                          </div>
                           {active ? (
                             <small>Elapsed</small>
-                          ) : log.timeToFirstTokenMs !== null ? (
-                            <small>
-                              TPS{' '}
-                              {tokensPerSecond(log) === null
-                                ? '—'
-                                : decimal.format(tokensPerSecond(log) ?? 0)}{' '}
-                              · TTFT {log.timeToFirstTokenMs.toLocaleString()} ms
-                            </small>
-                          ) : null}
+                          ) : (
+                            <UsageLogPerformance
+                              tps={tokensPerSecond(log)}
+                              timeToFirstTokenMs={log.timeToFirstTokenMs}
+                              timeToFirstVisibleTokenMs={log.timeToFirstVisibleTokenMs}
+                            />
+                          )}
                         </td>
                         <td>{active ? '—' : money.format(log.costUsd)}</td>
                         <td>

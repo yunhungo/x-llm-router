@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-28
+ * @description 定义 API Key 调用记录列表的布局。
+ * @author yunhungo
+ */
 .logs-panel {
   overflow: hidden;
 }
@@ -75,9 +80,9 @@
 
 .key-usage-virtual-table {
   --key-usage-table-columns: 44px 100px minmax(120px, 1.25fr) minmax(110px, 1.1fr)
-    minmax(145px, 1.35fr) minmax(125px, 1.1fr) 90px 84px 102px;
+    minmax(145px, 1.35fr) minmax(205px, 1.1fr) 90px 84px 102px;
   display: grid;
-  min-width: 920px;
+  min-width: 1000px;
 }
 
 .key-usage-virtual-table thead {
@@ -112,6 +117,8 @@
 
 .key-usage-virtual-row > td:not(.key-usage-virtual-detail-cell) {
   min-width: 0;
+  height: auto;
+  min-height: 80px;
   display: flex;
   flex-direction: column;
   justify-content: center;
