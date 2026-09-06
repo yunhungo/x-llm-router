@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 负责 OpenAI 兼容网关的请求转发、响应转换与用量追踪。
+ * @author yunhungo
+ */
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 
@@ -203,7 +208,14 @@ async function sendCompleteResponse(input: {
 }): Promise<KeyMiddlewareResponse> {
   const base: KeyMiddlewareResponse = {
     status: input.status,
-    headers: { 'content-type': 'application/json', ...input.headers },
+    headers: {
+      ...Object.fromEntries(
+        Object.entries(input.headers ?? {}).filter(
+          ([name]) => name.toLowerCase() !== 'content-type',
+        ),
+      ),
+      'content-type': 'application/json',
+    },
     body: input.body,
     stream: false,
     phase: 'complete',
