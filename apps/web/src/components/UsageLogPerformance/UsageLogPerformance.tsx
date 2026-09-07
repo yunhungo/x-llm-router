@@ -22,7 +22,6 @@ export function UsageLogPerformance({
   const metrics = [
     {
       label: 'TPS',
-      hint: '含推理',
       description:
         '输出 token（含 reasoning）÷ 首个输出事件到请求结束的秒数。隐藏推理未返回时，此值可能偏高。',
       value: tps,
@@ -31,7 +30,6 @@ export function UsageLogPerformance({
     },
     {
       label: 'TTFT',
-      hint: '首 Token',
       description:
         '从请求开始到网关收到首个输出事件，包括 reasoning、正文或工具调用。隐藏推理的开始时间无法观测。',
       value: timeToFirstTokenMs,
@@ -40,7 +38,6 @@ export function UsageLogPerformance({
     },
     {
       label: 'TTFO',
-      hint: '首输出',
       description:
         '从请求开始到网关收到首个非 reasoning 输出（正文或工具调用）。不含思考内容；隐藏推理时可能与 TTFT 相同。',
       value: timeToFirstVisibleTokenMs,
@@ -51,11 +48,10 @@ export function UsageLogPerformance({
 
   return (
     <dl className='usage-log-performance' aria-label='输出性能'>
-      {metrics.map(({ label, hint, description, value, unit, formatter }) => (
+      {metrics.map(({ label, description, value, unit, formatter }) => (
         <div className='usage-log-performance__metric' key={label}>
           <dt title={description} tabIndex={0} aria-label={`${label}：${description}`}>
             <span className='usage-log-performance__label'>{label}</span>
-            <span className='usage-log-performance__hint'>{hint}</span>
           </dt>
           <dd title={value == null ? '未采集到此指标' : undefined}>
             {value == null ? (

@@ -1,7 +1,13 @@
+/**
+ * @created 2026-08-26
+ * @description 定义页面底部居中的操作反馈布局与状态样式。
+ * @author yunhungo
+ */
 .toast-viewport {
   position: fixed;
-  top: max(20px, env(safe-area-inset-top));
-  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 200;
   width: min(
     560px,
@@ -95,14 +101,13 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-8px) scale(0.98);
+    transform: translateY(8px) scale(0.98);
   }
 }
 
 @media (max-width: 760px) {
   .toast-viewport {
-    top: max(12px, env(safe-area-inset-top));
-    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
     width: calc(
       100vw - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right))
     );
