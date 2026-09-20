@@ -1,0 +1,239 @@
+/**
+ * @created 2026-09-04
+ * @description 定义 JSON 查看器、搜索栏及全屏阅读布局。
+ * @author yunhungo
+ */
+.json-code-viewer {
+  position: relative;
+  min-width: 0;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.json-code-toolbar,
+.json-code-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.json-code-toolbar {
+  position: relative;
+  padding: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.json-code-actions > *,
+.json-code-fullscreen-toggle {
+  pointer-events: auto;
+}
+
+.json-code-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.json-code-fullscreen-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--canvas-soft-2);
+  box-shadow: var(--shadow-1);
+  color: var(--body);
+  cursor: pointer;
+}
+
+.json-code-fullscreen-toggle:hover {
+  border-color: var(--hairline-strong);
+  background: var(--nav-active);
+  color: var(--ink);
+}
+
+.json-code-viewer button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.json-code-editor {
+  min-width: 0;
+  min-height: 0;
+}
+
+.json-code-editor .cm-editor,
+.json-code-editor .cm-gutters {
+  background: var(--canvas);
+}
+
+.json-code-editor .cm-editor {
+  color: var(--ink);
+}
+
+.json-code-editor .cm-gutters {
+  color: var(--mute);
+}
+
+.json-code-editor .cm-scroller {
+  overscroll-behavior: contain;
+}
+
+.json-code-fullscreen {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.json-code-fullscreen::backdrop {
+  background: var(--canvas);
+}
+
+.json-code-fullscreen .json-code-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.json-code-fullscreen .json-code-editor {
+  flex: 1;
+  overflow: hidden;
+}
+
+.json-code-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  margin-right: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas-soft-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.json-code-editor .cm-panels {
+  background: var(--canvas-soft);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+.json-search-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  font-family: 'Geist Variable', sans-serif;
+  font-size: 12px;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    background: var(--canvas);
+    color: var(--body);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover:not(:disabled),
+    &[aria-pressed='true'] {
+      background: var(--nav-active);
+      border-color: var(--hairline-strong);
+      color: var(--ink);
+    }
+
+    &[aria-pressed='true'] {
+      box-shadow: inset 0 -2px var(--blue);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+  }
+}
+
+.json-search-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  min-width: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--canvas);
+
+  &:focus-within {
+    border-color: var(--blue);
+    outline: 1px solid var(--blue);
+  }
+
+  input {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 10px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+  }
+}
+
+.json-search-status {
+  flex-shrink: 0;
+  padding-right: 10px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.json-search-panel[data-empty='true'] .json-search-status {
+  color: var(--danger-text);
+}
+
+.json-search-navigation,
+.json-search-options {
+  display: flex;
+  gap: 4px;
+}
+
+.json-search-close {
+  margin-left: auto;
+}
+
+.json-code-editor .cm-searchMatch {
+  background: color-mix(in srgb, var(--blue) 22%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+}
+
+.json-code-editor .cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--blue) 45%, transparent);
+  outline: 2px solid var(--blue);
+}

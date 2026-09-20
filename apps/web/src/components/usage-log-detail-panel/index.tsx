@@ -1,10 +1,15 @@
+/**
+ * @created 2026-08-26
+ * @description 展示调用请求、响应明细及脱敏复制操作。
+ * @author yunhungo
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, ShieldCheck } from 'lucide-react';
 
 import { api, ApiError } from '../../api';
 import { copyText } from '../../clipboard';
 import type { UsageCallDetailResponse } from '../../types';
-import { JsonCodeViewer } from '../json-code-viewer';
+import { JsonCodeViewer } from '@/components/JsonCodeViewer/JsonCodeViewer';
 import { SplitCopyButton, type CopyMode } from '../split-copy-button';
 import { Skeleton, Toast } from '../ui';
 import { requestJavaScript, requestJson } from './request-copy';
