@@ -1,3 +1,9 @@
+/**
+ * @created 2026-09-04
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
+import { money } from '@/features/billing/currency';
 import {
   useEffect,
   useId,
@@ -12,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui';
 import type { KeyDailyUsageResponse } from '../../../../../types';
-import { integer, money, type LogDrilldown } from '../../../key-detail-model';
+import { integer, type LogDrilldown } from '../../../key-detail-model';
 import './calendar.css';
 import { buildUsageCalendar, tokenLevel, usageDayRange, type UsageDay } from '../heatmap-model';
 
@@ -106,20 +112,20 @@ export function TokenHeatmapCalendar({
 
   return (
     <>
-      <div className="token-heatmap-body">
-        <div className="token-heatmap-summary">
+      <div className='token-heatmap-body'>
+        <div className='token-heatmap-summary'>
           <span>
             <strong>{integer.format(totalTokens)}</strong> Token{' '}
-            <span className="token-heatmap-muted">· {activeDays} 天有调用</span>
+            <span className='token-heatmap-muted'>· {activeDays} 天有调用</span>
           </span>
-          <span className="token-heatmap-muted">悬停查看用量，点击查看当天详情</span>
+          <span className='token-heatmap-muted'>悬停查看用量，点击查看当天详情</span>
         </div>
-        <div className="token-heatmap-scroll">
+        <div className='token-heatmap-scroll'>
           <div
-            className="token-heatmap-calendar"
+            className='token-heatmap-calendar'
             style={{ '--heatmap-weeks': weeks } as CSSProperties}
           >
-            <div className="token-heatmap-months" aria-hidden="true">
+            <div className='token-heatmap-months' aria-hidden='true'>
               {Array.from({ length: 12 }, (_, month) => {
                 const index = cells.findIndex((day) => day?.date.getMonth() === month);
                 return (
@@ -129,21 +135,21 @@ export function TokenHeatmapCalendar({
                 );
               })}
             </div>
-            <div className="token-heatmap-weekdays" aria-hidden="true">
+            <div className='token-heatmap-weekdays' aria-hidden='true'>
               {['一', '', '三', '', '五', '', '日'].map((label, index) => (
                 <span key={index}>{label}</span>
               ))}
             </div>
             <div
-              className="token-heatmap-cells"
-              role="group"
+              className='token-heatmap-cells'
+              role='group'
               aria-label={`${data.year} 年每日用量，可用方向键选择日期`}
             >
               {cells.map((day, index) =>
                 day ? (
                   <button
                     key={day.day}
-                    type="button"
+                    type='button'
                     ref={(element) => {
                       if (element) buttons.current.set(day.day, element);
                       else buttons.current.delete(day.day);
@@ -176,12 +182,12 @@ export function TokenHeatmapCalendar({
             </div>
           </div>
         </div>
-        <div className="token-heatmap-footer">
+        <div className='token-heatmap-footer'>
           <span>
             {data.timeZone} · 每格一天{!activeDays ? ' · 本年暂无调用数据' : ''}
           </span>
           <div
-            className="token-heatmap-legend"
+            className='token-heatmap-legend'
             aria-label={`颜色越深，Token 越多，最高 ${integer.format(maxTokens)} Token`}
           >
             <span>少</span>
@@ -194,12 +200,12 @@ export function TokenHeatmapCalendar({
       </div>
       {selected ? (
         <div
-          className="token-heatmap-detail"
+          className='token-heatmap-detail'
           id={detailId}
-          role="region"
+          role='region'
           aria-label={`${selected.day} 用量详情`}
         >
-          <div className="token-heatmap-detail-heading">
+          <div className='token-heatmap-detail-heading'>
             <div>
               <h3>{selected.day}</h3>
               <span>
@@ -208,13 +214,13 @@ export function TokenHeatmapCalendar({
                   : '当天暂无调用'}
               </span>
             </div>
-            <div className="token-heatmap-detail-actions">
-              <Button variant="secondary" onClick={() => openLogs(selected)}>
+            <div className='token-heatmap-detail-actions'>
+              <Button variant='secondary' onClick={() => openLogs(selected)}>
                 查看当天调用 <ArrowRight size={13} />
               </Button>
               <Button
-                variant="ghost"
-                aria-label="收起当天详情"
+                variant='ghost'
+                aria-label='收起当天详情'
                 onClick={() => {
                   setSelected(undefined);
                   buttons.current.get(selected.day)?.focus();
@@ -225,12 +231,12 @@ export function TokenHeatmapCalendar({
               </Button>
             </div>
           </div>
-          <div className="token-heatmap-day-total">
+          <div className='token-heatmap-day-total'>
             <strong>{integer.format(selected.totalTokens)}</strong> Token{' '}
             <span>· {money.format(selected.costUsd)}</span>
           </div>
           {selected.models.length ? (
-            <div className="table-wrap">
+            <div className='table-wrap'>
               <table>
                 <thead>
                   <tr>
@@ -247,8 +253,8 @@ export function TokenHeatmapCalendar({
                     <tr key={JSON.stringify([model.provider, model.model])}>
                       <td>
                         <button
-                          type="button"
-                          className="token-heatmap-model-link"
+                          type='button'
+                          className='token-heatmap-model-link'
                           onClick={() => openLogs(selected, model)}
                           aria-label={`查看 ${model.model} · ${model.provider} 当天调用`}
                         >
@@ -257,20 +263,20 @@ export function TokenHeatmapCalendar({
                         </button>
                         <small>{model.provider}</small>
                       </td>
-                      <td data-label="Token">{integer.format(model.totalTokens)}</td>
-                      <td data-label="输入 / 输出">
+                      <td data-label='Token'>{integer.format(model.totalTokens)}</td>
+                      <td data-label='输入 / 输出'>
                         {integer.format(model.inputTokens)}
                         <small>{integer.format(model.outputTokens)} output</small>
                       </td>
-                      <td data-label="缓存 / 推理">
+                      <td data-label='缓存 / 推理'>
                         {integer.format(model.cachedInputTokens)}
                         <small>{integer.format(model.reasoningTokens)} reasoning</small>
                       </td>
-                      <td data-label="调用 / 失败">
+                      <td data-label='调用 / 失败'>
                         {integer.format(model.calls)}
                         <small>{integer.format(model.failedCalls)} 次失败</small>
                       </td>
-                      <td data-label="成本">{money.format(model.costUsd)}</td>
+                      <td data-label='成本'>{money.format(model.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -284,15 +290,15 @@ export function TokenHeatmapCalendar({
             <div
               id={tooltipId}
               ref={tooltipRef}
-              role="tooltip"
-              className="token-heatmap-tooltip"
+              role='tooltip'
+              className='token-heatmap-tooltip'
               style={{
                 left: hover.left,
                 top: hover.top,
               }}
             >
               <strong>{hover.day.day}</strong>
-              <div className="token-heatmap-tooltip-total">
+              <div className='token-heatmap-tooltip-total'>
                 {integer.format(hover.day.totalTokens)} <span>Token</span>
               </div>
               <p>
@@ -302,7 +308,7 @@ export function TokenHeatmapCalendar({
               </p>
               {hover.day.models.slice(0, 5).map((model) => (
                 <div
-                  className="token-heatmap-tooltip-model"
+                  className='token-heatmap-tooltip-model'
                   key={JSON.stringify([model.provider, model.model])}
                 >
                   <span>

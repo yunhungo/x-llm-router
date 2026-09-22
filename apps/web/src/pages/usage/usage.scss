@@ -3,15 +3,6 @@
  * @description 定义全局调用记录列表的布局。
  * @author yunhungo
  */
-.usage-key-link {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.usage-key-link:hover {
-  text-decoration: underline;
-}
-
 .usage-refresh-error {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -31,8 +22,8 @@
 }
 
 .usage-virtual-table {
-  --usage-table-columns: 100px minmax(110px, 1.25fr) minmax(100px, 1fr) minmax(80px, 0.7fr)
-    minmax(140px, 1.3fr) 160px 84px 102px 44px;
+  --usage-table-columns: 100px minmax(110px, 1.25fr) minmax(100px, 1fr) minmax(140px, 1.3fr) 152px
+    112px 102px 44px;
   display: grid;
   min-width: 1000px;
 }
@@ -70,7 +61,7 @@
 .usage-virtual-row > td:not(.usage-virtual-detail-cell) {
   min-width: 0;
   height: auto;
-  min-height: 100px;
+  min-height: 104px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -87,13 +78,11 @@
 }
 
 .usage-virtual-row code,
-.usage-virtual-row .usage-key-link,
 .usage-virtual-row small {
   max-width: 100%;
 }
 
-.usage-virtual-row code,
-.usage-virtual-row .usage-key-link {
+.usage-virtual-row code {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -110,9 +99,10 @@
 }
 
 .usage-total-latency {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 40px max-content;
+  gap: 8px;
+  width: max-content;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

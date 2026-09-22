@@ -1,9 +1,15 @@
+/**
+ * @created 2026-08-28
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
+import { currency, fromUsd, toUsd } from '@/features/billing/currency';
 import type { FormEvent } from 'react';
 import { Check, Save } from 'lucide-react';
 
 import { LangfuseFields, type LangfuseDraft } from '../../../../components/langfuse-fields';
 import { Button, Field, Input } from '../../../../components/ui';
-import { ModelPricingSettings } from '../../../../features/model-pricing/model-pricing-settings';
+import { Link } from 'react-router-dom';
 import type { Provider, VirtualKey } from '../../../../types';
 import type { GeneralDraft } from '../../key-detail-model';
 import './settings-panel.css';
@@ -39,27 +45,23 @@ export function SettingsPanel({
   onSaveLangfuse,
   savedSettings,
 }: SettingsPanelProps) {
-  const pricingProviders = apiKey.providerConnectionId
-    ? providers.filter((provider) => provider.id === apiKey.providerConnectionId)
-    : providers;
-
   return (
     <div
-      id="key-panel-settings"
-      className="key-tab-panel"
-      role="tabpanel"
-      aria-labelledby="key-tab-settings"
+      id='key-panel-settings'
+      className='key-tab-panel'
+      role='tabpanel'
+      aria-labelledby='key-tab-settings'
     >
-      <div className="key-settings-grid">
-        <section className="panel settings-section">
-          <div className="panel-heading compact-panel-heading settings-section-heading">
+      <div className='key-settings-grid'>
+        <section className='panel settings-section'>
+          <div className='panel-heading compact-panel-heading settings-section-heading'>
             <h2>基本设置</h2>
             <Button
-              type="submit"
-              form="key-general-settings-form"
+              type='submit'
+              form='key-general-settings-form'
               loading={savingGeneral}
               disabled={!generalChanged}
-              aria-label="保存基本设置"
+              aria-label='保存基本设置'
             >
               {savedSettings === 'general' && !generalChanged ? (
                 <Check size={13} />
@@ -70,13 +72,13 @@ export function SettingsPanel({
             </Button>
           </div>
           <form
-            id="key-general-settings-form"
-            className="settings-section-body"
+            id='key-general-settings-form'
+            className='settings-section-body'
             onSubmit={onSaveGeneral}
           >
-            <div className="general-settings-grid">
-              <div className="general-setting-wide">
-                <Field label="名称">
+            <div className='general-settings-grid'>
+              <div className='general-setting-wide'>
+                <Field label='名称'>
                   <Input
                     value={generalSettings.name}
                     onChange={(event) =>
@@ -89,9 +91,9 @@ export function SettingsPanel({
                   />
                 </Field>
               </div>
-              <Field label="RPM" helpText="0 表示不限制">
+              <Field label='RPM' helpText='0 表示不限制'>
                 <Input
-                  type="number"
+                  type='number'
                   min={0}
                   max={100_000}
                   value={generalSettings.rpmLimit}
@@ -104,25 +106,30 @@ export function SettingsPanel({
                   required
                 />
               </Field>
-              <Field label="预算 USD">
+              <Field label={`预算 ${currency}`}>
                 <Input
-                  type="number"
+                  type='number'
                   min={0}
-                  step="0.01"
-                  value={generalSettings.budgetUsd}
+                  step='0.01'
+                  value={
+                    generalSettings.budgetUsd === ''
+                      ? ''
+                      : Number(fromUsd(Number(generalSettings.budgetUsd)).toFixed(8))
+                  }
                   onChange={(event) =>
                     onGeneralSettingsChange({
                       ...generalSettings,
-                      budgetUsd: event.target.value,
+                      budgetUsd:
+                        event.target.value === '' ? '' : String(toUsd(Number(event.target.value))),
                     })
                   }
-                  placeholder="无限制"
+                  placeholder='无限制'
                 />
               </Field>
-              <div className="general-setting-wide">
-                <Field label="上游连接">
+              <div className='general-setting-wide'>
+                <Field label='上游连接'>
                   <select
-                    className="input"
+                    className='input'
                     value={generalSettings.providerConnectionId}
                     onChange={(event) =>
                       onGeneralSettingsChange({
@@ -131,7 +138,7 @@ export function SettingsPanel({
                       })
                     }
                   >
-                    <option value="">自动路由</option>
+                    <option value=''>自动路由</option>
                     {providers.map((provider) => (
                       <option value={provider.id} key={provider.id}>
                         {provider.name}
@@ -140,10 +147,10 @@ export function SettingsPanel({
                   </select>
                 </Field>
               </div>
-              <div className="general-setting-wide">
-                <Field label="到期时间" helpText="留空表示永不过期">
+              <div className='general-setting-wide'>
+                <Field label='到期时间' helpText='留空表示永不过期'>
                   <Input
-                    type="datetime-local"
+                    type='datetime-local'
                     value={generalSettings.expiresAt}
                     onChange={(event) =>
                       onGeneralSettingsChange({
@@ -158,13 +165,13 @@ export function SettingsPanel({
           </form>
         </section>
 
-        <section className="panel settings-section langfuse-settings-section">
-          <div className="panel-heading compact-panel-heading settings-section-heading">
-            <div className="langfuse-section-title">
+        <section className='panel settings-section langfuse-settings-section'>
+          <div className='panel-heading compact-panel-heading settings-section-heading'>
+            <div className='langfuse-section-title'>
               <h2>Langfuse</h2>
-              <label className="switch-row langfuse-header-switch">
+              <label className='switch-row langfuse-header-switch'>
                 <input
-                  type="checkbox"
+                  type='checkbox'
                   checked={langfuseSettings.enabled}
                   onChange={(event) =>
                     onLangfuseSettingsChange({
@@ -172,17 +179,17 @@ export function SettingsPanel({
                       enabled: event.target.checked,
                     })
                   }
-                  aria-label="启用 Langfuse"
+                  aria-label='启用 Langfuse'
                 />
                 <i />
               </label>
             </div>
             <Button
-              type="submit"
-              form="key-langfuse-settings-form"
+              type='submit'
+              form='key-langfuse-settings-form'
               loading={savingLangfuse}
               disabled={!langfuseChanged}
-              aria-label="保存 Langfuse 设置"
+              aria-label='保存 Langfuse 设置'
             >
               {savedSettings === 'langfuse' && !langfuseChanged ? (
                 <Check size={13} />
@@ -193,8 +200,8 @@ export function SettingsPanel({
             </Button>
           </div>
           <form
-            id="key-langfuse-settings-form"
-            className="settings-section-body"
+            id='key-langfuse-settings-form'
+            className='settings-section-body'
             onSubmit={onSaveLangfuse}
           >
             <LangfuseFields
@@ -206,7 +213,13 @@ export function SettingsPanel({
           </form>
         </section>
 
-        <ModelPricingSettings keyId={apiKey.id} providers={pricingProviders} />
+        <section className='panel settings-section'>
+          <div className='panel-heading'>
+            <h2>模型价格</h2>
+          </div>
+          <p>费用按实际使用的上游连接价格与 token 用量计算。</p>
+          <Link to='/providers'>前往上游连接配置价格</Link>
+        </section>
       </div>
     </div>
   );

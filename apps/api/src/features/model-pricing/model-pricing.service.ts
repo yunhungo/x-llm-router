@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 维护上游定价、货币换算及用量账本。
+ * @author yunhungo
+ */
 import type {
   ModelPriceInput,
   ModelPriceKeyInput,
@@ -13,23 +18,24 @@ export class ModelPriceNotFoundError extends Error {
   }
 }
 
-export class ModelPriceKeyNotFoundError extends Error {
+export class ModelPriceConnectionNotFoundError extends Error {
   constructor() {
-    super('API Key 不存在。');
-    this.name = 'ModelPriceKeyNotFoundError';
+    super('上游连接 不存在。');
+    this.name = 'ModelPriceConnectionNotFoundError';
   }
 }
 
 export class ModelPricingService {
   constructor(private readonly repository: ModelPriceRepository) {}
 
-  private async ensureKeyExists(keyId: string): Promise<void> {
-    if (!(await this.repository.keyExists(keyId))) throw new ModelPriceKeyNotFoundError();
+  private async ensureConnectionExists(connectionId: string): Promise<void> {
+    if (!(await this.repository.connectionExists(connectionId)))
+      throw new ModelPriceConnectionNotFoundError();
   }
 
-  async list(keyId: string): Promise<ModelPriceListResponse> {
-    await this.ensureKeyExists(keyId);
-    const prices = await this.repository.list(keyId);
+  async list(connectionId: string): Promise<ModelPriceListResponse> {
+    await this.ensureConnectionExists(connectionId);
+    const prices = await this.repository.list(connectionId);
     return {
       prices: prices.map((price) => ({
         ...price,
@@ -41,14 +47,14 @@ export class ModelPricingService {
     };
   }
 
-  async upsert(keyId: string, price: ModelPriceInput): Promise<void> {
-    await this.ensureKeyExists(keyId);
-    await this.repository.upsert(keyId, price);
+  async upsert(connectionId: string, price: ModelPriceInput): Promise<void> {
+    await this.ensureConnectionExists(connectionId);
+    await this.repository.upsert(connectionId, price);
   }
 
-  async delete(keyId: string, key: ModelPriceKeyInput): Promise<void> {
-    await this.ensureKeyExists(keyId);
-    if (!(await this.repository.delete(keyId, key))) throw new ModelPriceNotFoundError();
+  async delete(connectionId: string, key: ModelPriceKeyInput): Promise<void> {
+    await this.ensureConnectionExists(connectionId);
+    if (!(await this.repository.delete(connectionId, key))) throw new ModelPriceNotFoundError();
   }
 }
 

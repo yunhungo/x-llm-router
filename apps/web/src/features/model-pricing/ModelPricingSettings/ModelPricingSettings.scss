@@ -1,0 +1,70 @@
+/**
+ * @created 2026-08-26
+ * @description 负责上游模型价格规则的维护与计费。
+ * @author yunhungo
+ */
+.model-pricing-editor {
+  padding: 20px;
+  &__note {
+    margin: 0 0 18px;
+    color: var(--mute);
+    font-size: 12px;
+  }
+  form {
+    display: grid;
+    gap: 16px;
+  }
+  &__fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  &__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  &__list {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+    h3 {
+      font-size: 13px;
+      margin: 0 0 8px;
+    }
+  }
+  &__record {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--hairline);
+    strong {
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    p {
+      color: var(--mute);
+      font-size: 11px;
+      margin: 5px 0 0;
+    }
+  }
+  &__record-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+    .button {
+      padding-inline: 7px;
+    }
+  }
+}
+@media (max-width: 520px) {
+  .model-pricing-editor__fields {
+    grid-template-columns: 1fr;
+  }
+  .model-pricing-editor__record {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

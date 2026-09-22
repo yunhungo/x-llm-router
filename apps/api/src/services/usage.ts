@@ -1,7 +1,13 @@
+/**
+ * @created 2026-08-10
+ * @description 维护上游定价、货币换算及用量账本。
+ * @author yunhungo
+ */
 import { randomUUID } from 'node:crypto';
 
 import { getPool } from '../db/client';
 import { encryptJson } from '../lib/crypto';
+import { CNY_PER_USD } from '@x-router/contracts';
 import { prepareStoredJson, prepareStoredRequest } from './usage-details';
 
 export interface TokenUsage {
@@ -133,34 +139,36 @@ export function computeCost(usage: TokenUsage, price: ModelPrice): number {
 }
 
 export async function calculateCost(
-  virtualApiKeyId: string,
+  providerConnectionId: string | undefined,
   provider: string,
   model: string,
   usage: TokenUsage,
-): Promise<number> {
+): Promise<number | undefined> {
+  if (!providerConnectionId) return undefined;
   const result = await getPool().query<{
+    currency: 'CNY';
     input_per_million: string;
     cached_input_per_million: string;
     output_per_million: string;
   }>(
-    `SELECT input_per_million, cached_input_per_million, output_per_million
-       FROM model_prices
-      WHERE (virtual_api_key_id = $1 OR virtual_api_key_id IS NULL)
+    `SELECT currency, input_per_million, cached_input_per_million, output_per_million
+       FROM provider_model_prices
+      WHERE provider_connection_id = $1
         AND provider IN ($2, '*')
-        AND ($3 = model_pattern OR $3 LIKE model_pattern || '%')
-      ORDER BY CASE WHEN virtual_api_key_id = $1 THEN 0 ELSE 1 END,
-               CASE WHEN provider = $2 THEN 0 ELSE 1 END,
+        AND starts_with($3, model_pattern)
+      ORDER BY CASE WHEN provider = $2 THEN 0 ELSE 1 END,
                length(model_pattern) DESC
       LIMIT 1`,
-    [virtualApiKeyId, provider, model],
+    [providerConnectionId, provider, model],
   );
   const price = result.rows[0];
-  if (!price) return 0;
-  return computeCost(usage, {
+  if (!price) return undefined;
+  const cost = computeCost(usage, {
     inputPerMillion: Number(price.input_per_million),
     cachedInputPerMillion: Number(price.cached_input_per_million),
     outputPerMillion: Number(price.output_per_million),
   });
+  return cost / CNY_PER_USD;
 }
 
 export async function recordUsage(input: {
@@ -181,12 +189,19 @@ export async function recordUsage(input: {
   metadata?: Record<string, unknown>;
   details?: UsageCallDetails;
 }): Promise<{ costUsd: number }> {
+  const configuredCost = await calculateCost(
+    input.providerConnectionId,
+    input.provider ?? '*',
+    input.model,
+    input.usage,
+  );
   const costUsd =
-    input.reportedCostUsd !== undefined &&
+    configuredCost ??
+    (input.reportedCostUsd !== undefined &&
     Number.isFinite(input.reportedCostUsd) &&
     input.reportedCostUsd >= 0
       ? input.reportedCostUsd
-      : await calculateCost(input.virtualApiKeyId, input.provider ?? '*', input.model, input.usage);
+      : 0);
   const newUsageLogId = randomUUID();
   const client = await getPool().connect();
   try {

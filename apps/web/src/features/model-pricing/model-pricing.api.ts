@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 负责上游模型价格规则的维护与计费。
+ * @author yunhungo
+ */
 import type {
   ModelPriceInput,
   ModelPriceKeyInput,
@@ -6,16 +11,23 @@ import type {
 
 import { api, jsonBody } from '../../api';
 
-const modelPricesPath = (keyId: string) => `/api/admin/keys/${keyId}/model-prices`;
+const modelPricesPath = (connectionId: string) =>
+  `/api/admin/providers/${connectionId}/model-prices`;
 
-export async function loadModelPrices(keyId: string) {
-  return api<ModelPriceListResponse>(modelPricesPath(keyId));
+export async function loadModelPrices(connectionId: string) {
+  return api<ModelPriceListResponse>(modelPricesPath(connectionId));
 }
 
-export async function upsertModelPrice(keyId: string, price: ModelPriceInput): Promise<void> {
-  await api(modelPricesPath(keyId), { method: 'PUT', ...jsonBody(price) });
+export async function upsertModelPrice(
+  connectionId: string,
+  price: ModelPriceInput,
+): Promise<void> {
+  await api(modelPricesPath(connectionId), { method: 'PUT', ...jsonBody(price) });
 }
 
-export async function deleteModelPrice(keyId: string, key: ModelPriceKeyInput): Promise<void> {
-  await api(modelPricesPath(keyId), { method: 'DELETE', ...jsonBody(key) });
+export async function deleteModelPrice(
+  connectionId: string,
+  key: ModelPriceKeyInput,
+): Promise<void> {
+  await api(modelPricesPath(connectionId), { method: 'DELETE', ...jsonBody(key) });
 }

@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-28
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
 import { langfusePayload, type LangfuseDraft } from '../../components/langfuse-fields';
 import type {
   KeyAnalyticsRange,
@@ -7,12 +12,6 @@ import type {
   VirtualKey,
 } from '../../types';
 
-export const money = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 8,
-});
 export const integer = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 export const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 export const allModelsValue = '__all_models__';

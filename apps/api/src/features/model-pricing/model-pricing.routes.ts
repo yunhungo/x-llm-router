@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 维护上游定价、货币换算及用量账本。
+ * @author yunhungo
+ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
@@ -5,22 +10,22 @@ import { modelPriceInputSchema, modelPriceKeySchema } from '@x-router/contracts'
 
 import { requireAdmin } from '../../lib/admin-auth';
 import {
-  ModelPriceKeyNotFoundError,
+  ModelPriceConnectionNotFoundError,
   ModelPriceNotFoundError,
   modelPricingService,
 } from './model-pricing.service';
 
 const modelPriceParamsSchema = z.object({ id: z.string().uuid() });
 
-function keyId(request: FastifyRequest): string | undefined {
+function connectionId(request: FastifyRequest): string | undefined {
   const parsed = modelPriceParamsSchema.safeParse(request.params);
   return parsed.success ? parsed.data.id : undefined;
 }
 
 function handleModelPricingError(error: unknown, reply: FastifyReply) {
-  if (error instanceof ModelPriceKeyNotFoundError) {
+  if (error instanceof ModelPriceConnectionNotFoundError) {
     return reply.code(404).send({
-      error: { code: 'key_not_found', message: error.message },
+      error: { code: 'provider_not_found', message: error.message },
     });
   }
   if (error instanceof ModelPriceNotFoundError) {
@@ -34,11 +39,11 @@ function handleModelPricingError(error: unknown, reply: FastifyReply) {
 export async function modelPricingRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requireAdmin);
 
-  app.get('/api/admin/keys/:id/model-prices', async (request, reply) => {
-    const id = keyId(request);
+  app.get('/api/admin/providers/:id/model-prices', async (request, reply) => {
+    const id = connectionId(request);
     if (!id) {
       return reply.code(400).send({
-        error: { code: 'invalid_request', message: 'API Key ID 无效。' },
+        error: { code: 'invalid_request', message: '上游连接 ID 无效。' },
       });
     }
     try {
@@ -48,14 +53,14 @@ export async function modelPricingRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.put('/api/admin/keys/:id/model-prices', async (request, reply) => {
-    const id = keyId(request);
+  app.put('/api/admin/providers/:id/model-prices', async (request, reply) => {
+    const id = connectionId(request);
     const parsed = modelPriceInputSchema.safeParse(request.body);
     if (!id || !parsed.success) {
       return reply.code(400).send({
         error: {
           code: 'invalid_request',
-          message: id ? parsed.error?.issues[0]?.message : 'API Key ID 无效。',
+          message: id ? parsed.error?.issues[0]?.message : '上游连接 ID 无效。',
         },
       });
     }
@@ -67,14 +72,14 @@ export async function modelPricingRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.delete('/api/admin/keys/:id/model-prices', async (request, reply) => {
-    const id = keyId(request);
+  app.delete('/api/admin/providers/:id/model-prices', async (request, reply) => {
+    const id = connectionId(request);
     const parsed = modelPriceKeySchema.safeParse(request.body);
     if (!id || !parsed.success) {
       return reply.code(400).send({
         error: {
           code: 'invalid_request',
-          message: id ? parsed.error?.issues[0]?.message : 'API Key ID 无效。',
+          message: id ? parsed.error?.issues[0]?.message : '上游连接 ID 无效。',
         },
       });
     }

@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 验证上游定价与费用计算的边界行为。
+ * @author yunhungo
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { query } = vi.hoisted(() => ({
@@ -118,7 +123,7 @@ describe('token usage extraction', () => {
     ).toBeCloseTo(2.48);
   });
 
-  it('prefers the current API Key price before the legacy global fallback', async () => {
+  it('uses the actual upstream connection price, independent of downstream Keys', async () => {
     query.mockResolvedValueOnce({
       rows: [
         {
@@ -138,14 +143,61 @@ describe('token usage extraction', () => {
         reasoningTokens: null,
         totalTokens: 1_100,
       }),
-    ).resolves.toBeCloseTo(0.0032);
+    ).resolves.toBeCloseTo(0.0032 / 6.7);
 
-    expect(query.mock.calls[0]?.[0]).toContain('virtual_api_key_id = $1');
-    expect(query.mock.calls[0]?.[0]).toContain('virtual_api_key_id IS NULL');
+    expect(query.mock.calls[0]?.[0]).toContain('provider_connection_id = $1');
+    expect(query.mock.calls[0]?.[0]).not.toContain('virtual_api_key_id');
     expect(query.mock.calls[0]?.[1]).toEqual([
       '11111111-1111-4111-8111-111111111111',
       'openai',
       'gpt-5',
     ]);
+  });
+});
+
+describe('upstream currency pricing', () => {
+  const usage = {
+    inputTokens: 3334,
+    cachedInputTokens: 3200,
+    outputTokens: 298,
+    reasoningTokens: 211,
+    totalTokens: 3632,
+  };
+  it('converts official CNY cache and output rates to the USD ledger exactly once', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          currency: 'CNY',
+          input_per_million: '1',
+          cached_input_per_million: '0.02',
+          output_per_million: '4',
+        },
+      ],
+    });
+    expect(await calculateCost('connection-a', 'deepseek', 'deepseek-flash', usage)).toBeCloseTo(
+      0.00139 / 6.7,
+      12,
+    );
+  });
+  it('keeps explicit free rules distinct from missing pricing', async () => {
+    query.mockResolvedValueOnce({
+      rows: [
+        {
+          currency: 'CNY',
+          input_per_million: '0',
+          cached_input_per_million: '0',
+          output_per_million: '0',
+        },
+      ],
+    });
+    expect(await calculateCost('connection-a', 'deepseek', 'deepseek-flash', usage)).toBe(0);
+    query.mockResolvedValueOnce({ rows: [] });
+    expect(
+      await calculateCost('connection-b', 'deepseek', 'deepseek-flash', usage),
+    ).toBeUndefined();
+  });
+  it('does not search another connection when no upstream was selected', async () => {
+    expect(await calculateCost(undefined, 'deepseek', 'deepseek-flash', usage)).toBeUndefined();
+    expect(query).not.toHaveBeenCalled();
   });
 });

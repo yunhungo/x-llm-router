@@ -1,3 +1,4 @@
+import { money } from '@/features/billing/currency';
 /**
  * @created 2026-08-28
  * @description 展示 API Key 调用记录、性能指标及明细。
@@ -18,13 +19,7 @@ import { Button, Skeleton } from '../../../../components/ui';
 import type { UsageLogFiltersState } from '../../../../features/usage/usage-log-pagination';
 import { ESTIMATED_USAGE_LOG_ROW_HEIGHT } from '../../../../features/usage/usage-log-pagination';
 import type { KeyUsageLog } from '../../../../types';
-import {
-  endpointLabel,
-  formatDate,
-  integer,
-  money,
-  type LogDrilldown,
-} from '../../key-detail-model';
+import { endpointLabel, formatDate, integer, type LogDrilldown } from '../../key-detail-model';
 import './logs-panel.scss';
 
 interface LogsPanelProps {
@@ -83,12 +78,12 @@ export function LogsPanel({
 
   return (
     <div
-      id="key-panel-logs"
-      className="key-tab-panel"
-      role="tabpanel"
-      aria-labelledby="key-tab-logs"
+      id='key-panel-logs'
+      className='key-tab-panel'
+      role='tabpanel'
+      aria-labelledby='key-tab-logs'
     >
-      <section className="panel flush-panel logs-panel" id="key-usage-logs">
+      <section className='panel flush-panel logs-panel' id='key-usage-logs'>
         <UsageLogFilters
           filters={filters}
           models={modelNames}
@@ -99,39 +94,39 @@ export function LogsPanel({
           onReset={onResetFilters}
         />
         {drilldown ? (
-          <div className="drilldown-bar">
+          <div className='drilldown-bar'>
             <span>{drilldown.label}</span>
-            <button type="button" onClick={onClearDrilldown}>
+            <button type='button' onClick={onClearDrilldown}>
               <X size={13} /> 清除
             </button>
           </div>
         ) : null}
-        {loading && logs ? <div className="log-query-progress">正在刷新调用记录…</div> : null}
+        {loading && logs ? <div className='log-query-progress'>正在刷新调用记录…</div> : null}
         {error ? (
-          <div className="log-query-error" role="alert">
+          <div className='log-query-error' role='alert'>
             <span>{error}</span>
-            <Button variant="secondary" onClick={onRetry}>
+            <Button variant='secondary' onClick={onRetry}>
               重试
             </Button>
           </div>
         ) : null}
         {timeError ? (
-          <div className="log-filter-placeholder">请修正时间范围后加载调用记录。</div>
+          <div className='log-filter-placeholder'>请修正时间范围后加载调用记录。</div>
         ) : !logs ? (
-          <div className="log-list-skeleton">
+          <div className='log-list-skeleton'>
             <Skeleton height={360} />
           </div>
         ) : (
           <div
             ref={scrollContainerRef}
-            className="table-wrap usage-table key-detail-table"
+            className='table-wrap usage-table key-detail-table'
             onScroll={onScroll}
             aria-busy={loading || loadingMore}
           >
-            <table className="key-usage-virtual-table">
+            <table className='key-usage-virtual-table'>
               <thead>
                 <tr>
-                  <th className="usage-expand-header" />
+                  <th className='usage-expand-header' />
                   <th>状态</th>
                   <th>请求</th>
                   <th>模型</th>
@@ -161,10 +156,10 @@ export function LogsPanel({
                           if (!active) onToggleExpandedLog(log.id);
                         }}
                       >
-                        <td className="usage-expand-cell">
+                        <td className='usage-expand-cell'>
                           {active ? null : (
                             <button
-                              className="usage-expand-button"
+                              className='usage-expand-button'
                               onClick={(event) => {
                                 event.stopPropagation();
                                 onToggleExpandedLog(log.id);
@@ -195,7 +190,7 @@ export function LogsPanel({
                             <small>{log.errorCode}</small>
                           ) : null}
                         </td>
-                        <td className="usage-token-cell">
+                        <td className='usage-token-cell'>
                           {active ? (
                             <>
                               —<small>Usage pending</small>
@@ -204,7 +199,7 @@ export function LogsPanel({
                             <UsageLogTokenSummary {...log} />
                           )}
                         </td>
-                        <td className="usage-performance-cell">
+                        <td className='usage-performance-cell'>
                           {active ? (
                             '—'
                           ) : (
@@ -226,7 +221,7 @@ export function LogsPanel({
                         <td>{formatDate(log.createdAt)}</td>
                         {expandedLogId === log.id ? (
                           <td
-                            className="key-usage-virtual-detail-cell"
+                            className='key-usage-virtual-detail-cell'
                             onClick={(event) => event.stopPropagation()}
                           >
                             <UsageLogDetailPanel usageLogId={log.id} />
@@ -237,7 +232,7 @@ export function LogsPanel({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="table-empty">
+                    <td colSpan={9} className='table-empty'>
                       暂无匹配记录
                     </td>
                   </tr>

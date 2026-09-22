@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-11
+ * @description 验证上游定价与费用计算的边界行为。
+ * @author yunhungo
+ */
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -165,10 +170,13 @@ describe('key analytics route', () => {
     }
     const pricesCall = query.mock.calls[7];
     expect(pricesCall?.[0]).toContain('jsonb_array_elements_text(p.available_models)');
-    expect(pricesCall?.[0]).toContain('SELECT p.provider, available.model');
+    expect(pricesCall?.[0]).toContain(
+      'SELECT p.id AS provider_connection_id, p.provider, available.model',
+    );
     expect(pricesCall?.[0]).toContain("WHERE p.status = 'active'");
     expect(pricesCall?.[0]).toContain('virtual_api_key_id = $1');
-    expect(pricesCall?.[0]).toContain('virtual_api_key_id IS NULL');
+    expect(pricesCall?.[0]).toContain('provider_connection_id = m.provider_connection_id');
+    expect(pricesCall?.[0]).not.toContain('FROM model_prices');
     expect(pricesCall?.[0]).not.toContain('$3::text');
     expect(pricesCall?.[1]).toEqual([keyId]);
   });

@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
 import { z } from 'zod';
 
 export * from './model-pricing';

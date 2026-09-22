@@ -8,7 +8,6 @@ import { UsageLogPerformance } from '@/components/UsageLogPerformance/UsageLogPe
 import { useEffect, useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, RefreshCcw } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 import { UsageLogFilters } from '../../components/usage-log-filters';
 import { UsageLogDetailPanel } from '../../components/usage-log-detail-panel';
@@ -27,14 +26,8 @@ import {
   useUsageLogPagination,
 } from '../../features/usage/use-usage-log-pagination';
 import type { UsageLog } from '../../types';
+import { money } from '@/features/billing/currency';
 import './usage.scss';
-
-const money = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 8,
-});
 
 function tokensPerSecond(log: UsageLog) {
   if (log.timeToFirstTokenMs === null) return null;
@@ -72,12 +65,12 @@ export function UsagePage() {
   useEffect(() => setExpandedId(undefined), [query]);
 
   return (
-    <div className="page-wrap">
+    <div className='page-wrap'>
       <PageHeader
-        title="调用记录"
+        title='调用记录'
         action={
           <Button
-            variant="secondary"
+            variant='secondary'
             loading={pagination.refreshing}
             disabled={Boolean(timeError)}
             onClick={() => void pagination.refresh()}
@@ -87,11 +80,11 @@ export function UsagePage() {
         }
       />
       {pagination.error ? (
-        <div className="usage-refresh-error" role="alert">
+        <div className='usage-refresh-error' role='alert'>
           {pagination.error} 可点击“刷新”重试。
         </div>
       ) : null}
-      <section className="panel flush-panel">
+      <section className='panel flush-panel'>
         <UsageLogFilters
           filters={filters}
           models={pagination.facets.models}
@@ -102,30 +95,29 @@ export function UsagePage() {
           onReset={() => setFilters(createDefaultUsageLogFilters())}
         />
         {timeError ? (
-          <div className="usage-filter-placeholder">请修正时间范围后加载调用记录。</div>
+          <div className='usage-filter-placeholder'>请修正时间范围后加载调用记录。</div>
         ) : !logs ? (
-          <div className="usage-list-skeleton">
+          <div className='usage-list-skeleton'>
             <Skeleton height={360} />
           </div>
         ) : (
           <div
             ref={pagination.containerRef}
-            className="table-wrap usage-table"
+            className='table-wrap usage-table'
             onScroll={pagination.onScroll}
             aria-busy={pagination.refreshing || pagination.loadingMore}
           >
-            <table className="usage-virtual-table">
+            <table className='usage-virtual-table'>
               <thead>
                 <tr>
                   <th>状态</th>
                   <th>请求</th>
                   <th>模型</th>
-                  <th>API Key</th>
                   <th>Token</th>
                   <th>延迟 / 输出性能</th>
-                  <th>成本</th>
+                  <th title='人民币；历史美元费用按 1 美元 = 6.7 元折算'>成本（元）</th>
                   <th>时间</th>
-                  <th className="usage-expand-header" />
+                  <th className='usage-expand-header' />
                 </tr>
               </thead>
               <tbody
@@ -156,7 +148,7 @@ export function UsagePage() {
                           />
                         </td>
                         <td>
-                          <div className="stack-cell">
+                          <div className='stack-cell'>
                             <code>
                               {log.endpoint === 'responses' ? '/responses' : '/chat/completions'}
                             </code>
@@ -169,20 +161,7 @@ export function UsagePage() {
                             <small>请求 {log.requestedModel}</small>
                           ) : null}
                         </td>
-                        <td>
-                          {log.apiKeyId && log.apiKeyName ? (
-                            <Link
-                              className="usage-key-link"
-                              to={`/keys/${log.apiKeyId}`}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {log.apiKeyName}
-                            </Link>
-                          ) : (
-                            'Deleted key'
-                          )}
-                        </td>
-                        <td className="usage-token-cell">
+                        <td className='usage-token-cell'>
                           {active ? (
                             <>
                               —<small>Usage pending</small>
@@ -191,12 +170,14 @@ export function UsagePage() {
                             <UsageLogTokenSummary {...log} />
                           )}
                         </td>
-                        <td className="usage-performance-cell">
+                        <td className='usage-performance-cell'>
                           <div className='usage-total-latency'>
                             <span>{active ? '已耗时' : '总耗时'}</span>
-                            <span>{active
-                              ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
-                              : `${log.latencyMs.toLocaleString()} ms`}</span>
+                            <span>
+                              {active
+                                ? `${Math.max(Date.now() - new Date(log.createdAt).getTime(), 0).toLocaleString()} ms`
+                                : `${log.latencyMs.toLocaleString()} ms`}
+                            </span>
                           </div>
                           {active ? (
                             <small>Elapsed</small>
@@ -217,10 +198,10 @@ export function UsagePage() {
                             minute: '2-digit',
                           })}
                         </td>
-                        <td className="usage-expand-cell">
+                        <td className='usage-expand-cell'>
                           {active ? null : (
                             <button
-                              className="usage-expand-button"
+                              className='usage-expand-button'
                               onClick={(event) => {
                                 event.stopPropagation();
                                 setExpandedId((current) =>
@@ -235,7 +216,7 @@ export function UsagePage() {
                         </td>
                         {expandedId === log.id ? (
                           <td
-                            className="usage-virtual-detail-cell"
+                            className='usage-virtual-detail-cell'
                             onClick={(event) => event.stopPropagation()}
                           >
                             <UsageLogDetailPanel usageLogId={log.id} />
@@ -246,7 +227,7 @@ export function UsagePage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="table-empty">
+                    <td colSpan={8} className='table-empty'>
                       还没有调用记录。
                     </td>
                   </tr>

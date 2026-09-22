@@ -1,0 +1,55 @@
+/**
+ * @created 2026-09-22
+ * @description 定义可用模型价格提示的半透明浮层样式。
+ * @author yunhungo
+ */
+.provider-model-badge:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.provider-model-price-popup {
+  position: fixed;
+  z-index: 150;
+  width: 240px;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--hairline-strong) 65%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-3);
+  color: var(--ink);
+  pointer-events: none;
+  strong {
+    display: block;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  small,
+  p {
+    color: var(--mute);
+    font-size: 11px;
+  }
+  small {
+    display: block;
+    margin-top: 5px;
+  }
+  dl {
+    display: grid;
+    gap: 6px;
+    margin: 12px 0 0;
+    font-size: 12px;
+  }
+  dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  dt {
+    color: var(--mute);
+  }
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}

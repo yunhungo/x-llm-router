@@ -1,3 +1,9 @@
+/**
+ * @created 2026-08-10
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
+import { currency, money, toUsd } from '@/features/billing/currency';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   BarChart3,
@@ -72,7 +78,7 @@ export function KeysPage() {
         ...jsonBody({
           name,
           rpmLimit: rpm,
-          budgetUsd: budget ? Number(budget) : null,
+          budgetUsd: budget ? toUsd(Number(budget)) : null,
           providerConnectionId: providerId || null,
           langfuse: langfusePayload(langfuse),
         }),
@@ -144,9 +150,9 @@ export function KeysPage() {
   };
 
   return (
-    <div className="page-wrap">
+    <div className='page-wrap'>
       <PageHeader
-        title="API Keys"
+        title='API Keys'
         action={
           <Button
             onClick={() => {
@@ -160,12 +166,12 @@ export function KeysPage() {
           </Button>
         }
       />
-      {notice ? <div className="notice compact-notice">{notice}</div> : null}
+      {notice ? <div className='notice compact-notice'>{notice}</div> : null}
       {!keys ? (
         <Skeleton height={360} />
       ) : keys.length ? (
-        <section className="panel flush-panel">
-          <div className="table-wrap">
+        <section className='panel flush-panel'>
+          <div className='table-wrap'>
             <table>
               <thead>
                 <tr>
@@ -183,7 +189,7 @@ export function KeysPage() {
                 {keys.map((key) => (
                   <tr
                     key={key.id}
-                    className="clickable-row"
+                    className='clickable-row'
                     tabIndex={0}
                     onClick={() => navigate(`/keys/${key.id}`)}
                     onKeyDown={(event) => {
@@ -210,8 +216,8 @@ export function KeysPage() {
                     </td>
                     <td>{key.rpmLimit === 0 ? '无限制' : key.rpmLimit.toLocaleString()}</td>
                     <td>
-                      {key.budgetUsd === null ? 'Unlimited' : `$${key.budgetUsd.toFixed(2)}`}
-                      <small>${key.spendUsd.toFixed(4)} used</small>
+                      {key.budgetUsd === null ? 'Unlimited' : money.format(key.budgetUsd)}
+                      <small>{money.format(key.spendUsd)} 已使用</small>
                     </td>
                     <td>
                       {key.lastUsedAt
@@ -224,9 +230,9 @@ export function KeysPage() {
                         : 'Never'}
                     </td>
                     <td>
-                      <div className="key-actions">
+                      <div className='key-actions'>
                         <button
-                          className="icon-button"
+                          className='icon-button'
                           onClick={(event) => {
                             event.stopPropagation();
                             navigate(`/keys/${key.id}`);
@@ -236,7 +242,7 @@ export function KeysPage() {
                           <BarChart3 size={15} />
                         </button>
                         <button
-                          className="icon-button"
+                          className='icon-button'
                           onClick={(event) => {
                             event.stopPropagation();
                             setEditingKey(key);
@@ -249,13 +255,13 @@ export function KeysPage() {
                           <Waypoints size={15} />
                         </button>
                         <button
-                          className="icon-button danger-icon"
+                          className='icon-button danger-icon'
                           disabled={key.status !== 'active'}
                           onClick={(event) => {
                             event.stopPropagation();
                             void revoke(key);
                           }}
-                          aria-label="撤销"
+                          aria-label='撤销'
                         >
                           <Trash2 size={15} />
                         </button>
@@ -269,8 +275,8 @@ export function KeysPage() {
         </section>
       ) : (
         <EmptyState
-          title="还没有 API Key"
-          description="创建后即可调用网关。"
+          title='还没有 API Key'
+          description='创建后即可调用网关。'
           action={
             <Button onClick={() => setShowCreate(true)}>
               <KeyRound size={14} /> 创建 Key
@@ -288,14 +294,14 @@ export function KeysPage() {
           }}
         >
           {created ? (
-            <div className="modal-body created-key">
-              <div className="created-check">
+            <div className='modal-body created-key'>
+              <div className='created-check'>
                 <Check size={22} />
               </div>
               <h3>Key 已创建</h3>
               <button
-                type="button"
-                className="secret-key"
+                type='button'
+                className='secret-key'
                 onClick={() => {
                   void copyText(created.rawKey).then((didCopy) => {
                     setCopied(didCopy);
@@ -308,27 +314,27 @@ export function KeysPage() {
                 <span>{copied ? <Check size={15} /> : <Copy size={15} />}</span>
               </button>
               {copyError ? (
-                <div className="form-error" role="alert">
+                <div className='form-error' role='alert'>
                   {copyError}
                 </div>
               ) : (
-                <div className="security-note" aria-live="polite">
+                <div className='security-note' aria-live='polite'>
                   <ShieldCheck size={14} /> {copied ? '已复制 · 仅显示一次' : '仅显示一次'}
                 </div>
               )}
-              <div className="modal-actions">
+              <div className='modal-actions'>
                 <Button onClick={() => setShowCreate(false)}>完成</Button>
               </div>
             </div>
           ) : (
-            <form className="modal-body" onSubmit={(event) => void create(event)}>
-              <Field label="名称">
+            <form className='modal-body' onSubmit={(event) => void create(event)}>
+              <Field label='名称'>
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
-              <div className="form-grid">
-                <Field label="RPM" hint="0 表示不限制">
+              <div className='form-grid'>
+                <Field label='RPM' hint='0 表示不限制'>
                   <Input
-                    type="number"
+                    type='number'
                     min={0}
                     max={100000}
                     value={rpm}
@@ -336,24 +342,24 @@ export function KeysPage() {
                     required
                   />
                 </Field>
-                <Field label="预算 USD">
+                <Field label={`预算 ${currency}`}>
                   <Input
-                    type="number"
+                    type='number'
                     min={0}
-                    step="0.01"
+                    step='0.01'
                     value={budget}
                     onChange={(event) => setBudget(event.target.value)}
-                    placeholder="Unlimited"
+                    placeholder='Unlimited'
                   />
                 </Field>
               </div>
-              <Field label="固定上游">
+              <Field label='固定上游'>
                 <select
-                  className="input"
+                  className='input'
                   value={providerId}
                   onChange={(event) => setProviderId(event.target.value)}
                 >
-                  <option value="">自动路由</option>
+                  <option value=''>自动路由</option>
                   {providers.map((provider) => (
                     <option value={provider.id} key={provider.id}>
                       {provider.name}
@@ -362,12 +368,12 @@ export function KeysPage() {
                 </select>
               </Field>
               <LangfuseFields value={langfuse} onChange={setLangfuse} />
-              {error ? <div className="form-error">{error}</div> : null}
-              <div className="modal-actions">
-                <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
+              {error ? <div className='form-error'>{error}</div> : null}
+              <div className='modal-actions'>
+                <Button type='button' variant='secondary' onClick={() => setShowCreate(false)}>
                   取消
                 </Button>
-                <Button type="submit" loading={loading}>
+                <Button type='submit' loading={loading}>
                   创建
                 </Button>
               </div>
@@ -385,7 +391,7 @@ export function KeysPage() {
             setLangfuseTestResult('');
           }}
         >
-          <form className="modal-body" onSubmit={(event) => void saveLangfuse(event)}>
+          <form className='modal-body' onSubmit={(event) => void saveLangfuse(event)}>
             <LangfuseFields
               value={editingLangfuse}
               onChange={(value) => {
@@ -395,15 +401,15 @@ export function KeysPage() {
               hasSecretKey={editingKey.langfuse.hasSecretKey}
             />
             {langfuseTestResult ? (
-              <div className="notice compact-notice" role="status">
+              <div className='notice compact-notice' role='status'>
                 {langfuseTestResult}
               </div>
             ) : null}
-            {error ? <div className="form-error">{error}</div> : null}
-            <div className="modal-actions">
+            {error ? <div className='form-error'>{error}</div> : null}
+            <div className='modal-actions'>
               <Button
-                type="button"
-                variant="secondary"
+                type='button'
+                variant='secondary'
                 loading={testingLangfuse}
                 disabled={!editingLangfuse.enabled || loading}
                 onClick={() => void testLangfuseConnection()}
@@ -411,14 +417,14 @@ export function KeysPage() {
                 测试连接
               </Button>
               <Button
-                type="button"
-                variant="secondary"
+                type='button'
+                variant='secondary'
                 disabled={testingLangfuse}
                 onClick={() => setEditingKey(undefined)}
               >
                 取消
               </Button>
-              <Button type="submit" loading={loading} disabled={testingLangfuse}>
+              <Button type='submit' loading={loading} disabled={testingLangfuse}>
                 保存
               </Button>
             </div>

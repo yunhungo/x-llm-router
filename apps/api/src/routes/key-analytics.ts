@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-11
+ * @description 维护上游定价、货币换算及用量账本。
+ * @author yunhungo
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -385,22 +390,22 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       ),
       pool.query(
         `WITH used_models AS (
-           SELECT DISTINCT COALESCE(p.provider, 'unknown') AS provider, u.model
+           SELECT DISTINCT u.provider_connection_id, COALESCE(p.provider, 'unknown') AS provider, u.model
              FROM usage_logs u
              LEFT JOIN provider_connections p ON p.id = u.provider_connection_id
            WHERE u.virtual_api_key_id = $1
            UNION
-           SELECT p.provider, available.model
+           SELECT p.id AS provider_connection_id, p.provider, available.model
              FROM provider_connections p
              CROSS JOIN LATERAL jsonb_array_elements_text(p.available_models) AS available(model)
-            WHERE p.status = 'active'
+            WHERE p.status = 'active' AND EXISTS (SELECT 1 FROM virtual_api_keys k WHERE k.id = $1 AND (k.provider_connection_id IS NULL OR k.provider_connection_id = p.id))
            UNION
-           SELECT p.provider, p.default_model
+           SELECT p.id AS provider_connection_id, p.provider, p.default_model
              FROM virtual_api_keys k
              JOIN provider_connections p ON p.id = k.provider_connection_id
             WHERE k.id = $1 AND p.default_model IS NOT NULL
          )
-         SELECT m.provider, m.model, price.provider AS "matchedProvider",
+         SELECT m.provider_connection_id AS "providerConnectionId", m.provider, m.model, price.currency, price.provider AS "matchedProvider",
                 price.model_pattern AS "matchedPattern",
                 price.input_per_million::float8 AS "inputPerMillion",
                 price.cached_input_per_million::float8 AS "cachedInputPerMillion",
@@ -408,12 +413,11 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
                 price.updated_at AS "updatedAt"
            FROM used_models m
            LEFT JOIN LATERAL (
-             SELECT * FROM model_prices
-              WHERE (virtual_api_key_id = $1 OR virtual_api_key_id IS NULL)
+             SELECT * FROM provider_model_prices
+              WHERE provider_connection_id = m.provider_connection_id
                 AND provider IN (m.provider, '*')
-                AND (m.model = model_pattern OR m.model LIKE model_pattern || '%')
-              ORDER BY CASE WHEN virtual_api_key_id = $1 THEN 0 ELSE 1 END,
-                       CASE WHEN provider = m.provider THEN 0 ELSE 1 END,
+                AND starts_with(m.model, model_pattern)
+              ORDER BY CASE WHEN provider = m.provider THEN 0 ELSE 1 END,
                        length(model_pattern) DESC
               LIMIT 1
            ) price ON true

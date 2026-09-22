@@ -1,4 +1,9 @@
-export const schemaVersion = 15;
+/**
+ * @created 2026-08-10
+ * @description 定义数据库结构及兼容迁移。
+ * @author yunhungo
+ */
+export const schemaVersion = 16;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -317,6 +322,42 @@ ALTER TABLE model_prices DROP CONSTRAINT IF EXISTS model_prices_pkey;
 
 CREATE UNIQUE INDEX IF NOT EXISTS model_prices_scope_provider_pattern_uidx
   ON model_prices(virtual_api_key_id, provider, model_pattern) NULLS NOT DISTINCT;
+
+-- Keep enough precision when CNY prices are normalized into the existing USD ledger.
+ALTER TABLE usage_logs ALTER COLUMN cost_usd TYPE numeric(20, 12);
+ALTER TABLE virtual_api_keys ALTER COLUMN spend_usd TYPE numeric(20, 12);
+
+CREATE TABLE IF NOT EXISTS provider_model_prices (
+  provider_connection_id uuid NOT NULL REFERENCES provider_connections(id) ON DELETE CASCADE,
+  provider varchar(40) NOT NULL DEFAULT '*',
+  model_pattern varchar(120) NOT NULL,
+  currency varchar(3) NOT NULL DEFAULT 'CNY' CHECK (currency = 'CNY'),
+  input_per_million numeric(14, 6) NOT NULL CHECK (input_per_million >= 0),
+  cached_input_per_million numeric(14, 6) NOT NULL CHECK (cached_input_per_million >= 0),
+  output_per_million numeric(14, 6) NOT NULL CHECK (output_per_million >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider_connection_id, provider, model_pattern)
+);
+
+-- Migrate only unanimous rules: conflicting Key overrides cannot be safely shared.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version >= 16) THEN
+    INSERT INTO provider_model_prices (
+      provider_connection_id, provider, model_pattern, currency,
+      input_per_million, cached_input_per_million, output_per_million
+    )
+    SELECT p.id, m.provider, m.model_pattern, 'CNY',
+           min(m.input_per_million) * 6.7, min(m.cached_input_per_million) * 6.7, min(m.output_per_million) * 6.7
+      FROM provider_connections p
+      JOIN model_prices m ON m.provider IN (p.provider, '*')
+      LEFT JOIN virtual_api_keys k ON k.id = m.virtual_api_key_id
+     WHERE m.virtual_api_key_id IS NULL OR k.provider_connection_id = p.id
+     GROUP BY p.id, m.provider, m.model_pattern
+    HAVING count(DISTINCT (m.input_per_million, m.cached_input_per_million, m.output_per_million)) = 1
+    ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
 
 `;
 

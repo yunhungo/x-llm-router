@@ -1,3 +1,9 @@
+/**
+ * @created 2026-08-28
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
+import { money } from '@/features/billing/currency';
 import { CircleDollarSign, Gauge, Timer, Zap } from 'lucide-react';
 
 import {
@@ -13,7 +19,6 @@ import {
   decimal,
   finiteMetric,
   integer,
-  money,
   rangeLabels,
   successRate,
   type AnalyticsModelOption,
@@ -85,20 +90,20 @@ export function ChartsPanel({
 
   return (
     <div
-      id="key-panel-charts"
-      className="key-tab-panel"
-      role="tabpanel"
-      aria-labelledby="key-tab-charts"
+      id='key-panel-charts'
+      className='key-tab-panel'
+      role='tabpanel'
+      aria-labelledby='key-tab-charts'
     >
-      <div className="tab-toolbar range-toolbar chart-filter-toolbar">
-        <label className="chart-model-filter">
+      <div className='tab-toolbar range-toolbar chart-filter-toolbar'>
+        <label className='chart-model-filter'>
           <span>模型</span>
           <select
-            className="input"
+            className='input'
             value={selectedModel}
             disabled={!modelOptions.length}
             onChange={(event) => onSelectedModelChange(event.target.value)}
-            aria-label="筛选模型"
+            aria-label='筛选模型'
           >
             <option value={allModelsValue}>
               {modelOptions.length ? '全部模型（汇总）' : '暂无可用模型'}
@@ -114,7 +119,7 @@ export function ChartsPanel({
           value={timeRange}
           onApply={onCustomRangeChange}
           label={customRange ? undefined : rangeLabel}
-          ariaLabel="选择图表日期区间"
+          ariaLabel='选择图表日期区间'
         />
         <RangeSwitch value={customRange ? undefined : range} onChange={onRangeChange} />
       </div>
@@ -129,9 +134,9 @@ export function ChartsPanel({
       />
 
       {error ? (
-        <section className="panel chart-model-error">
+        <section className='panel chart-model-error'>
           <span>{error}</span>
-          <Button variant="secondary" onClick={onRetry}>
+          <Button variant='secondary' onClick={onRetry}>
             重试
           </Button>
         </section>
@@ -139,18 +144,18 @@ export function ChartsPanel({
         <Skeleton height={610} />
       ) : (
         <>
-          <section className="stat-grid">
-            <article className="stat-card">
+          <section className='stat-grid'>
+            <article className='stat-card'>
               <span>调用</span>
-              <div className="stat-icon">
+              <div className='stat-icon'>
                 <Zap size={14} />
               </div>
               <strong>{integer.format(summary.calls)}</strong>
               <small>{integer.format(summary.failedCalls)} 次失败</small>
             </article>
-            <article className="stat-card">
+            <article className='stat-card'>
               <span>Token</span>
-              <div className="stat-icon">
+              <div className='stat-icon'>
                 <Gauge size={14} />
               </div>
               <strong>{integer.format(summary.totalTokens)}</strong>
@@ -159,17 +164,17 @@ export function ChartsPanel({
                 {integer.format(summary.reasoningTokens)} reasoning
               </small>
             </article>
-            <article className="stat-card">
+            <article className='stat-card'>
               <span>成本</span>
-              <div className="stat-icon">
+              <div className='stat-icon'>
                 <CircleDollarSign size={14} />
               </div>
               <strong>{money.format(summary.costUsd)}</strong>
               <small>平均 {money.format(summary.averageCostUsd)} / 次</small>
             </article>
-            <article className="stat-card">
+            <article className='stat-card'>
               <span>成功率</span>
-              <div className="stat-icon">
+              <div className='stat-icon'>
                 <Timer size={14} />
               </div>
               <strong>
@@ -181,8 +186,8 @@ export function ChartsPanel({
             </article>
           </section>
 
-          <section className="key-performance-grid">
-            <article className="metric-card">
+          <section className='key-performance-grid'>
+            <article className='metric-card'>
               <span>缓存命中</span>
               <strong>{summary.inputTokens ? `${decimal.format(cacheRate)}%` : '—'}</strong>
               <small>
@@ -190,13 +195,13 @@ export function ChartsPanel({
                 input
               </small>
             </article>
-            <article className="metric-card">
+            <article className='metric-card'>
               <span>TPS</span>
               <strong>{p50Tps > 0 ? decimal.format(p50Tps) : '—'}</strong>
               <small>
                 P50 · 平均 {p50Tps > 0 ? decimal.format(summary.averageTps) : '—'}
                 <button
-                  type="button"
+                  type='button'
                   disabled={p10Tps <= 0}
                   onClick={() =>
                     onDrilldown({
@@ -210,14 +215,14 @@ export function ChartsPanel({
                 </button>
               </small>
             </article>
-            <article className="metric-card">
+            <article className='metric-card'>
               <span>TTFT</span>
               <strong>{streamingCalls ? `${decimal.format(p50TtftMs)} ms` : '—'}</strong>
               <small>
                 P50 · {integer.format(streamingCalls)} 次流式
-                <span className="metric-query-links">
+                <span className='metric-query-links'>
                   <button
-                    type="button"
+                    type='button'
                     disabled={streamingCalls === 0}
                     onClick={() =>
                       onDrilldown({
@@ -230,7 +235,7 @@ export function ChartsPanel({
                     P95
                   </button>
                   <button
-                    type="button"
+                    type='button'
                     disabled={streamingCalls === 0}
                     onClick={() =>
                       onDrilldown({
@@ -245,14 +250,14 @@ export function ChartsPanel({
                 </span>
               </small>
             </article>
-            <article className="metric-card">
+            <article className='metric-card'>
               <span>端到端延迟</span>
               <strong>{summary.calls ? `${decimal.format(p50LatencyMs)} ms` : '—'}</strong>
               <small>
                 P50 · 平均 {summary.calls ? `${decimal.format(summary.averageLatencyMs)} ms` : '—'}
-                <span className="metric-query-links">
+                <span className='metric-query-links'>
                   <button
-                    type="button"
+                    type='button'
                     disabled={summary.calls === 0}
                     onClick={() =>
                       onDrilldown({
@@ -265,7 +270,7 @@ export function ChartsPanel({
                     P95
                   </button>
                   <button
-                    type="button"
+                    type='button'
                     disabled={summary.calls === 0}
                     onClick={() =>
                       onDrilldown({
@@ -280,7 +285,7 @@ export function ChartsPanel({
                 </span>
               </small>
             </article>
-            <article className="metric-card">
+            <article className='metric-card'>
               <span>峰值 RPM</span>
               <strong>{integer.format(summary.peakRpm)}</strong>
               <small>
@@ -302,12 +307,12 @@ export function ChartsPanel({
             }
           />
 
-          <section className="panel flush-panel model-breakdown-panel">
-            <div className="panel-heading compact-panel-heading">
+          <section className='panel flush-panel model-breakdown-panel'>
+            <div className='panel-heading compact-panel-heading'>
               <h2>{selectedModelOption ? '模型信息' : '模型明细'}</h2>
               <span>{selectedModelOption?.label ?? '全部模型'}</span>
             </div>
-            <div className="table-wrap">
+            <div className='table-wrap'>
               <table>
                 <thead>
                   <tr>
@@ -349,7 +354,7 @@ export function ChartsPanel({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="table-empty">
+                      <td colSpan={7} className='table-empty'>
                         该模型在{rangeLabel}暂无调用数据
                       </td>
                     </tr>

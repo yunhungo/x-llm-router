@@ -1,0 +1,38 @@
+/**
+ * @created 2026-09-22
+ * @description 定义上游编辑菜单的定位和操作样式。
+ * @author yunhungo
+ */
+.provider-edit-menu {
+  position: relative;
+  margin-left: auto;
+  &__popup {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 5;
+    min-width: 150px;
+    padding: 5px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--canvas);
+    box-shadow: var(--shadow-3);
+    button {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 10px;
+      border: 0;
+      border-radius: 5px;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+    button:hover,
+    button:focus-visible {
+      background: var(--canvas-soft);
+    }
+  }
+}

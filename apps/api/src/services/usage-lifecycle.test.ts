@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-28
+ * @description 验证上游定价与费用计算的边界行为。
+ * @author yunhungo
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
@@ -125,5 +130,36 @@ describe('usage call lifecycle', () => {
       clientQuery.mock.calls.some(([sql]) => String(sql).includes('spend_usd = spend_usd +')),
     ).toBe(false);
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+});
+
+describe('configured upstream price precedence', () => {
+  it.each([0, 2])('uses configured rate %s instead of upstream-reported USD', async (rate) => {
+    poolQuery.mockReset();
+    poolQuery.mockResolvedValue({
+      rows: [
+        {
+          currency: 'CNY',
+          input_per_million: String(rate),
+          cached_input_per_million: '0',
+          output_per_million: '0',
+        },
+      ],
+    });
+    clientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+    const result = await recordUsage({
+      requestId: 'price-precedence',
+      virtualApiKeyId: 'key',
+      providerConnectionId: 'connection',
+      provider: 'deepseek',
+      endpoint: 'chat.completions',
+      requestedModel: 'deepseek-flash',
+      model: 'deepseek-flash',
+      statusCode: 200,
+      usage: { ...emptyUsage(), inputTokens: 1000000 },
+      latencyMs: 1,
+      reportedCostUsd: 999,
+    });
+    expect(result.costUsd).toBeCloseTo(rate / 6.7);
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * @created 2026-08-11
+ * @description 统一费用展示与平台货币设置。
+ * @author yunhungo
+ */
+import { money } from '@/features/billing/currency';
 import {
   Area,
   Bar,
@@ -155,16 +161,16 @@ export function KeyPerformanceChart({
   const hasCalls = points.some((point) => point.calls > 0);
 
   return (
-    <section className="panel performance-chart-panel detail-section">
-      <div className="performance-chart-heading">
-        <div className="chart-title-row">
+    <section className='panel performance-chart-panel detail-section'>
+      <div className='performance-chart-heading'>
+        <div className='chart-title-row'>
           <h2>趋势</h2>
         </div>
-        <div className="chart-controls">
-          <div className="metric-tabs" aria-label="图表指标">
+        <div className='chart-controls'>
+          <div className='metric-tabs' aria-label='图表指标'>
             {metricOptions.map((option) => (
               <button
-                type="button"
+                type='button'
                 key={option.value}
                 className={metric === option.value ? 'active' : ''}
                 onClick={() => onMetricChange(option.value)}
@@ -176,8 +182,8 @@ export function KeyPerformanceChart({
         </div>
       </div>
       {hasCalls ? (
-        <div className="performance-chart" role="img" aria-label={`${metric} 时间序列图`}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div className='performance-chart' role='img' aria-label={`${metric} 时间序列图`}>
+          <ResponsiveContainer width='100%' height='100%'>
             <ComposedChart
               data={chartData}
               margin={{ top: 12, right: 14, bottom: 4, left: 2 }}
@@ -187,9 +193,9 @@ export function KeyPerformanceChart({
                 if (point?.calls) onBucketSelect(point);
               }}
             >
-              <CartesianGrid stroke="var(--hairline)" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke='var(--hairline)' strokeDasharray='3 3' vertical={false} />
               <XAxis
-                dataKey="bucket"
+                dataKey='bucket'
                 tickFormatter={(value: string) => tickLabel(value, range)}
                 tick={{ fill: 'var(--mute)', fontSize: 10 }}
                 tickLine={false}
@@ -198,7 +204,9 @@ export function KeyPerformanceChart({
               />
               <YAxis
                 width={58}
-                tickFormatter={(value: number) => axisValue(metric, value)}
+                tickFormatter={(value: number) =>
+                  metric === 'cost' ? money.format(value) : axisValue(metric, value)
+                }
                 tick={{ fill: 'var(--mute)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
@@ -208,7 +216,9 @@ export function KeyPerformanceChart({
                 cursor={{ stroke: 'var(--ink)', strokeDasharray: '3 3' }}
                 labelFormatter={(value) => fullTime(String(value))}
                 formatter={(value, name) => [
-                  formatPerformanceValue(metric, Number(value ?? 0)),
+                  metric === 'cost'
+                    ? money.format(Number(value ?? 0))
+                    : formatPerformanceValue(metric, Number(value ?? 0)),
                   seriesNames[String(name)] ?? String(name),
                 ]}
                 contentStyle={{
@@ -228,16 +238,16 @@ export function KeyPerformanceChart({
                 {metric === 'calls' ? (
                   <>
                     <Bar
-                      dataKey="successfulCalls"
-                      stackId="calls"
-                      fill="var(--ink)"
+                      dataKey='successfulCalls'
+                      stackId='calls'
+                      fill='var(--ink)'
                       maxBarSize={28}
                       radius={[0, 0, 3, 3]}
                     />
                     <Bar
-                      dataKey="failedCalls"
-                      stackId="calls"
-                      fill="var(--chart-red)"
+                      dataKey='failedCalls'
+                      stackId='calls'
+                      fill='var(--chart-red)'
                       maxBarSize={28}
                       radius={[3, 3, 0, 0]}
                     />
@@ -245,10 +255,10 @@ export function KeyPerformanceChart({
                 ) : null}
                 {metric === 'cache' ? (
                   <Area
-                    type="monotone"
-                    dataKey="cacheRate"
-                    stroke="var(--chart-teal)"
-                    fill="var(--chart-teal)"
+                    type='monotone'
+                    dataKey='cacheRate'
+                    stroke='var(--chart-teal)'
+                    fill='var(--chart-teal)'
                     fillOpacity={0.14}
                     strokeWidth={2}
                     activeDot={{ r: 5 }}
@@ -257,17 +267,17 @@ export function KeyPerformanceChart({
                 {metric === 'tps' ? (
                   <>
                     <Line
-                      type="monotone"
-                      dataKey="p10Tps"
-                      stroke="var(--chart-amber)"
+                      type='monotone'
+                      dataKey='p10Tps'
+                      stroke='var(--chart-amber)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
                     />
                     <Line
-                      type="monotone"
-                      dataKey="p50Tps"
-                      stroke="var(--blue)"
+                      type='monotone'
+                      dataKey='p50Tps'
+                      stroke='var(--blue)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
@@ -277,25 +287,25 @@ export function KeyPerformanceChart({
                 {metric === 'ttft' ? (
                   <>
                     <Line
-                      type="monotone"
-                      dataKey="p50TtftMs"
-                      stroke="var(--chart-teal)"
+                      type='monotone'
+                      dataKey='p50TtftMs'
+                      stroke='var(--chart-teal)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
                     />
                     <Line
-                      type="monotone"
-                      dataKey="p95TtftMs"
-                      stroke="var(--chart-amber)"
+                      type='monotone'
+                      dataKey='p95TtftMs'
+                      stroke='var(--chart-amber)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
                     />
                     <Line
-                      type="monotone"
-                      dataKey="p99TtftMs"
-                      stroke="var(--chart-red)"
+                      type='monotone'
+                      dataKey='p99TtftMs'
+                      stroke='var(--chart-red)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
@@ -305,25 +315,25 @@ export function KeyPerformanceChart({
                 {metric === 'latency' ? (
                   <>
                     <Line
-                      type="monotone"
-                      dataKey="p50LatencyMs"
-                      stroke="var(--chart-teal)"
+                      type='monotone'
+                      dataKey='p50LatencyMs'
+                      stroke='var(--chart-teal)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
                     />
                     <Line
-                      type="monotone"
-                      dataKey="p95LatencyMs"
-                      stroke="var(--chart-amber)"
+                      type='monotone'
+                      dataKey='p95LatencyMs'
+                      stroke='var(--chart-amber)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
                     />
                     <Line
-                      type="monotone"
-                      dataKey="p99LatencyMs"
-                      stroke="var(--chart-red)"
+                      type='monotone'
+                      dataKey='p99LatencyMs'
+                      stroke='var(--chart-red)'
                       strokeWidth={2}
                       dot={false}
                       connectNulls
@@ -333,29 +343,29 @@ export function KeyPerformanceChart({
                 {metric === 'tokens' ? (
                   <>
                     <Area
-                      type="monotone"
-                      dataKey="inputTokens"
-                      stackId="tokens"
-                      stroke="var(--chart-slate)"
-                      fill="var(--chart-slate)"
+                      type='monotone'
+                      dataKey='inputTokens'
+                      stackId='tokens'
+                      stroke='var(--chart-slate)'
+                      fill='var(--chart-slate)'
                       fillOpacity={0.16}
                     />
                     <Area
-                      type="monotone"
-                      dataKey="outputTokens"
-                      stackId="tokens"
-                      stroke="var(--blue)"
-                      fill="var(--blue)"
+                      type='monotone'
+                      dataKey='outputTokens'
+                      stackId='tokens'
+                      stroke='var(--blue)'
+                      fill='var(--blue)'
                       fillOpacity={0.18}
                     />
                   </>
                 ) : null}
                 {metric === 'cost' ? (
                   <Area
-                    type="monotone"
-                    dataKey="costUsd"
-                    stroke="var(--chart-purple)"
-                    fill="var(--chart-purple)"
+                    type='monotone'
+                    dataKey='costUsd'
+                    stroke='var(--chart-purple)'
+                    fill='var(--chart-purple)'
                     fillOpacity={0.15}
                     strokeWidth={2}
                     activeDot={{ r: 5 }}
@@ -366,7 +376,7 @@ export function KeyPerformanceChart({
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="analytics-empty performance-empty">{emptyLabel}</div>
+        <div className='analytics-empty performance-empty'>{emptyLabel}</div>
       )}
     </section>
   );
