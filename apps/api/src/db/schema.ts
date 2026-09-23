@@ -3,7 +3,7 @@
  * @description 定义数据库结构及兼容迁移。
  * @author yunhungo
  */
-export const schemaVersion = 16;
+export const schemaVersion = 17;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -352,12 +352,52 @@ BEGIN
       FROM provider_connections p
       JOIN model_prices m ON m.provider IN (p.provider, '*')
       LEFT JOIN virtual_api_keys k ON k.id = m.virtual_api_key_id
-     WHERE m.virtual_api_key_id IS NULL OR k.provider_connection_id = p.id
+     WHERE (m.virtual_api_key_id IS NULL OR k.provider_connection_id = p.id)
+       AND (
+         m.virtual_api_key_id IS NOT NULL
+         OR m.provider = p.provider
+         OR starts_with(p.default_model, m.model_pattern)
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(p.available_models) AS catalog(model)
+            WHERE starts_with(catalog.model, m.model_pattern)
+         )
+       )
      GROUP BY p.id, m.provider, m.model_pattern
     HAVING count(DISTINCT (m.input_per_million, m.cached_input_per_million, m.output_per_million)) = 1
     ON CONFLICT DO NOTHING;
   END IF;
 END $$;
+
+-- Repair wildcard catalog rows copied to unrelated connections by version 16.
+-- Transaction timestamps identify untouched imports; user edits and Key-specific
+-- rules are preserved, and the original USD rules remain in model_prices.
+DELETE FROM provider_model_prices price
+ USING provider_connections p, schema_migrations migration
+ WHERE migration.version = 16
+   AND price.provider_connection_id = p.id
+   AND price.provider = '*'
+   AND price.updated_at = migration.applied_at
+   AND NOT COALESCE(starts_with(p.default_model, price.model_pattern), false)
+   AND NOT EXISTS (
+     SELECT 1 FROM jsonb_array_elements_text(p.available_models) AS catalog(model)
+      WHERE starts_with(catalog.model, price.model_pattern)
+   )
+   AND EXISTS (
+     SELECT 1 FROM model_prices legacy
+      WHERE legacy.virtual_api_key_id IS NULL
+        AND legacy.provider = price.provider
+        AND legacy.model_pattern = price.model_pattern
+        AND legacy.input_per_million * 6.7 = price.input_per_million
+        AND legacy.cached_input_per_million * 6.7 = price.cached_input_per_million
+        AND legacy.output_per_million * 6.7 = price.output_per_million
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM model_prices legacy
+     JOIN virtual_api_keys k ON k.id = legacy.virtual_api_key_id
+      WHERE k.provider_connection_id = p.id
+        AND legacy.provider = price.provider
+        AND legacy.model_pattern = price.model_pattern
+   );
 
 `;
 
