@@ -13,7 +13,7 @@ vi.mock('../db/client', () => ({
   getPool: () => ({ query }),
 }));
 
-import { calculateCost, computeCost, extractTokenUsage } from './usage';
+import { calculateCost, computeCost, computeCostBreakdown, extractTokenUsage } from './usage';
 
 beforeEach(() => {
   query.mockReset();
@@ -121,6 +121,30 @@ describe('token usage extraction', () => {
         { inputPerMillion: 2, cachedInputPerMillion: 0.2, outputPerMillion: 12 },
       ),
     ).toBeCloseTo(2.48);
+  });
+
+  it('retains the three charged amounts and rates for the cost tooltip', () => {
+    const usage = {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 400_000,
+      outputTokens: 100_000,
+      reasoningTokens: 0,
+      totalTokens: 1_100_000,
+    };
+    const price = { inputPerMillion: 2, cachedInputPerMillion: 0.2, outputPerMillion: 12 };
+    const breakdown = computeCostBreakdown(usage, price);
+
+    expect(breakdown).toMatchObject({
+      inputPerMillionCny: 2,
+      cachedInputPerMillionCny: 0.2,
+      outputPerMillionCny: 12,
+    });
+    expect(breakdown.inputCostUsd).toBeCloseTo(1.2 / 6.7, 12);
+    expect(breakdown.cachedInputCostUsd).toBeCloseTo(0.08 / 6.7, 12);
+    expect(breakdown.outputCostUsd).toBeCloseTo(1.2 / 6.7, 12);
+    expect(
+      breakdown.inputCostUsd + breakdown.cachedInputCostUsd + breakdown.outputCostUsd,
+    ).toBeCloseTo(computeCost(usage, price) / 6.7, 12);
   });
 
   it('uses the actual upstream connection price, independent of downstream Keys', async () => {

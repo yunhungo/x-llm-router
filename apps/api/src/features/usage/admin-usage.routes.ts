@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 提供全局用量汇总和调用记录查询接口。
+ * @author yunhungo
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -182,6 +187,7 @@ export async function adminUsageRoutes(app: FastifyInstance): Promise<void> {
                 CASE WHEN f.reasoning_tokens IS NULL THEN NULL
                   ELSE GREATEST(f.output_tokens - f.reasoning_tokens, 0) END AS "visibleOutputTokens",
                 f.total_tokens AS "totalTokens", f.cost_usd::float8 AS "costUsd",
+                f.cost_breakdown AS "costBreakdown",
                 f.latency_ms AS "latencyMs", f.time_to_first_token_ms AS "timeToFirstTokenMs",
                 f.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
                 f.error_code AS "errorCode", f.created_at AS "createdAt",

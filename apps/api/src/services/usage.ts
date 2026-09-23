@@ -77,6 +77,15 @@ export interface ModelPrice {
   outputPerMillion: number;
 }
 
+export interface UsageCostBreakdown {
+  inputPerMillionCny: number;
+  cachedInputPerMillionCny: number;
+  outputPerMillionCny: number;
+  inputCostUsd: number;
+  cachedInputCostUsd: number;
+  outputCostUsd: number;
+}
+
 export interface UsageCallDetails {
   gatewayCurl: string;
   routerApiToken?: string;
@@ -138,12 +147,25 @@ export function computeCost(usage: TokenUsage, price: ModelPrice): number {
   );
 }
 
-export async function calculateCost(
+export function computeCostBreakdown(usage: TokenUsage, price: ModelPrice): UsageCostBreakdown {
+  const cachedInputTokens = Math.min(usage.inputTokens, usage.cachedInputTokens);
+  const uncachedInputTokens = Math.max(usage.inputTokens - cachedInputTokens, 0);
+  return {
+    inputPerMillionCny: price.inputPerMillion,
+    cachedInputPerMillionCny: price.cachedInputPerMillion,
+    outputPerMillionCny: price.outputPerMillion,
+    inputCostUsd: (uncachedInputTokens * price.inputPerMillion) / 1_000_000 / CNY_PER_USD,
+    cachedInputCostUsd: (cachedInputTokens * price.cachedInputPerMillion) / 1_000_000 / CNY_PER_USD,
+    outputCostUsd: (usage.outputTokens * price.outputPerMillion) / 1_000_000 / CNY_PER_USD,
+  };
+}
+
+async function calculateCostSnapshot(
   providerConnectionId: string | undefined,
   provider: string,
   model: string,
   usage: TokenUsage,
-): Promise<number | undefined> {
+): Promise<{ costUsd: number; breakdown: UsageCostBreakdown } | undefined> {
   if (!providerConnectionId) return undefined;
   const result = await getPool().query<{
     currency: 'CNY';
@@ -163,12 +185,24 @@ export async function calculateCost(
   );
   const price = result.rows[0];
   if (!price) return undefined;
-  const cost = computeCost(usage, {
+  const modelPrice = {
     inputPerMillion: Number(price.input_per_million),
     cachedInputPerMillion: Number(price.cached_input_per_million),
     outputPerMillion: Number(price.output_per_million),
-  });
-  return cost / CNY_PER_USD;
+  };
+  return {
+    costUsd: computeCost(usage, modelPrice) / CNY_PER_USD,
+    breakdown: computeCostBreakdown(usage, modelPrice),
+  };
+}
+
+export async function calculateCost(
+  providerConnectionId: string | undefined,
+  provider: string,
+  model: string,
+  usage: TokenUsage,
+): Promise<number | undefined> {
+  return (await calculateCostSnapshot(providerConnectionId, provider, model, usage))?.costUsd;
 }
 
 export async function recordUsage(input: {
@@ -189,14 +223,15 @@ export async function recordUsage(input: {
   metadata?: Record<string, unknown>;
   details?: UsageCallDetails;
 }): Promise<{ costUsd: number }> {
-  const configuredCost = await calculateCost(
+  const costSnapshot = await calculateCostSnapshot(
     input.providerConnectionId,
     input.provider ?? '*',
     input.model,
     input.usage,
   );
+  const costBreakdown = costSnapshot?.breakdown;
   const costUsd =
-    configuredCost ??
+    costSnapshot?.costUsd ??
     (input.reportedCostUsd !== undefined &&
     Number.isFinite(input.reportedCostUsd) &&
     input.reportedCostUsd >= 0
@@ -212,9 +247,9 @@ export async function recordUsage(input: {
       `INSERT INTO usage_logs(
         id, request_id, virtual_api_key_id, provider_connection_id, endpoint, requested_model, model,
         call_status, status_code, success, input_tokens, cached_input_tokens, output_tokens,
-        reasoning_tokens, total_tokens, cost_usd, latency_ms, time_to_first_token_ms,
+        reasoning_tokens, total_tokens, cost_usd, cost_breakdown, latency_ms, time_to_first_token_ms,
         time_to_first_visible_token_ms, error_code, metadata
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18,$19,$20,$21,$22::jsonb)
       ON CONFLICT (request_id) DO UPDATE SET
         virtual_api_key_id = EXCLUDED.virtual_api_key_id,
         provider_connection_id = EXCLUDED.provider_connection_id,
@@ -230,6 +265,7 @@ export async function recordUsage(input: {
         reasoning_tokens = EXCLUDED.reasoning_tokens,
         total_tokens = EXCLUDED.total_tokens,
         cost_usd = EXCLUDED.cost_usd,
+        cost_breakdown = EXCLUDED.cost_breakdown,
         latency_ms = EXCLUDED.latency_ms,
         time_to_first_token_ms = EXCLUDED.time_to_first_token_ms,
         time_to_first_visible_token_ms = EXCLUDED.time_to_first_visible_token_ms,
@@ -254,6 +290,7 @@ export async function recordUsage(input: {
         input.usage.reasoningTokens,
         input.usage.totalTokens,
         costUsd,
+        costBreakdown ? JSON.stringify(costBreakdown) : null,
         input.latencyMs,
         input.timeToFirstTokenMs ?? null,
         input.timeToFirstVisibleTokenMs ?? null,

@@ -4,6 +4,7 @@
  * @author yunhungo
  */
 import { UsageLogPerformance } from '@/components/UsageLogPerformance/UsageLogPerformance';
+import { UsageCostBreakdown } from '@/components/UsageCostBreakdown/UsageCostBreakdown';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -26,7 +27,6 @@ import {
   useUsageLogPagination,
 } from '../../features/usage/use-usage-log-pagination';
 import type { UsageLog } from '../../types';
-import { money } from '@/features/billing/currency';
 import './usage.scss';
 
 function tokensPerSecond(log: UsageLog) {
@@ -189,7 +189,7 @@ export function UsagePage() {
                             />
                           )}
                         </td>
-                        <td>{active ? '—' : money.format(log.costUsd)}</td>
+                        <td>{active ? '—' : <UsageCostBreakdown log={log} />}</td>
                         <td>
                           {new Date(log.createdAt).toLocaleString('zh-CN', {
                             month: '2-digit',

@@ -1,0 +1,124 @@
+/**
+ * @created 2026-09-23
+ * @description 定义调用成本入口与悬浮费用明细的样式。
+ * @author yunhungo
+ */
+.usage-cost-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.usage-cost-trigger svg {
+  flex: none;
+  color: var(--mute);
+  opacity: 0.65;
+  transition: opacity 150ms ease;
+}
+
+.usage-cost-trigger:hover svg,
+.usage-cost-trigger:focus-visible svg {
+  opacity: 1;
+}
+
+.usage-cost-trigger:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.usage-cost-tooltip {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow:
+    0 12px 32px rgba(20, 30, 50, 0.15),
+    var(--shadow-1);
+  pointer-events: none;
+}
+
+.usage-cost-tooltip-heading,
+.usage-cost-tooltip-part,
+.usage-cost-tooltip-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.usage-cost-tooltip-heading > div,
+.usage-cost-tooltip-part > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.usage-cost-tooltip-heading strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.usage-cost-tooltip-heading > div > span,
+.usage-cost-tooltip-part span,
+.usage-cost-tooltip-note {
+  color: var(--mute);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.usage-cost-tooltip-currency {
+  padding: 3px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--mute);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.usage-cost-tooltip-parts {
+  display: grid;
+  gap: 14px;
+  margin-top: 17px;
+  padding-bottom: 17px;
+}
+
+.usage-cost-tooltip-part > div > strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.usage-cost-tooltip-part > strong {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-cost-tooltip-total {
+  padding-top: 13px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.usage-cost-tooltip-total strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-cost-tooltip-note {
+  margin: 11px 0 0;
+}

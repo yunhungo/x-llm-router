@@ -1,10 +1,10 @@
-import { money } from '@/features/billing/currency';
 /**
  * @created 2026-08-28
  * @description 展示 API Key 调用记录、性能指标及明细。
  * @author yunhungo
  */
 import { UsageLogPerformance } from '@/components/UsageLogPerformance/UsageLogPerformance';
+import { UsageCostBreakdown } from '@/components/UsageCostBreakdown/UsageCostBreakdown';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, X } from 'lucide-react';
@@ -217,7 +217,7 @@ export function LogsPanel({
                               )} ms`
                             : `${integer.format(log.latencyMs)} ms`}
                         </td>
-                        <td>{active ? '—' : money.format(log.costUsd)}</td>
+                        <td>{active ? '—' : <UsageCostBreakdown log={log} />}</td>
                         <td>{formatDate(log.createdAt)}</td>
                         {expandedLogId === log.id ? (
                           <td

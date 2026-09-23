@@ -1,6 +1,6 @@
 /**
  * @created 2026-08-11
- * @description 维护上游定价、货币换算及用量账本。
+ * @description 提供虚拟 Key 的分析数据与调用记录接口。
  * @author yunhungo
  */
 import type { FastifyInstance } from 'fastify';
@@ -508,7 +508,8 @@ export async function keyAnalyticsRoutes(app: FastifyInstance): Promise<void> {
               CASE WHEN f.reasoning_tokens IS NULL THEN NULL
                 ELSE GREATEST(f.output_tokens - f.reasoning_tokens, 0) END AS "visibleOutputTokens",
               f.total_tokens AS "totalTokens",
-              f.cost_usd::float8 AS "costUsd", f.latency_ms AS "latencyMs",
+              f.cost_usd::float8 AS "costUsd", f.cost_breakdown AS "costBreakdown",
+              f.latency_ms AS "latencyMs",
               f.time_to_first_token_ms AS "timeToFirstTokenMs",
               f.time_to_first_visible_token_ms AS "timeToFirstVisibleTokenMs",
               f.error_code AS "errorCode",

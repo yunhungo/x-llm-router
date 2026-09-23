@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 定义管理界面与 API 交互的数据类型。
+ * @author yunhungo
+ */
 export interface User {
   id: string;
   username: string;
@@ -109,6 +114,7 @@ export interface UsageLog {
   visibleOutputTokens: number | null;
   totalTokens: number;
   costUsd: number;
+  costBreakdown?: UsageCostBreakdown | null;
   latencyMs: number;
   timeToFirstTokenMs: number | null;
   timeToFirstVisibleTokenMs: number | null;
@@ -117,6 +123,15 @@ export interface UsageLog {
   apiKeyName: string | null;
   providerName: string | null;
   detailAvailable: boolean;
+}
+
+export interface UsageCostBreakdown {
+  inputPerMillionCny: number;
+  cachedInputPerMillionCny: number;
+  outputPerMillionCny: number;
+  inputCostUsd: number;
+  cachedInputCostUsd: number;
+  outputCostUsd: number;
 }
 
 export interface UsageLogsPage<TLog extends Pick<UsageLog, 'id'> = UsageLog> {
