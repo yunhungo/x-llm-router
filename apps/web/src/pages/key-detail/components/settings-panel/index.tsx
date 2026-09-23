@@ -1,6 +1,6 @@
 /**
  * @created 2026-08-28
- * @description 统一费用展示与平台货币设置。
+ * @description 提供虚拟 Key 的基本设置与 Langfuse 配置界面。
  * @author yunhungo
  */
 import { currency, fromUsd, toUsd } from '@/features/billing/currency';
@@ -9,7 +9,6 @@ import { Check, Save } from 'lucide-react';
 
 import { LangfuseFields, type LangfuseDraft } from '../../../../components/langfuse-fields';
 import { Button, Field, Input } from '../../../../components/ui';
-import { Link } from 'react-router-dom';
 import type { Provider, VirtualKey } from '../../../../types';
 import type { GeneralDraft } from '../../key-detail-model';
 import './settings-panel.css';
@@ -211,14 +210,6 @@ export function SettingsPanel({
               showEnabledSwitch={false}
             />
           </form>
-        </section>
-
-        <section className='panel settings-section'>
-          <div className='panel-heading'>
-            <h2>模型价格</h2>
-          </div>
-          <p>费用按实际使用的上游连接价格与 token 用量计算。</p>
-          <Link to='/providers'>前往上游连接配置价格</Link>
         </section>
       </div>
     </div>
