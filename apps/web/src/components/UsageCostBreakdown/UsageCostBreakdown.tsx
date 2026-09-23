@@ -1,6 +1,6 @@
 /**
  * @created 2026-09-23
- * @description 在调用成本上悬停或聚焦时展示记账时的费用分项。
+ * @description 在调用成本上悬停或聚焦时展示费用分项。
  * @author yunhungo
  */
 import { money } from '@/features/billing/currency';
@@ -138,11 +138,6 @@ export function UsageCostBreakdown({
                 <span>合计</span>
                 <strong>{money.format(log.costUsd)}</strong>
               </div>
-              <p className='usage-cost-tooltip-note'>
-                {breakdown
-                  ? '单价为调用时的上游价格；缓存输入已从普通输入中扣除。'
-                  : '此记录未保存可核对的分项单价，仅可查看总成本与 Token 用量。'}
-              </p>
             </div>,
             document.body,
           )

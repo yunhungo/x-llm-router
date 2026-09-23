@@ -1,9 +1,8 @@
 /**
  * @created 2026-08-11
- * @description 统一费用展示与平台货币设置。
+ * @description 展示密钥各项调用趋势及 Token 和成本构成。
  * @author yunhungo
  */
-import { money } from '@/features/billing/currency';
 import {
   Area,
   Bar,
@@ -18,7 +17,9 @@ import {
 } from 'recharts';
 
 import type { KeyAnalyticsRange, KeyUsagePoint } from '../../types';
-import './key-performance-chart.css';
+import { UsageBreakdownTooltip } from './UsageBreakdownTooltip';
+import { formatBreakdownCost, usageBreakdown } from './usage-breakdown';
+import './key-performance-chart.scss';
 
 export type PerformanceMetric = 'calls' | 'cache' | 'tps' | 'ttft' | 'latency' | 'tokens' | 'cost';
 
@@ -44,9 +45,13 @@ const seriesNames: Record<string, string> = {
   p50LatencyMs: 'P50 延迟',
   p95LatencyMs: 'P95 延迟',
   p99LatencyMs: 'P99 延迟',
-  inputTokens: '输入 Token',
+  uncachedInputTokens: '输入 Token',
+  cachedInputTokens: '缓存输入 Token',
   outputTokens: '输出 Token',
-  costUsd: '成本',
+  inputCostUsd: '输入成本',
+  cachedInputCostUsd: '缓存输入成本',
+  outputCostUsd: '输出成本',
+  unattributedCostUsd: '未拆分费用',
 };
 
 function compact(value: number): string {
@@ -60,23 +65,14 @@ export function formatPerformanceValue(metric: PerformanceMetric, value: number)
   if (metric === 'cache') return `${value.toFixed(1)}%`;
   if (metric === 'ttft' || metric === 'latency') return `${value.toFixed(1)} ms`;
   if (metric === 'tps') return `${value.toFixed(1)} token/s`;
-  if (metric === 'cost') {
-    const digits = value > 0 && value < 0.0001 ? 8 : value < 0.01 ? 6 : 4;
-    return `$${value.toFixed(digits)}`;
-  }
+  if (metric === 'cost') return formatBreakdownCost(value);
   return compact(value);
 }
 
 function axisValue(metric: PerformanceMetric, value: number): string {
   if (metric === 'cache') return `${value}%`;
   if (metric === 'ttft' || metric === 'latency') return `${compact(value)}ms`;
-  if (metric === 'cost') {
-    if (value === 0) return '$0';
-    if (Math.abs(value) < 0.0001) return `$${value.toExponential(1)}`;
-    if (Math.abs(value) < 0.01) return `$${value.toFixed(4)}`;
-    if (Math.abs(value) < 1) return `$${value.toFixed(2)}`;
-    return `$${compact(value)}`;
-  }
+  if (metric === 'cost') return formatBreakdownCost(value);
   return compact(value);
 }
 
@@ -129,7 +125,7 @@ export function normalizePerformancePoint(point: KeyUsagePoint) {
     successfulCalls,
     failedCalls,
     inputTokens,
-    outputTokens,
+    ...usageBreakdown({ ...point, inputTokens, outputTokens }),
     cacheRate: inputTokens ? (finiteMetric(point.cachedTokens) / inputTokens) * 100 : 0,
     p10Tps: p10Tps || null,
     p50Tps: p50Tps || null,
@@ -159,6 +155,7 @@ export function KeyPerformanceChart({
 }) {
   const chartData = points.map(normalizePerformancePoint);
   const hasCalls = points.some((point) => point.calls > 0);
+  const hasUnattributedCosts = chartData.some((point) => point.unattributedCostUsd > 0);
 
   return (
     <section className='panel performance-chart-panel detail-section'>
@@ -203,10 +200,8 @@ export function KeyPerformanceChart({
                 minTickGap={28}
               />
               <YAxis
-                width={58}
-                tickFormatter={(value: number) =>
-                  metric === 'cost' ? money.format(value) : axisValue(metric, value)
-                }
+                width={metric === 'cost' ? 76 : 58}
+                tickFormatter={(value: number) => axisValue(metric, value)}
                 tick={{ fill: 'var(--mute)', fontSize: 10 }}
                 tickLine={false}
                 axisLine={false}
@@ -214,11 +209,12 @@ export function KeyPerformanceChart({
               />
               <Tooltip
                 cursor={{ stroke: 'var(--ink)', strokeDasharray: '3 3' }}
+                {...(metric === 'tokens' || metric === 'cost'
+                  ? { content: <UsageBreakdownTooltip metric={metric} /> }
+                  : {})}
                 labelFormatter={(value) => fullTime(String(value))}
                 formatter={(value, name) => [
-                  metric === 'cost'
-                    ? money.format(Number(value ?? 0))
-                    : formatPerformanceValue(metric, Number(value ?? 0)),
+                  formatPerformanceValue(metric, Number(value ?? 0)),
                   seriesNames[String(name)] ?? String(name),
                 ]}
                 contentStyle={{
@@ -342,34 +338,56 @@ export function KeyPerformanceChart({
                 ) : null}
                 {metric === 'tokens' ? (
                   <>
-                    <Area
-                      type='monotone'
-                      dataKey='inputTokens'
+                    <Bar
+                      dataKey='uncachedInputTokens'
                       stackId='tokens'
-                      stroke='var(--chart-slate)'
                       fill='var(--chart-slate)'
-                      fillOpacity={0.16}
+                      maxBarSize={28}
                     />
-                    <Area
-                      type='monotone'
+                    <Bar
+                      dataKey='cachedInputTokens'
+                      stackId='tokens'
+                      fill='var(--chart-teal)'
+                      maxBarSize={28}
+                    />
+                    <Bar
                       dataKey='outputTokens'
                       stackId='tokens'
-                      stroke='var(--blue)'
                       fill='var(--blue)'
-                      fillOpacity={0.18}
+                      maxBarSize={28}
                     />
                   </>
                 ) : null}
                 {metric === 'cost' ? (
-                  <Area
-                    type='monotone'
-                    dataKey='costUsd'
-                    stroke='var(--chart-purple)'
-                    fill='var(--chart-purple)'
-                    fillOpacity={0.15}
-                    strokeWidth={2}
-                    activeDot={{ r: 5 }}
-                  />
+                  <>
+                    <Bar
+                      dataKey='inputCostUsd'
+                      stackId='cost'
+                      fill='var(--chart-slate)'
+                      maxBarSize={28}
+                    />
+                    <Bar
+                      dataKey='cachedInputCostUsd'
+                      stackId='cost'
+                      fill='var(--chart-teal)'
+                      maxBarSize={28}
+                    />
+                    <Bar
+                      dataKey='outputCostUsd'
+                      stackId='cost'
+                      fill='var(--blue)'
+                      maxBarSize={28}
+                    />
+                    {hasUnattributedCosts ? (
+                      <Bar
+                        dataKey='unattributedCostUsd'
+                        stackId='cost'
+                        fill='var(--mute)'
+                        fillOpacity={0.45}
+                        maxBarSize={28}
+                      />
+                    ) : null}
+                  </>
                 ) : null}
               </>
             </ComposedChart>

@@ -228,6 +228,9 @@ export interface KeyUsagePoint {
   tokens: number;
   cachedTokens: number;
   costUsd: number;
+  inputCostUsd: number;
+  cachedInputCostUsd: number;
+  outputCostUsd: number;
   averageTtftMs: number;
   p50TtftMs: number;
   p95TtftMs: number;

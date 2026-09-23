@@ -3,7 +3,7 @@
  * @description 定义数据库结构及兼容迁移。
  * @author yunhungo
  */
-export const schemaVersion = 18;
+export const schemaVersion = 19;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -405,7 +405,52 @@ const costBreakdownSql = `
 ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS cost_breakdown jsonb;
 `;
 
+const legacyCostBreakdownSql = `
+-- Only reconstruct historical parts when today's matching price reproduces the ledger total.
+WITH priced AS (
+  SELECT u.id, u.input_tokens, u.cached_input_tokens, u.output_tokens,
+         price.input_per_million, price.cached_input_per_million, price.output_per_million,
+         GREATEST(u.input_tokens - LEAST(u.input_tokens, u.cached_input_tokens), 0) AS uncached_tokens,
+         LEAST(u.input_tokens, u.cached_input_tokens) AS cached_tokens
+    FROM usage_logs u
+    JOIN provider_connections pc ON pc.id = u.provider_connection_id
+    JOIN LATERAL (
+      SELECT input_per_million, cached_input_per_million, output_per_million
+        FROM provider_model_prices
+       WHERE provider_connection_id = u.provider_connection_id
+         AND provider IN (pc.provider, '*')
+         AND starts_with(u.model, model_pattern)
+       ORDER BY CASE WHEN provider = pc.provider THEN 0 ELSE 1 END,
+                length(model_pattern) DESC
+       LIMIT 1
+    ) price ON true
+   WHERE u.cost_breakdown IS NULL
+     AND u.cost_usd > 0
+     AND u.call_status IN ('completed', 'failed')
+), matched AS (
+  SELECT priced.*,
+         (uncached_tokens * input_per_million +
+          cached_tokens * cached_input_per_million +
+          output_tokens * output_per_million) / 1000000 AS total_cny
+    FROM priced
+)
+UPDATE usage_logs u
+   SET cost_breakdown = jsonb_build_object(
+     'inputPerMillionCny', matched.input_per_million::float8,
+     'cachedInputPerMillionCny', matched.cached_input_per_million::float8,
+     'outputPerMillionCny', matched.output_per_million::float8,
+     'inputCostUsd', (matched.uncached_tokens * matched.input_per_million / 1000000 / 6.7)::float8,
+     'cachedInputCostUsd', (matched.cached_tokens * matched.cached_input_per_million / 1000000 / 6.7)::float8,
+     'outputCostUsd', (matched.output_tokens * matched.output_per_million / 1000000 / 6.7)::float8
+   )
+  FROM matched
+ WHERE u.id = matched.id
+   AND u.cost_breakdown IS NULL
+   AND round(u.cost_usd * 6.7, 8) = round(matched.total_cny, 8);
+`;
+
 export const migrations = [
   { version: 17, sql: schemaSql },
-  { version: schemaVersion, sql: costBreakdownSql },
+  { version: 18, sql: costBreakdownSql },
+  { version: schemaVersion, sql: legacyCostBreakdownSql },
 ] as const;

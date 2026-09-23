@@ -73,8 +73,7 @@
 }
 
 .usage-cost-tooltip-heading > div > span,
-.usage-cost-tooltip-part span,
-.usage-cost-tooltip-note {
+.usage-cost-tooltip-part span {
   color: var(--mute);
   font-size: 11px;
   line-height: 1.45;
@@ -117,8 +116,4 @@
 .usage-cost-tooltip-total strong {
   font-size: 15px;
   font-variant-numeric: tabular-nums;
-}
-
-.usage-cost-tooltip-note {
-  margin: 11px 0 0;
 }

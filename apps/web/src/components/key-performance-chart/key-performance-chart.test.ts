@@ -7,8 +7,8 @@ describe('key performance chart formatting', () => {
     expect(formatPerformanceValue('cache', 73.25)).toBe('73.3%');
     expect(formatPerformanceValue('latency', 1250)).toBe('1250.0 ms');
     expect(formatPerformanceValue('tps', 42.4)).toBe('42.4 token/s');
-    expect(formatPerformanceValue('cost', 0.000218)).toBe('$0.000218');
-    expect(formatPerformanceValue('cost', 0.0000218)).toBe('$0.00002180');
+    expect(formatPerformanceValue('cost', 0.000218)).toBe('¥1.46e-3');
+    expect(formatPerformanceValue('cost', 0.0000218)).toBe('¥1.46e-4');
   });
 
   it('falls back to legacy aggregate fields during rolling deploys', () => {

@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 验证数据库迁移只执行尚未记录的版本。
+ * @author yunhungo
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { query, release, connect } = vi.hoisted(() => {
@@ -15,7 +20,7 @@ vi.mock('./client', () => ({
 }));
 
 import { runMigrations } from './migrate';
-import { schemaSql, schemaVersion } from './schema';
+import { migrations, schemaSql, schemaVersion } from './schema';
 
 describe('database migrations', () => {
   beforeEach(() => {
@@ -28,7 +33,7 @@ describe('database migrations', () => {
   it('does not rerun an already applied migration', async () => {
     query.mockImplementation(async (sql: string) =>
       sql === 'SELECT version FROM schema_migrations'
-        ? { rows: [{ version: schemaVersion }], rowCount: 1 }
+        ? { rows: migrations.map(({ version }) => ({ version })), rowCount: migrations.length }
         : { rows: [], rowCount: 0 },
     );
 
