@@ -182,6 +182,8 @@ pnpm build
 pnpm format:check
 ```
 
+`gateway-observability.test.ts` 默认只使用本地 HTTP 接收端。设置 `XOTEL_TEST_CONFIG` 为私有 JSON 文件路径后，可把真实网关 SDK 的原始 OTLP 请求转发到验收实例；文件包含 `baseUrl`、`publicKey`、`secretKey` 和 `receiptPath`，回执保留 trace/span ID 及实际属性以核对服务端落库结果。该模式会向选定项目写入两条验收 trace，应使用独立验收项目，并在完成后删除项目与私有凭据配置。
+
 ## 安全边界
 
 - 应用首次启动会在 PostgreSQL 中生成彼此独立的 32 字节 `ENCRYPTION_KEY` 和 `JWT_SECRET`，无需手工配置。

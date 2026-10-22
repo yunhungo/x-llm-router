@@ -4,6 +4,7 @@
  * @author yunhungo
  */
 import { once } from 'node:events';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { gunzipSync } from 'node:zlib';
 
@@ -59,6 +60,8 @@ import { gatewayRoutes } from './gateway';
 
 const spanSchema = z.object({
   name: z.string(),
+  traceId: z.string(),
+  spanId: z.string(),
   attributes: z.array(z.object({ key: z.string(), value: z.record(z.string(), z.unknown()) })),
 });
 const exportSchema = z.object({
@@ -69,6 +72,17 @@ const exportSchema = z.object({
 
 describe('gateway observability transport', () => {
   it('exports exact tool calls/results and measured TTFT for Responses and Chat requests', async () => {
+    const integrationConfigPath = process.env.XOTEL_TEST_CONFIG;
+    const integration = integrationConfigPath
+      ? z
+          .object({
+            baseUrl: z.url(),
+            publicKey: z.string(),
+            secretKey: z.string(),
+            receiptPath: z.string(),
+          })
+          .parse(JSON.parse(await readFile(integrationConfigPath, 'utf8')))
+      : undefined;
     const spans: z.infer<typeof spanSchema>[] = [];
     const transportFailures: string[] = [];
     const functionCall = {
@@ -126,6 +140,21 @@ describe('gateway observability transport', () => {
             resource.scopeSpans.flatMap((scope) => scope.spans),
           ),
         );
+        if (integration) {
+          const forwarded = await fetch(`${integration.baseUrl}/api/public/otel/v1/traces`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: request.headers.authorization ?? '',
+              ...(request.headers['content-encoding']
+                ? { 'content-encoding': request.headers['content-encoding'] }
+                : {}),
+            },
+            body: new Uint8Array(raw),
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!forwarded.ok) throw new Error(`Integration HTTP ${forwarded.status}`);
+        }
         response.writeHead(200, { 'content-type': 'application/json' }).end('{}');
       } catch {
         transportFailures.push('invalid OTLP JSON');
@@ -142,8 +171,8 @@ describe('gateway observability transport', () => {
       target: 'x-otel',
       enabled: true,
       baseUrl,
-      publicKey: 'pk_verification',
-      secretKey: 'sk_verification',
+      publicKey: integration?.publicKey ?? 'pk_verification',
+      secretKey: integration?.secretKey ?? 'sk_verification',
     };
     state.provider = {
       id: 'verification-provider',
@@ -242,6 +271,11 @@ describe('gateway observability transport', () => {
         expect(attributes['langfuse.observation.type']).toBe('generation');
       }
       expect(state.recordUsage).toHaveBeenCalledTimes(2);
+      if (integration) {
+        await writeFile(integration.receiptPath, JSON.stringify({ spans }, null, 2), {
+          mode: 0o600,
+        });
+      }
     } finally {
       await shutdownLangfuse();
       await app.close();
