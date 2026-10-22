@@ -144,6 +144,8 @@ const response = await client.responses.create({
 
 X-Otel 导出每批最多 16 条，按 2 秒间隔刷新，单次请求超时 10 秒；关闭 Langfuse 专用媒体上传。单个输入、输出或整体 Metadata 字段超过 12 KiB 时，保留最多 4 KiB 的 UTF-8 预览及 `truncated`、原因、原始字节数和保留字节范围；用量、费用和时间不截断。自定义 Metadata 仍受现有 20 个字段、每值 200 字符的限制。该配置适配 X-Otel 的 64 KiB 观测内容上限，Langfuse 的导出行为保持原设置。
 
+每次网关请求对应一个 generation，记录请求开始至首个生成内容的 TTFT（毫秒）及首个可见内容时间；没有实际首 token 时不推算 TTFT。开启正文采集时，输入保留原始请求的 `messages` 或 Responses `input`，输出优先保留结构化内容，包括工具名、参数和 call id。工具结果仅能来自客户端在请求上下文中提交的 `role: tool` / `function_call_output`，Metadata 标记 `toolResultSource: client_request_context`；网关不执行这些工具，不生成工具执行 span 或执行耗时。正文超过上述限制时会显示截断标记，预览不能代表完整工具历史。
+
 设置 `LANGFUSE_DIAGNOSTICS=1` 后，Docker 会输出脱敏的 Langfuse 诊断日志；未设置或设为 `0` 时默认关闭。Compose 可通过同名环境变量控制该开关。诊断日志会记录 SDK 启动、项目加载、observation 创建与结束、span 是否匹配并进入当前虚拟 Key 的 exporter 队列，以及 OTLP 导出失败；不会记录 Secret Key、Authorization、输入输出、Base URL 路径或 exporter 响应正文。开启后可用下面的命令查看：
 
 ```bash

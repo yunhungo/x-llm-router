@@ -50,6 +50,9 @@ function errorCodeFromPayload(payload: unknown): string | undefined {
 function outputForTrace(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload;
   const record = payload as Record<string, unknown>;
+  // Responses may include both convenience text and structured function calls.
+  // Keep the structured items so call IDs, arguments, and non-text output survive.
+  if (Array.isArray(record.output) && record.output.length > 0) return record.output;
   if (typeof record.output_text === 'string') return record.output_text;
   const choices = record.choices;
   if (Array.isArray(choices)) {
@@ -541,6 +544,9 @@ async function gatewayHandler(
     endpoint,
     userIdSource: identity.userIdSource,
     sessionIdSource: identity.sessionIdSource,
+    inputSource: 'client_request',
+    outputSource: 'gateway_response',
+    toolResultSource: 'client_request_context',
     ...(identity.clientName ? { clientName: identity.clientName } : {}),
   };
   try {
