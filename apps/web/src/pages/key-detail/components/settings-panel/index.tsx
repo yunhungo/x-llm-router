@@ -1,13 +1,13 @@
 /**
  * @created 2026-08-28
- * @description 提供虚拟 Key 的基本设置与 Langfuse 配置界面。
+ * @description 提供虚拟 Key 的基本设置与 Langfuse、X-Otel 观测配置界面。
  * @author yunhungo
  */
 import { currency, fromUsd, toUsd } from '@/features/billing/currency';
 import type { FormEvent } from 'react';
 import { Check, Save } from 'lucide-react';
 
-import { LangfuseFields, type LangfuseDraft } from '../../../../components/langfuse-fields';
+import { LangfuseFields, canReuseTelemetrySecret, type LangfuseDraft } from '@/components/LangfuseFields';
 import { Button, Field, Input } from '../../../../components/ui';
 import type { Provider, VirtualKey } from '../../../../types';
 import type { GeneralDraft } from '../../key-detail-model';
@@ -167,7 +167,7 @@ export function SettingsPanel({
         <section className='panel settings-section langfuse-settings-section'>
           <div className='panel-heading compact-panel-heading settings-section-heading'>
             <div className='langfuse-section-title'>
-              <h2>Langfuse</h2>
+              <h2>AI 观测</h2>
               <label className='switch-row langfuse-header-switch'>
                 <input
                   type='checkbox'
@@ -178,7 +178,7 @@ export function SettingsPanel({
                       enabled: event.target.checked,
                     })
                   }
-                  aria-label='启用 Langfuse'
+                  aria-label='启用 AI 观测'
                 />
                 <i />
               </label>
@@ -188,7 +188,7 @@ export function SettingsPanel({
               form='key-langfuse-settings-form'
               loading={savingLangfuse}
               disabled={!langfuseChanged}
-              aria-label='保存 Langfuse 设置'
+              aria-label='保存观测设置'
             >
               {savedSettings === 'langfuse' && !langfuseChanged ? (
                 <Check size={13} />
@@ -206,7 +206,7 @@ export function SettingsPanel({
             <LangfuseFields
               value={langfuseSettings}
               onChange={onLangfuseSettingsChange}
-              hasSecretKey={apiKey.langfuse.hasSecretKey}
+              hasSecretKey={canReuseTelemetrySecret(langfuseSettings, apiKey.langfuse)}
               showEnabledSwitch={false}
             />
           </form>

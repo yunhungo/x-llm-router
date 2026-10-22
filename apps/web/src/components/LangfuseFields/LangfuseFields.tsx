@@ -1,84 +1,20 @@
+/**
+ * @created 2026-08-26
+ * @description 编辑每个虚拟密钥的 Langfuse 或 X-Otel 观测目标和采集选项。
+ * @author yunhungo
+ */
 import { Plus, Trash2 } from 'lucide-react';
 
-import type { LangfuseConfig } from '../../types';
-import { Field, Input } from '../ui';
-import './langfuse-fields.css';
-
-export interface LangfuseDraft {
-  enabled: boolean;
-  publicKey: string;
-  secretKey: string;
-  baseUrl: string;
-  environment: string;
-  traceName: string;
-  version: string;
-  tags: string;
-  metadata: Array<{ key: string; value: string }>;
-  userIdHeader: string;
-  sessionIdHeader: string;
-  captureInput: boolean;
-  captureOutput: boolean;
-}
-
-export const emptyLangfuse = (): LangfuseDraft => ({
-  enabled: false,
-  publicKey: '',
-  secretKey: '',
-  baseUrl: 'https://cloud.langfuse.com',
-  environment: 'production',
-  traceName: '',
-  version: '',
-  tags: 'gateway',
-  metadata: [],
-  userIdHeader: 'x-user-id',
-  sessionIdHeader: 'x-session-id',
-  captureInput: true,
-  captureOutput: true,
-});
-
-export function langfuseDraft(config: LangfuseConfig): LangfuseDraft {
-  return {
-    enabled: Boolean(config.enabled),
-    publicKey: config.publicKey ?? '',
-    secretKey: '',
-    baseUrl: config.baseUrl ?? 'https://cloud.langfuse.com',
-    environment: config.environment ?? 'production',
-    traceName: config.traceName ?? '',
-    version: config.version ?? '',
-    tags: config.tags?.join(', ') ?? 'gateway',
-    metadata: Object.entries(config.metadata ?? {}).map(([key, value]) => ({ key, value })),
-    userIdHeader: config.userIdHeader ?? 'x-user-id',
-    sessionIdHeader: config.sessionIdHeader ?? 'x-session-id',
-    captureInput: config.captureInput ?? true,
-    captureOutput: config.captureOutput ?? true,
-  };
-}
-
-export function langfusePayload(value: LangfuseDraft) {
-  return {
-    ...value,
-    tags: [
-      ...new Set(
-        value.tags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-      ),
-    ],
-    metadata: Object.fromEntries(
-      value.metadata
-        .map((entry) => [entry.key.trim(), entry.value] as const)
-        .filter(([key]) => Boolean(key)),
-    ),
-  };
-}
+import { Field, Input } from '@/components/ui';
+import { changeTelemetryTarget, type LangfuseDraft } from './model';
+import './LangfuseFields.scss';
 
 export function LangfuseFields({
   value,
   onChange,
   hasSecretKey = false,
   showEnabledSwitch = true,
-  switchLabel = 'Langfuse',
+  switchLabel = 'AI 观测',
   switchHint = '此 Key 的独立项目',
 }: {
   value: LangfuseDraft;
@@ -89,15 +25,15 @@ export function LangfuseFields({
   switchHint?: string;
 }) {
   return (
-    <div className="langfuse-fields">
+    <div className='langfuse-fields'>
       {showEnabledSwitch ? (
-        <label className="switch-row compact">
+        <label className='switch-row compact'>
           <div>
             <strong>{switchLabel}</strong>
             <span>{switchHint}</span>
           </div>
           <input
-            type="checkbox"
+            type='checkbox'
             checked={value.enabled}
             onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
           />
@@ -106,87 +42,110 @@ export function LangfuseFields({
       ) : null}
       {value.enabled ? (
         <>
-          <div className="form-grid">
-            <Field label="Public Key">
+          <Field label='观测服务'>
+            <select
+              className='input'
+              value={value.target}
+              onChange={(event) =>
+                onChange(
+                  changeTelemetryTarget(
+                    value,
+                    event.target.value === 'x-otel' ? 'x-otel' : 'langfuse',
+                  ),
+                )
+              }
+            >
+              <option value='langfuse'>Langfuse</option>
+              <option value='x-otel'>X-Otel</option>
+            </select>
+          </Field>
+          <div className='form-grid'>
+            <Field label='Public Key'>
               <Input
                 value={value.publicKey}
                 onChange={(event) => onChange({ ...value, publicKey: event.target.value })}
-                placeholder="pk-lf-…"
+                placeholder={value.target === 'x-otel' ? 'pk_xo_…' : 'pk-lf-…'}
                 required
               />
             </Field>
-            <Field label="Secret Key" {...(hasSecretKey ? { hint: '留空保持不变' } : {})}>
+            <Field label='Secret Key' {...(hasSecretKey ? { hint: '留空保持不变' } : {})}>
               <Input
-                type="password"
+                type='password'
                 value={value.secretKey}
                 onChange={(event) => onChange({ ...value, secretKey: event.target.value })}
-                placeholder={hasSecretKey ? '••••••••' : 'sk-lf-…'}
+                placeholder={
+                  hasSecretKey ? '••••••••' : value.target === 'x-otel' ? 'sk_xo_…' : 'sk-lf-…'
+                }
                 required={!hasSecretKey}
               />
             </Field>
           </div>
           <Field
-            label="Base URL"
-            hint="必须与项目区域一致：EU cloud.langfuse.com，US us.cloud.langfuse.com"
+            label='Base URL'
+            hint={
+              value.target === 'x-otel'
+                ? '填写实例根地址及项目采集密钥。内容字段超过 12 KiB 时保留预览和截断标记，用量不受影响。'
+                : '必须与项目区域一致：EU cloud.langfuse.com，US us.cloud.langfuse.com'
+            }
           >
             <Input
-              type="url"
+              type='url'
               value={value.baseUrl}
               onChange={(event) => onChange({ ...value, baseUrl: event.target.value })}
               required
             />
           </Field>
-          <Field label="Environment">
+          <Field label='Environment'>
             <Input
               value={value.environment}
               onChange={(event) => onChange({ ...value, environment: event.target.value })}
-              placeholder="production"
+              placeholder='production'
               required
             />
           </Field>
-          <div className="form-grid">
-            <Field label="Trace Name" hint="留空时按 API 端点命名">
+          <div className='form-grid'>
+            <Field label='Trace Name' hint='留空时按 API 端点命名'>
               <Input
                 value={value.traceName}
                 onChange={(event) => onChange({ ...value, traceName: event.target.value })}
-                placeholder="llm-gateway"
+                placeholder='llm-gateway'
               />
             </Field>
-            <Field label="Version" hint="用于比较版本变更">
+            <Field label='Version' hint='用于比较版本变更'>
               <Input
                 value={value.version}
                 onChange={(event) => onChange({ ...value, version: event.target.value })}
-                placeholder="2026.08.11"
+                placeholder='2026.08.11'
               />
             </Field>
           </div>
-          <Field label="Tags" hint="用逗号分隔，适合低基数业务维度">
+          <Field label='Tags' hint='用逗号分隔，适合低基数业务维度'>
             <Input
               value={value.tags}
               onChange={(event) => onChange({ ...value, tags: event.target.value })}
-              placeholder="gateway, production"
+              placeholder='gateway, production'
             />
           </Field>
-          <div className="form-grid">
-            <Field label="User ID Header" hint="缺失时使用当前 API Key 的稳定身份，不会逐请求随机">
+          <div className='form-grid'>
+            <Field label='User ID Header' hint='缺失时使用当前 API Key 的稳定身份，不会逐请求随机'>
               <Input
                 value={value.userIdHeader}
                 onChange={(event) => onChange({ ...value, userIdHeader: event.target.value })}
-                placeholder="x-user-id"
+                placeholder='x-user-id'
               />
             </Field>
-            <Field label="Session ID Header" hint="缺失时不创建伪 Session；应由客户端传会话 ID">
+            <Field label='Session ID Header' hint='缺失时不创建伪 Session；应由客户端传会话 ID'>
               <Input
                 value={value.sessionIdHeader}
                 onChange={(event) => onChange({ ...value, sessionIdHeader: event.target.value })}
-                placeholder="x-session-id"
+                placeholder='x-session-id'
               />
             </Field>
           </div>
-          <div className="langfuse-capture-options">
+          <div className='langfuse-capture-options'>
             <label>
               <input
-                type="checkbox"
+                type='checkbox'
                 checked={value.captureInput}
                 onChange={(event) => onChange({ ...value, captureInput: event.target.checked })}
               />
@@ -194,22 +153,22 @@ export function LangfuseFields({
             </label>
             <label>
               <input
-                type="checkbox"
+                type='checkbox'
                 checked={value.captureOutput}
                 onChange={(event) => onChange({ ...value, captureOutput: event.target.checked })}
               />
               <span>记录响应 Output</span>
             </label>
           </div>
-          <div className="langfuse-metadata-editor">
-            <div className="langfuse-section-heading">
+          <div className='langfuse-metadata-editor'>
+            <div className='langfuse-section-heading'>
               <div>
                 <strong>自定义 Metadata</strong>
-                <span>按 Langfuse metadata 字符串键值传入</span>
+                <span>按字符串键值传入</span>
               </div>
               <button
-                type="button"
-                className="button button-secondary langfuse-add-field"
+                type='button'
+                className='button button-secondary langfuse-add-field'
                 onClick={() =>
                   onChange({ ...value, metadata: [...value.metadata, { key: '', value: '' }] })
                 }
@@ -218,7 +177,7 @@ export function LangfuseFields({
               </button>
             </div>
             {value.metadata.map((entry, index) => (
-              <div className="langfuse-metadata-row" key={index}>
+              <div className='langfuse-metadata-row' key={index}>
                 <Input
                   value={entry.key}
                   onChange={(event) =>
@@ -229,7 +188,7 @@ export function LangfuseFields({
                       ),
                     })
                   }
-                  placeholder="字段名，例如 tenant"
+                  placeholder='字段名，例如 tenant'
                   aria-label={`Metadata 字段 ${index + 1} 名称`}
                   required
                 />
@@ -243,12 +202,12 @@ export function LangfuseFields({
                       ),
                     })
                   }
-                  placeholder="字段值"
+                  placeholder='字段值'
                   aria-label={`Metadata 字段 ${index + 1} 值`}
                 />
                 <button
-                  type="button"
-                  className="icon-button danger-icon"
+                  type='button'
+                  className='icon-button danger-icon'
                   onClick={() =>
                     onChange({
                       ...value,

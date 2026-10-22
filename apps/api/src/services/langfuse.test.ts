@@ -1,8 +1,14 @@
+/**
+ * @created 2026-08-10
+ * @description 验证观测配置兼容性、连接检测与安全诊断。
+ * @author yunhungo
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { langfuseSettingsSchema } from '@x-router/contracts';
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
+import { encryptJson } from '../lib/crypto';
 import {
   checkLangfuseConnection,
   decryptLangfuseSettings,
@@ -26,6 +32,7 @@ function fakeProcessor() {
 
 function testSettings(overrides: Partial<KeyLangfuseSettings> = {}): KeyLangfuseSettings {
   return {
+    target: 'langfuse',
     enabled: true,
     publicKey: 'pk-lf-project',
     secretKey: 'sk-lf-secret',
@@ -51,8 +58,35 @@ describe('per-key Langfuse settings', () => {
     });
   });
 
+  it('defaults legacy encrypted configurations and API requests to Langfuse', () => {
+    const { target: _target, ...legacy } = testSettings();
+    expect(decryptLangfuseSettings(encryptJson(legacy))?.target).toBe('langfuse');
+    expect(langfuseSettingsSchema.parse(legacy).target).toBe('langfuse');
+    expect(publicLangfuseSettings(testSettings({ target: 'x-otel' })).target).toBe('x-otel');
+  });
+
+  it.each([
+    'ftp://example.test',
+    'https://user:secret@example.test',
+    'https://example.test?key=secret',
+    'not a URL',
+  ])('rejects unsafe observation destination %s at the API boundary', (baseUrl) => {
+    expect(langfuseSettingsSchema.safeParse(testSettings({ baseUrl })).success).toBe(false);
+  });
+
+  it('names X-Otel in safe connection failures without echoing an upstream response', async () => {
+    const fetchMock = vi.fn(async () => new Response('private upstream response', { status: 401 }));
+    await expect(
+      checkLangfuseConnection(testSettings({ target: 'x-otel' }), fetchMock),
+    ).rejects.toMatchObject({
+      message: 'X-Otel 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。',
+      code: 'langfuse_auth_failed',
+    });
+  });
+
   it('encrypts the complete project configuration', () => {
     const settings: KeyLangfuseSettings = {
+      target: 'langfuse',
       enabled: true,
       publicKey: 'pk-lf-project',
       secretKey: 'sk-lf-secret',
@@ -76,6 +110,7 @@ describe('per-key Langfuse settings', () => {
   it('never exposes the secret key to the admin UI', () => {
     const settings = decryptLangfuseSettings(
       encryptLangfuseSettings({
+        target: 'langfuse',
         enabled: true,
         publicKey: 'pk-lf-project',
         secretKey: 'sk-lf-secret',
@@ -104,6 +139,7 @@ describe('per-key Langfuse settings', () => {
 
   it('normalizes a trailing slash before the OTLP endpoint is composed', () => {
     const settings: KeyLangfuseSettings = {
+      target: 'langfuse',
       enabled: true,
       publicKey: 'pk-lf-project',
       secretKey: 'sk-lf-secret',

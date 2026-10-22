@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-11
+ * @description 验证观测处理器热更新、凭据隔离与运行时生命周期。
+ * @author yunhungo
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -84,6 +89,7 @@ describe('Langfuse runtime reload', () => {
 
   afterEach(async () => {
     await service.shutdownLangfuse();
+    vi.unstubAllGlobals();
   });
 
   function settings(overrides: Partial<import('./langfuse').KeyLangfuseSettings> = {}) {
@@ -95,6 +101,98 @@ describe('Langfuse runtime reload', () => {
       ...overrides,
     };
   }
+
+  it.each([
+    { target: 'x-otel' as const },
+    { baseUrl: 'https://other.example.test' },
+    { publicKey: 'pk-other-project' },
+  ])('requires a fresh secret when changing the destination %j', async (changes) => {
+    const initial = settings();
+    mocks.query.mockResolvedValue({
+      rows: [
+        {
+          id: apiKeyId,
+          status: 'active',
+          langfuse_config_ciphertext: service.encryptLangfuseSettings(initial),
+        },
+      ],
+      rowCount: 1,
+    });
+    const { secretKey: _secretKey, ...input } = settings(changes);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(service.testApiKeyLangfuseConnection(apiKeyId, input)).rejects.toMatchObject({
+      code: 'langfuse_credentials_required',
+    });
+    await expect(service.saveApiKeyLangfuseSettings(apiKeyId, input)).rejects.toMatchObject({
+      code: 'langfuse_credentials_required',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.FakeLangfuseSpanProcessor.instances).toHaveLength(0);
+    expect(mocks.query.mock.calls.every(([sql]) => String(sql).startsWith('SELECT'))).toBe(true);
+  });
+
+  it('reuses a saved secret only for an unchanged destination and canonical URL', async () => {
+    const initial = settings({ baseUrl: 'https://EXAMPLE.test/' });
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: apiKeyId,
+            status: 'active',
+            langfuse_config_ciphertext: service.encryptLangfuseSettings(initial),
+          },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    const { secretKey: _secretKey, ...input } = settings({ baseUrl: 'https://example.test' });
+    await service.saveApiKeyLangfuseSettings(apiKeyId, input);
+    const persisted = mocks.query.mock.calls[1]?.[1]?.[1];
+    expect(typeof persisted).toBe('string');
+    expect(service.decryptLangfuseSettings(String(persisted))?.secretKey).toBe(initial.secretKey);
+  });
+
+  it('activates X-Otel with a fresh secret while keeping one SDK', async () => {
+    const initial = settings();
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          { id: apiKeyId, langfuse_config_ciphertext: service.encryptLangfuseSettings(initial) },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: apiKeyId,
+            status: 'active',
+            langfuse_config_ciphertext: service.encryptLangfuseSettings(initial),
+          },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    await service.initializeLangfuse();
+    await service.saveApiKeyLangfuseSettings(
+      apiKeyId,
+      settings({
+        target: 'x-otel',
+        baseUrl: 'https://otel.example.test',
+        publicKey: 'pk_xo_test',
+        secretKey: 'sk_xo_test',
+      }),
+    );
+    expect(mocks.FakeNodeSDK.instances).toHaveLength(1);
+    expect(mocks.FakeLangfuseSpanProcessor.instances[1]?.options).toMatchObject({
+      baseUrl: 'https://otel.example.test',
+      publicKey: 'pk_xo_test',
+      secretKey: 'sk_xo_test',
+      flushAt: 16,
+      mediaUploadEnabled: false,
+    });
+  });
 
   it('starts one persistent SDK with zero projects and activates a saved project immediately', async () => {
     mocks.query

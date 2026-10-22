@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 提供虚拟密钥、观测目标及中间件的管理接口。
+ * @author yunhungo
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -72,7 +77,7 @@ export async function virtualKeyAdminRoutes(app: FastifyInstance): Promise<void>
       return reply.code(400).send({
         error: {
           code: 'langfuse_credentials_required',
-          message: '启用 Langfuse 需要 Public Key 和 Secret Key。',
+          message: '启用观测需要 Public Key 和 Secret Key。',
         },
       });
     }
@@ -166,6 +171,7 @@ export async function virtualKeyAdminRoutes(app: FastifyInstance): Promise<void>
     }
     const id = (request.params as { id: string }).id;
     const updated = await saveApiKeyLangfuseSettings(id, {
+      target: parsed.data.target,
       enabled: parsed.data.enabled,
       publicKey: parsed.data.publicKey,
       baseUrl: parsed.data.baseUrl,
@@ -258,6 +264,7 @@ export async function virtualKeyAdminRoutes(app: FastifyInstance): Promise<void>
       }
       const id = (request.params as { id: string }).id;
       const result = await testApiKeyLangfuseConnection(id, {
+        target: parsed.data.target,
         enabled: parsed.data.enabled,
         publicKey: parsed.data.publicKey,
         baseUrl: parsed.data.baseUrl,

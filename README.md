@@ -1,6 +1,6 @@
 # xRouter
 
-xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。管理端可以配置 Pi AI 预置或自定义 Provider、完成 GPT OAuth 设备授权、签发虚拟 Key，并查看调用统计、成本和 Langfuse 追踪；客户端统一通过 `/v1/responses` 或 `/v1/chat/completions` 访问。
+xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。管理端可以配置 Pi AI 预置或自定义 Provider、完成 GPT OAuth 设备授权、签发虚拟 Key，并查看调用统计、成本和 Langfuse / X-Otel 追踪；客户端统一通过 `/v1/responses` 或 `/v1/chat/completions` 访问。
 
 ## 首版能力
 
@@ -9,8 +9,8 @@ xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。管理端可以配�
 - 双协议网关：Pi AI 负责构建上游请求、解析流、归一化文本/思考/工具调用/用量；xRouter 对外暴露 Responses 与 Chat Completions 的 JSON 和 SSE。
 - 虚拟 API Key：完整 Key 只显示一次；数据库只存 HMAC，支持 RPM、预算、过期时间和固定上游。
 - 用量与成本：逐请求记录 Token、状态、延迟、TTFT、TPS、缓存命中与成本，并提供天/周/月图表和异常请求下钻。
-- Langfuse SDK v5：每个虚拟 API Key 绑定独立 Langfuse 项目，可配置输入输出采集和追踪上下文。
-- 管理后台：连接、Key、调用日志、Key 级 Langfuse 和管理员账号全部可视化配置。
+- Langfuse SDK v5：每个虚拟 API Key 可选择独立的 Langfuse 或 X-Otel 项目，可配置输入输出采集和追踪上下文。
+- 管理后台：连接、Key、调用日志、Key 级 AI 观测和管理员账号全部可视化配置。
 - 自托管：PostgreSQL + xRouter 两服务 Docker Compose；单个 xRouter 镜像同时提供 API 和管理后台，启动时自动执行幂等迁移并创建初始管理员。
 
 ## 架构
@@ -23,7 +23,7 @@ Client / OpenAI SDK
         │                ► ChatGPT Codex OAuth upstream
         ├── serves React Admin UI and /api/admin/*
         ├── PostgreSQL: users, providers, virtual keys, usage
-        └── Langfuse: generation observations (optional)
+        └── Langfuse / X-Otel: generation observations (optional)
 ```
 
 项目采用 pnpm workspace：
@@ -134,9 +134,15 @@ const response = await client.responses.create({
 });
 ```
 
-## Langfuse
+## Langfuse 与 X-Otel
 
-在「API Keys」中可为每个虚拟 Key 独立配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。保存前可点击「测试连接」校验 Base URL、项目凭据和 OTLP traces 接收端；测试只发送一个不含 span 的空 protobuf 请求，不会写入测试 trace，留空 Secret Key 时会复用已保存的密钥，且不会修改当前配置。保存后立即生效，不需要重启容器。
+在「API Keys」的「AI 观测」中为每个虚拟 Key 选择 Langfuse 或 X-Otel，并配置 Public Key、Secret Key、Base URL、Environment、Trace Name、Version、Tags、用户/会话请求头、自定义 Metadata，以及是否采集输入和输出。每个虚拟 Key 同时使用一个观测目标；旧配置和未提供 `target` 的 API 请求默认 Langfuse。
+
+保存前可点击「测试连接」校验 Base URL、项目凭据和 OTLP traces 接收端；测试只发送一个不含 span 的空 protobuf 请求，不会写入测试 trace，也不会修改当前配置。只有服务类型、实例地址、公钥均未变化时，留空 Secret Key 才会复用已保存的密钥。更换目标时必须重新填写 Secret Key。保存后立即生效，进行中的请求沿用原处理器完成导出，不需要重启容器。
+
+接入 X-Otel：在 X-Otel 项目的设置中创建 `ingest` 采集密钥，选择 X-Otel，填写该实例的根地址、`pk_xo_…` 公钥和 `sk_xo_…` 密钥。Base URL 必须从 xRouter 容器内可访问，不包含 `/api/public`；如配置代理，将内部 X-Otel 地址加入 `NO_PROXY`。连接测试会调用 `GET /api/public/projects` 与 `POST /api/public/otel/v1/traces`，真实观测沿用当前 SDK 的 OTLP JSON 和 Basic 鉴权，不调用模型产生测试请求。
+
+X-Otel 导出每批最多 16 条，按 2 秒间隔刷新，单次请求超时 10 秒；关闭 Langfuse 专用媒体上传。单个输入、输出或整体 Metadata 字段超过 12 KiB 时，保留最多 4 KiB 的 UTF-8 预览及 `truncated`、原因、原始字节数和保留字节范围；用量、费用和时间不截断。自定义 Metadata 仍受现有 20 个字段、每值 200 字符的限制。该配置适配 X-Otel 的 64 KiB 观测内容上限，Langfuse 的导出行为保持原设置。
 
 设置 `LANGFUSE_DIAGNOSTICS=1` 后，Docker 会输出脱敏的 Langfuse 诊断日志；未设置或设为 `0` 时默认关闭。Compose 可通过同名环境变量控制该开关。诊断日志会记录 SDK 启动、项目加载、observation 创建与结束、span 是否匹配并进入当前虚拟 Key 的 exporter 队列，以及 OTLP 导出失败；不会记录 Secret Key、Authorization、输入输出、Base URL 路径或 exporter 响应正文。开启后可用下面的命令查看：
 
@@ -147,7 +153,7 @@ docker logs --since 30m xrouter-app-1 2>&1 \
 
 一次正常请求应依次出现 `project_registration_checked`、`observation_started`、`span_queued`（`routed:true`）和 `observation_ended`。`span_queued` 表示 span 已交给匹配的 Langfuse processor，SDK 仍按正常批处理策略导出；导出失败会单独出现 `otel_export_error`。排查完成后可将 `LANGFUSE_DIAGNOSTICS=0` 并重建 app 容器；导出错误仍会强制输出。
 
-不同虚拟 Key 的追踪只会进入各自配置的 Langfuse 项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
+不同虚拟 Key 的追踪只会进入各自配置的观测项目。自托管时将 Base URL 指向对应实例；若输入或输出包含敏感信息，可分别关闭正文采集。
 
 客户端可以通过配置的请求头提供 `userId` 和 `sessionId`。若未提供用户头，xRouter 优先使用 OpenAI 请求体的 `user`，再回退到当前虚拟 Key 的稳定匿名身份；若未提供会话头则不伪造 Session，避免把每次随机 ID 误当成会话。缺失的 `x-request-id` 会由网关逐请求生成 UUID，用于本地调用记录、上游请求和 Langfuse trace 的关联。
 

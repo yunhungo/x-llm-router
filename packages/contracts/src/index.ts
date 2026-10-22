@@ -1,6 +1,6 @@
 /**
  * @created 2026-08-10
- * @description 统一费用展示与平台货币设置。
+ * @description 定义认证、虚拟密钥、上游连接及观测设置的公共合同。
  * @author yunhungo
  */
 import { z } from 'zod';
@@ -19,10 +19,19 @@ export const changePasswordSchema = z.object({
 });
 
 export const langfuseSettingsSchema = z.object({
+  target: z.enum(['langfuse', 'x-otel']).default('langfuse'),
   enabled: z.boolean(),
   publicKey: z.string().trim().max(255),
   secretKey: z.string().trim().max(512).optional(),
-  baseUrl: z.string().url(),
+  baseUrl: z.string().trim().url().refine((value) => {
+    try {
+      const url = new URL(value);
+      return ['http:', 'https:'].includes(url.protocol)
+        && !url.username && !url.password && !url.search && !url.hash;
+    } catch {
+      return false;
+    }
+  }, 'Base URL 只支持 HTTP 或 HTTPS 实例地址，不能包含凭据、查询参数或片段。'),
   environment: z
     .string()
     .trim()

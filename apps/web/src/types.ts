@@ -42,6 +42,7 @@ export interface ProviderCatalogItem {
 }
 
 export interface LangfuseConfig {
+  target: 'langfuse' | 'x-otel';
   enabled: boolean;
   publicKey: string;
   hasSecretKey: boolean;

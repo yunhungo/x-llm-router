@@ -9,7 +9,7 @@ import {
   langfuseDraft,
   langfusePayload,
   type LangfuseDraft,
-} from '../../components/langfuse-fields';
+} from '@/components/LangfuseFields';
 import { Skeleton } from '../../components/ui';
 import type {
   KeyAnalyticsRange,
@@ -365,7 +365,7 @@ export function KeyDetailPage() {
       setSavedSettings('langfuse');
       await load();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Langfuse 保存失败。');
+      setError(caught instanceof ApiError ? caught.message : '观测设置保存失败。');
     } finally {
       setSavingLangfuse(false);
     }

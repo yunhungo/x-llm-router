@@ -1,11 +1,18 @@
+/**
+ * @created 2026-08-10
+ * @description 管理按虚拟密钥隔离的 Langfuse 与 X-Otel 配置、连接检测及观测导出。
+ * @author yunhungo
+ */
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { diag, DiagLogLevel, type DiagLogger } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
+import { limitXotelPayload } from './x-otel-payload';
 
 export interface KeyLangfuseSettings {
+  target: 'langfuse' | 'x-otel';
   enabled: boolean;
   publicKey: string;
   secretKey: string;
@@ -111,6 +118,7 @@ function projectDiagnosticFields(
 ): Record<string, unknown> {
   return {
     apiKeyId,
+    target: settings.target,
     publicKeyPrefix: settings.publicKey.slice(0, 12),
     baseUrl: safeLangfuseBaseUrlForDiagnostics(settings.baseUrl),
     environment: settings.environment,
@@ -407,6 +415,16 @@ function createLangfuseSpanProcessor(
     secretKey: settings.secretKey,
     baseUrl: normalizeLangfuseBaseUrl(settings.baseUrl),
     environment: settings.environment,
+    // X-Otel accepts at most 200 observations per request and has no media API.
+    ...(settings.target === 'x-otel'
+      ? {
+          flushAt: 16,
+          flushInterval: 2,
+          timeout: 10,
+          mediaUploadEnabled: false,
+          mask: limitXotelPayload,
+        }
+      : {}),
     shouldExportSpan: ({ otelSpan }) => otelSpan.attributes[API_KEY_ATTRIBUTE] === apiKeyId,
   });
 }
@@ -440,6 +458,7 @@ async function disposeUnusedProcessor(processor: RuntimeSpanProcessor): Promise<
 
 export function defaultLangfuseSettings(): KeyLangfuseSettings {
   return {
+    target: 'langfuse',
     enabled: false,
     publicKey: '',
     secretKey: '',
@@ -474,6 +493,7 @@ export function decryptLangfuseSettings(
 export function publicLangfuseSettings(settings?: KeyLangfuseSettings): Record<string, unknown> {
   const value = settings ?? defaultLangfuseSettings();
   return {
+    target: value.target,
     enabled: value.enabled,
     publicKey: value.publicKey,
     hasSecretKey: Boolean(value.secretKey),
@@ -499,10 +519,42 @@ function langfuseConnectionError(
   return Object.assign(new Error(message), { statusCode, code, exposeMessage: true as const });
 }
 
+function validatedLangfuseBaseUrl(baseUrl: string): string {
+  try {
+    const parsed = new URL(normalizeLangfuseBaseUrl(baseUrl));
+    if (
+      !['http:', 'https:'].includes(parsed.protocol) ||
+      parsed.username || parsed.password || parsed.search || parsed.hash
+    ) {
+      throw new TypeError('Unsupported telemetry Base URL');
+    }
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    throw langfuseConnectionError('观测服务 Base URL 无效。', 400, 'langfuse_base_url_invalid');
+  }
+}
+
+function mergeLangfuseSettings(
+  input: EditableLangfuseSettings,
+  existing: KeyLangfuseSettings | undefined,
+): KeyLangfuseSettings {
+  const baseUrl = validatedLangfuseBaseUrl(input.baseUrl);
+  const sameDestination = existing
+    && input.target === existing.target
+    && input.publicKey === existing.publicKey
+    && baseUrl === validatedLangfuseBaseUrl(existing.baseUrl);
+  return {
+    ...input,
+    baseUrl,
+    secretKey: input.secretKey || (sameDestination ? existing.secretKey : ''),
+  };
+}
+
 async function fetchLangfuseConnectionEndpoint(
   endpoint: string,
   init: RequestInit,
   fetchImpl: typeof fetch,
+  targetName: string,
 ): Promise<Response> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), LANGFUSE_CONNECTION_TIMEOUT_MS);
@@ -515,13 +567,13 @@ async function fetchLangfuseConnectionEndpoint(
   } catch {
     if (abortController.signal.aborted) {
       throw langfuseConnectionError(
-        'Langfuse 连接超时，请检查 Base URL、代理和 NO_PROXY。',
+        `${targetName} 连接超时，请检查 Base URL、代理和 NO_PROXY。`,
         504,
         'langfuse_connection_timeout',
       );
     }
     throw langfuseConnectionError(
-      '无法连接 Langfuse，请检查 Base URL、重定向、DNS、代理和 NO_PROXY。',
+      `无法连接 ${targetName}，请检查 Base URL、重定向、DNS、代理和 NO_PROXY。`,
       502,
       'langfuse_connection_failed',
     );
@@ -534,33 +586,17 @@ export async function checkLangfuseConnection(
   settings: KeyLangfuseSettings,
   fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<LangfuseConnectionTestResult> {
+  const targetName = settings.target === 'x-otel' ? 'X-Otel' : 'Langfuse';
   if (!settings.publicKey || !settings.secretKey) {
     throw langfuseConnectionError(
-      '测试 Langfuse 连接需要 Public Key 和 Secret Key。',
+      `测试 ${targetName} 连接需要 Public Key 和 Secret Key；更换服务、地址或公钥后须重新填写 Secret Key。`,
       400,
       'langfuse_credentials_required',
     );
   }
 
   const baseUrl = normalizeLangfuseBaseUrl(settings.baseUrl);
-  let endpointBase: string;
-  try {
-    const parsedBaseUrl = new URL(baseUrl);
-    if (
-      !['http:', 'https:'].includes(parsedBaseUrl.protocol) ||
-      parsedBaseUrl.username ||
-      parsedBaseUrl.password ||
-      parsedBaseUrl.search ||
-      parsedBaseUrl.hash
-    ) {
-      throw new TypeError('Unsupported Langfuse Base URL');
-    }
-    parsedBaseUrl.hash = '';
-    parsedBaseUrl.search = '';
-    endpointBase = parsedBaseUrl.toString().replace(/\/+$/, '');
-  } catch {
-    throw langfuseConnectionError('Langfuse Base URL 无效。', 400, 'langfuse_base_url_invalid');
-  }
+  const endpointBase = validatedLangfuseBaseUrl(baseUrl);
 
   const authorization = `Basic ${Buffer.from(`${settings.publicKey}:${settings.secretKey}`).toString('base64')}`;
   const response = await fetchLangfuseConnectionEndpoint(
@@ -570,34 +606,35 @@ export async function checkLangfuseConnection(
       headers: { accept: 'application/json', authorization },
     },
     fetchImpl,
+    targetName,
   );
 
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   await response.body?.cancel().catch(() => undefined);
   if (response.status === 401 || response.status === 403) {
     throw langfuseConnectionError(
-      'Langfuse 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。',
+      `${targetName} 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。`,
       400,
       'langfuse_auth_failed',
     );
   }
   if (response.status === 404) {
     throw langfuseConnectionError(
-      'Langfuse API 路径不存在；Base URL 应只填写实例地址，不要包含 /api/public。',
+      `${targetName} API 路径不存在；Base URL 应只填写实例地址，不要包含 /api/public。`,
       400,
       'langfuse_endpoint_not_found',
     );
   }
   if (!response.ok) {
     throw langfuseConnectionError(
-      `Langfuse 返回 HTTP ${response.status}，请检查实例状态或反向代理。`,
+      `${targetName} 返回 HTTP ${response.status}，请检查实例状态或反向代理。`,
       502,
       'langfuse_upstream_error',
     );
   }
   if (!contentType.includes('application/json')) {
     throw langfuseConnectionError(
-      'Langfuse 返回了非 JSON 响应，请确认 Base URL 没有指向登录页或其他服务。',
+      `${targetName} 返回了非 JSON 响应，请确认 Base URL 没有指向登录页或其他服务。`,
       502,
       'langfuse_invalid_response',
     );
@@ -615,25 +652,26 @@ export async function checkLangfuseConnection(
       body: new Uint8Array(),
     },
     fetchImpl,
+    targetName,
   );
   await otlpResponse.body?.cancel().catch(() => undefined);
   if (otlpResponse.status === 401 || otlpResponse.status === 403) {
     throw langfuseConnectionError(
-      'Langfuse OTLP 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。',
+      `${targetName} OTLP 鉴权失败，请确认 API Key 与 Base URL 所在区域及项目一致。`,
       400,
       'langfuse_otlp_auth_failed',
     );
   }
   if (otlpResponse.status === 404) {
     throw langfuseConnectionError(
-      'Langfuse OTLP traces 路径不存在，请检查实例版本和反向代理配置。',
+      `${targetName} OTLP traces 路径不存在，请检查实例版本和反向代理配置。`,
       400,
       'langfuse_otlp_endpoint_not_found',
     );
   }
   if (!otlpResponse.ok) {
     throw langfuseConnectionError(
-      `Langfuse OTLP 返回 HTTP ${otlpResponse.status}，请检查实例状态或反向代理。`,
+      `${targetName} OTLP 返回 HTTP ${otlpResponse.status}，请检查实例状态或反向代理。`,
       502,
       'langfuse_otlp_upstream_error',
     );
@@ -654,11 +692,7 @@ export async function testApiKeyLangfuseConnection(
   if (!row) return undefined;
 
   const existing = decryptLangfuseSettings(row.langfuse_config_ciphertext);
-  const settings: KeyLangfuseSettings = {
-    ...input,
-    baseUrl: normalizeLangfuseBaseUrl(input.baseUrl),
-    secretKey: input.secretKey || existing?.secretKey || '',
-  };
+  const settings = mergeLangfuseSettings(input, existing);
   return checkLangfuseConnection(settings);
 }
 
@@ -674,16 +708,13 @@ export async function saveApiKeyLangfuseSettings(
   if (!row) return false;
 
   const existing = decryptLangfuseSettings(row.langfuse_config_ciphertext);
-  const settings: KeyLangfuseSettings = {
-    ...input,
-    baseUrl: normalizeLangfuseBaseUrl(input.baseUrl),
-    secretKey: input.secretKey || existing?.secretKey || '',
-  };
+  const settings = mergeLangfuseSettings(input, existing);
   if (settings.enabled && (!settings.publicKey || !settings.secretKey)) {
-    throw Object.assign(new Error('启用 Langfuse 需要 Public Key 和 Secret Key。'), {
-      statusCode: 400,
-      code: 'langfuse_credentials_required',
-    });
+    throw langfuseConnectionError(
+      '启用观测需要 Public Key 和 Secret Key；更换服务、地址或公钥后须重新填写 Secret Key。',
+      400,
+      'langfuse_credentials_required',
+    );
   }
 
   let nextProcessor: LangfuseSpanProcessor | undefined;

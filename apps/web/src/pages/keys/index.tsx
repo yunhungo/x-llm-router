@@ -1,6 +1,6 @@
 /**
  * @created 2026-08-10
- * @description 统一费用展示与平台货币设置。
+ * @description 管理虚拟密钥、预算及按项目隔离的观测目标。
  * @author yunhungo
  */
 import { currency, money, toUsd } from '@/features/billing/currency';
@@ -21,11 +21,13 @@ import { api, ApiError, jsonBody } from '../../api';
 import { copyText } from '../../clipboard';
 import {
   emptyLangfuse,
+  canReuseTelemetrySecret,
+  telemetryTargetName,
   LangfuseFields,
   langfuseDraft,
   langfusePayload,
   type LangfuseDraft,
-} from '../../components/langfuse-fields';
+} from '@/components/LangfuseFields';
 import { Button, EmptyState, Field, Input, Modal, PageHeader, Skeleton } from '../../components/ui';
 import type { Provider, VirtualKey } from '../../types';
 import './keys.css';
@@ -110,7 +112,7 @@ export function KeysPage() {
       setEditingKey(undefined);
       setEditingLangfuse(undefined);
       setLangfuseTestResult('');
-      setNotice('Langfuse 设置已保存。');
+      setNotice('观测设置已保存。');
       await load();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : '保存失败。');
@@ -137,7 +139,7 @@ export function KeysPage() {
       );
       setLangfuseTestResult(`凭据与 OTLP 接收端验证成功 · ${result.baseUrl}`);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Langfuse 连接测试失败。');
+      setError(caught instanceof ApiError ? caught.message : '观测服务连接测试失败。');
     } finally {
       setTestingLangfuse(false);
     }
@@ -178,7 +180,7 @@ export function KeysPage() {
                   <th>名称</th>
                   <th>Key</th>
                   <th>上游</th>
-                  <th>Langfuse</th>
+                  <th>AI 观测</th>
                   <th>RPM</th>
                   <th>预算 / 已用</th>
                   <th>最近调用</th>
@@ -209,7 +211,10 @@ export function KeysPage() {
                     <td>{key.providerName ?? '自动路由'}</td>
                     <td>
                       {key.langfuse.enabled && key.langfuse.publicKey ? (
-                        <small>{key.langfuse.publicKey}</small>
+                        <>
+                          <strong>{telemetryTargetName(key.langfuse.target)}</strong>
+                          <small>{key.langfuse.publicKey}</small>
+                        </>
                       ) : (
                         '—'
                       )}
@@ -250,7 +255,7 @@ export function KeysPage() {
                             setLangfuseTestResult('');
                             setError('');
                           }}
-                          aria-label={`配置 ${key.name} 的 Langfuse`}
+                          aria-label={`配置 ${key.name} 的观测设置`}
                         >
                           <Waypoints size={15} />
                         </button>
@@ -384,7 +389,7 @@ export function KeysPage() {
 
       {editingKey && editingLangfuse ? (
         <Modal
-          title={`Langfuse · ${editingKey.name}`}
+          title={`AI 观测 · ${editingKey.name}`}
           onClose={() => {
             setEditingKey(undefined);
             setEditingLangfuse(undefined);
@@ -398,7 +403,7 @@ export function KeysPage() {
                 setEditingLangfuse(value);
                 setLangfuseTestResult('');
               }}
-              hasSecretKey={editingKey.langfuse.hasSecretKey}
+              hasSecretKey={canReuseTelemetrySecret(editingLangfuse, editingKey.langfuse)}
             />
             {langfuseTestResult ? (
               <div className='notice compact-notice' role='status'>

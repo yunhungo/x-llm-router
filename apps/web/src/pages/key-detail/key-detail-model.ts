@@ -3,7 +3,7 @@
  * @description 统一费用展示与平台货币设置。
  * @author yunhungo
  */
-import { langfusePayload, type LangfuseDraft } from '../../components/langfuse-fields';
+import { langfusePayload, type LangfuseDraft } from '@/components/LangfuseFields';
 import type {
   KeyAnalyticsRange,
   KeyAnalyticsResponse,
