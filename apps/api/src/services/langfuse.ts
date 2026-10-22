@@ -9,7 +9,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
-import { limitXotelPayload } from './x-otel-payload';
+import { limitXotelSpanAttributes } from './x-otel-payload';
 
 export interface KeyLangfuseSettings {
   target: 'langfuse' | 'x-otel';
@@ -409,24 +409,46 @@ export function normalizeLangfuseBaseUrl(baseUrl: string): string {
 function createLangfuseSpanProcessor(
   apiKeyId: string,
   settings: KeyLangfuseSettings,
-): LangfuseSpanProcessor {
-  return new LangfuseSpanProcessor({
+): RuntimeSpanProcessor {
+  const processor = new LangfuseSpanProcessor({
     publicKey: settings.publicKey,
     secretKey: settings.secretKey,
     baseUrl: normalizeLangfuseBaseUrl(settings.baseUrl),
     environment: settings.environment,
-    // X-Otel accepts at most 200 observations per request and has no media API.
+    // The small batch stays below X-Otel's request limit even with escaped JSON content.
     ...(settings.target === 'x-otel'
       ? {
           flushAt: 16,
           flushInterval: 2,
           timeout: 10,
           mediaUploadEnabled: false,
-          mask: limitXotelPayload,
         }
       : {}),
     shouldExportSpan: ({ otelSpan }) => otelSpan.attributes[API_KEY_ATTRIBUTE] === apiKeyId,
   });
+  if (settings.target !== 'x-otel') return processor;
+
+  return {
+    onStart: (...args) => processor.onStart(...args),
+    onEnd: (span) => {
+      if (span.attributes[API_KEY_ATTRIBUTE] !== apiKeyId) {
+        processor.onEnd(span);
+        return;
+      }
+      const attributes = limitXotelSpanAttributes(span.attributes);
+      // Keep the SDK span's methods/accessors and isolate changes from other destinations.
+      const boundedSpan = new Proxy(span, {
+        get(target, property) {
+          if (property === 'attributes') return attributes;
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      processor.onEnd(boundedSpan);
+    },
+    forceFlush: () => processor.forceFlush(),
+    shutdown: () => processor.shutdown(),
+  };
 }
 
 function ensureTelemetryStarted(): void {
@@ -717,7 +739,7 @@ export async function saveApiKeyLangfuseSettings(
     );
   }
 
-  let nextProcessor: LangfuseSpanProcessor | undefined;
+  let nextProcessor: RuntimeSpanProcessor | undefined;
   try {
     if (row.status === 'active' && settings.enabled) {
       nextProcessor = createLangfuseSpanProcessor(apiKeyId, settings);
@@ -769,7 +791,7 @@ export async function ensureApiKeyLangfuse(
     return true;
   }
 
-  let processor: LangfuseSpanProcessor | undefined;
+  let processor: RuntimeSpanProcessor | undefined;
   try {
     processor = createLangfuseSpanProcessor(apiKeyId, settings);
     ensureTelemetryStarted();
@@ -792,7 +814,7 @@ export async function initializeLangfuse(): Promise<number> {
        FROM virtual_api_keys
       WHERE status = 'active' AND langfuse_config_ciphertext IS NOT NULL`,
   );
-  const configured = new Map<string, LangfuseSpanProcessor>();
+  const configured = new Map<string, RuntimeSpanProcessor>();
 
   for (const row of result.rows) {
     try {

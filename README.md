@@ -142,7 +142,7 @@ const response = await client.responses.create({
 
 接入 X-Otel：在 X-Otel 项目的设置中创建 `ingest` 采集密钥，选择 X-Otel，填写该实例的根地址、`pk_xo_…` 公钥和 `sk_xo_…` 密钥。Base URL 必须从 xRouter 容器内可访问，不包含 `/api/public`；如配置代理，将内部 X-Otel 地址加入 `NO_PROXY`。连接测试会调用 `GET /api/public/projects` 与 `POST /api/public/otel/v1/traces`，真实观测沿用当前 SDK 的 OTLP JSON 和 Basic 鉴权，不调用模型产生测试请求。
 
-X-Otel 导出每批最多 16 条，按 2 秒间隔刷新，单次请求超时 10 秒；关闭 Langfuse 专用媒体上传。单个输入、输出或整体 Metadata 字段超过 12 KiB 时，保留最多 4 KiB 的 UTF-8 预览及 `truncated`、原因、原始字节数和保留字节范围；用量、费用和时间不截断。自定义 Metadata 仍受现有 20 个字段、每值 200 字符的限制。该配置适配 X-Otel 的 64 KiB 观测内容上限，Langfuse 的导出行为保持原设置。
+X-Otel 导出每批最多 16 条，按 2 秒间隔刷新，单次请求超时 10 秒；关闭 Langfuse 专用媒体上传。输入和输出各有 24 KiB、Metadata 整体有 12 KiB 的实际 JSON UTF-8 字节预算。超限时优先保留最近消息和工具的类型、名称、关联 ID；长正文、参数或结果值变为 `{xotel_truncated:true, original_json_bytes, preview}`，单值预览最多约 2 KiB。省略早期数组项时插入 `{type:"xotel_omitted", omitted_items}`；省略对象字段时记录 `xotel_omitted_fields`，深度及节点上限也会显式标记。预览不是完整 JSON 参数，不应尝试推断缺失内容。用量、费用和 TTFT 等核心属性优先保留；自定义 Metadata 仍受现有 20 个字段、每值 200 字符的限制。该配置适配 X-Otel 的 64 KiB 观测内容上限，原始 span 不被修改，Langfuse 目标的导出行为保持原设置。
 
 每次网关请求对应一个 generation，记录请求开始至首个生成内容的 TTFT（毫秒）及首个可见内容时间；没有实际首 token 时不推算 TTFT。开启正文采集时，输入保留原始请求的 `messages` 或 Responses `input`，输出优先保留结构化内容，包括工具名、参数和 call id。工具结果仅能来自客户端在请求上下文中提交的 `role: tool` / `function_call_output`，Metadata 标记 `toolResultSource: client_request_context`；网关不执行这些工具，不生成工具执行 span 或执行耗时。正文超过上述限制时会显示截断标记，预览不能代表完整工具历史。
 
@@ -182,7 +182,7 @@ pnpm build
 pnpm format:check
 ```
 
-`gateway-observability.test.ts` 默认只使用本地 HTTP 接收端。设置 `XOTEL_TEST_CONFIG` 为私有 JSON 文件路径后，可把真实网关 SDK 的原始 OTLP 请求转发到验收实例；文件包含 `baseUrl`、`publicKey`、`secretKey` 和 `receiptPath`，回执保留 trace/span ID 及实际属性以核对服务端落库结果。该模式会向选定项目写入两条验收 trace，应使用独立验收项目，并在完成后删除项目与私有凭据配置。
+`gateway-observability.test.ts` 默认只使用本地 HTTP 接收端。设置 `XOTEL_TEST_CONFIG` 为私有 JSON 文件路径后，可把真实网关 SDK 的原始 OTLP 请求转发到验收实例；文件包含 `baseUrl`、`publicKey`、`secretKey` 和 `receiptPath`，回执保留 trace/span ID 及实际属性以核对服务端落库结果。该模式会向选定项目写入三条验收 trace，应使用独立验收项目，并在完成后删除项目与私有凭据配置。
 
 ## 安全边界
 

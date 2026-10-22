@@ -146,9 +146,9 @@ describe('real X-Otel SDK transport', () => {
               (attribute) => attribute.key === 'langfuse.observation.input',
             );
             const marker = z
-              .object({ truncated: z.literal(true), reason: z.string() })
+              .object({ xotel_truncated: z.literal(true), original_json_bytes: z.number() })
               .parse(JSON.parse(z.string().parse(input?.value.stringValue)));
-            expect(marker).toMatchObject({ truncated: true, reason: 'x_otel_field_limit' });
+            expect(marker.original_json_bytes).toBeGreaterThan(80_000);
           }
         }
       }

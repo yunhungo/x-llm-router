@@ -103,6 +103,10 @@ describe('gateway observability transport', () => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       if (request.url === '/responses') {
+        const currentCall =
+          request.headers['x-request-id'] === 'large-tools'
+            ? { ...functionCall, arguments: JSON.stringify({ text: '"\\😃'.repeat(20_000) }) }
+            : functionCall;
         response.writeHead(200, { 'content-type': 'text/event-stream' });
         response.write('data: {"type":"response.created"}\n\n');
         setTimeout(() => {
@@ -110,18 +114,18 @@ describe('gateway observability transport', () => {
             `data: ${JSON.stringify({
               type: 'response.function_call_arguments.delta',
               output_index: 0,
-              delta: functionCall.arguments,
+              delta: currentCall.arguments,
             })}\n\n`,
           );
           response.write(
             `data: ${JSON.stringify({
               type: 'response.output_item.done',
               output_index: 0,
-              item: functionCall,
+              item: currentCall,
             })}\n\n`,
           );
           response.end(
-            `data: ${JSON.stringify({ type: 'response.completed', response: responseBody })}\n\n`,
+            `data: ${JSON.stringify({ type: 'response.completed', response: { ...responseBody, output: [currentCall] } })}\n\n`,
           );
         }, 20);
         return;
@@ -134,6 +138,7 @@ describe('gateway observability transport', () => {
       try {
         const raw = Buffer.concat(chunks);
         const body = request.headers['content-encoding'] === 'gzip' ? gunzipSync(raw) : raw;
+        expect(body.byteLength).toBeLessThan(2 * 1024 * 1024);
         const parsed = exportSchema.parse(JSON.parse(body.toString('utf8')));
         spans.push(
           ...parsed.resourceSpans.flatMap((resource) =>
@@ -226,9 +231,39 @@ describe('gateway observability transport', () => {
         payload: chatInput,
       });
       expect(chatResult.statusCode).toBe(200);
+      const largeChatInput = {
+        ...chatInput,
+        messages: [
+          ...Array.from({ length: 100 }, (_, index) => ({
+            role: 'user',
+            content: `${index}:` + '旧消息'.repeat(300),
+          })),
+          {
+            role: 'assistant',
+            tool_calls: [
+              {
+                id: 'call_previous',
+                type: 'function',
+                function: {
+                  name: 'lookup_city',
+                  arguments: '{"data":"' + '大参数'.repeat(10_000) + '"}',
+                },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'call_previous', content: '大结果'.repeat(10_000) },
+        ],
+      };
+      const largeResult = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        headers: { 'x-request-id': 'large-tools' },
+        payload: largeChatInput,
+      });
+      expect(largeResult.statusCode).toBe(200);
       await shutdownLangfuse();
       expect(transportFailures).toEqual([]);
-      expect(spans).toHaveLength(2);
+      expect(spans).toHaveLength(3);
       const expectedInputs = [responsesInput, chatInput];
       for (const [index, span] of spans.entries()) {
         const attributes = Object.fromEntries(
@@ -237,27 +272,63 @@ describe('gateway observability transport', () => {
             z.string().optional().parse(attribute.value.stringValue),
           ]),
         );
-        expect(JSON.parse(attributes['langfuse.observation.input'] ?? 'null')).toEqual(
-          expectedInputs[index],
-        );
+        const input: unknown = JSON.parse(attributes['langfuse.observation.input'] ?? 'null');
         const output: unknown = JSON.parse(attributes['langfuse.observation.output'] ?? 'null');
-        expect(output).toEqual(
-          index === 0
-            ? [functionCall]
-            : [
+        if (index < 2) {
+          expect(input).toEqual(expectedInputs[index]);
+          expect(output).toEqual(
+            index === 0
+              ? [functionCall]
+              : [
+                  {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: 'call_next',
+                        type: 'function',
+                        function: { name: 'lookup_weather', arguments: '{"city":"Shanghai"}' },
+                      },
+                    ],
+                  },
+                ],
+          );
+        } else {
+          const limitedInput = z
+            .object({ messages: z.array(z.record(z.string(), z.unknown())) })
+            .parse(input);
+          expect(limitedInput.messages[0]).toMatchObject({
+            type: 'xotel_omitted',
+            omitted_items: expect.any(Number),
+          });
+          expect(limitedInput.messages.at(-2)).toMatchObject({
+            role: 'assistant',
+            tool_calls: [
+              {
+                id: 'call_previous',
+                function: { name: 'lookup_city', arguments: { xotel_truncated: true } },
+              },
+            ],
+          });
+          expect(limitedInput.messages.at(-1)).toMatchObject({
+            role: 'tool',
+            tool_call_id: 'call_previous',
+            content: { xotel_truncated: true },
+          });
+          expect(output).toMatchObject([
+            {
+              role: 'assistant',
+              tool_calls: [
                 {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: 'call_next',
-                      type: 'function',
-                      function: { name: 'lookup_weather', arguments: '{"city":"Shanghai"}' },
-                    },
-                  ],
+                  id: 'call_next',
+                  function: { name: 'lookup_weather', arguments: { xotel_truncated: true } },
                 },
               ],
-        );
+            },
+          ]);
+          expect(Buffer.byteLength(JSON.stringify(input))).toBeLessThanOrEqual(24 * 1024);
+          expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(24 * 1024);
+        }
         const firstTokenMs = Number(attributes['langfuse.observation.metadata.timeToFirstTokenMs']);
         const latencyMs = Number(attributes['langfuse.observation.metadata.latencyMs']);
         expect(firstTokenMs).toBeGreaterThan(0);
@@ -270,7 +341,7 @@ describe('gateway observability transport', () => {
         );
         expect(attributes['langfuse.observation.type']).toBe('generation');
       }
-      expect(state.recordUsage).toHaveBeenCalledTimes(2);
+      expect(state.recordUsage).toHaveBeenCalledTimes(3);
       if (integration) {
         await writeFile(integration.receiptPath, JSON.stringify({ spans }, null, 2), {
           mode: 0o600,
