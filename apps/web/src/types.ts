@@ -3,6 +3,8 @@
  * @description 定义管理界面与 API 交互的数据类型。
  * @author yunhungo
  */
+import type { ModelCatalogSource } from '@x-router/contracts';
+
 export interface User {
   id: string;
   username: string;
@@ -24,6 +26,10 @@ export interface Provider {
   models: string[];
   modelsRefreshedAt: string | null;
   modelsRefreshError: string | null;
+  modelsCheckedAt?: string | null;
+  modelsSource?: ModelCatalogSource | null;
+  modelsClientVersion?: string | null;
+  modelsRefreshWarning?: string | null;
   createdAt: string;
 }
 

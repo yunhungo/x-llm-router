@@ -1,0 +1,58 @@
+/**
+ * @created 2026-10-26
+ * @description 定义模型目录与同步状态在深浅主题中的布局和反馈样式。
+ * @author yunhungo
+ */
+.provider-models {
+  --model-catalog-spacing: 12px;
+  --model-catalog-radius: 6px;
+  --model-catalog-caption-size: 10px;
+  --model-catalog-title-size: 12px;
+  --model-catalog-line-height: 16px;
+  --model-catalog-label-gap: 3px;
+
+  margin-top: var(--model-catalog-spacing);
+  padding: var(--model-catalog-spacing);
+  border: 1px solid var(--hairline);
+  border-radius: var(--model-catalog-radius);
+  background: var(--canvas-soft);
+
+  .provider-models-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--model-catalog-spacing);
+  }
+
+  .provider-models-heading > div {
+    min-width: 0;
+    display: grid;
+    gap: var(--model-catalog-label-gap);
+  }
+
+  strong {
+    color: var(--ink);
+    font-size: var(--model-catalog-title-size);
+  }
+
+  .provider-models-heading span,
+  > p {
+    margin: 0;
+    color: var(--mute);
+    font-size: var(--model-catalog-caption-size);
+    line-height: var(--model-catalog-line-height);
+    overflow-wrap: anywhere;
+  }
+
+  > .provider-models-error,
+  > .provider-models-warning {
+    margin-top: var(--model-catalog-spacing);
+  }
+
+  > .provider-models-error {
+    color: var(--danger-text);
+  }
+  > .provider-models-warning {
+    color: var(--warning-text);
+  }
+}

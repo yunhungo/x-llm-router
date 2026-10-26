@@ -76,7 +76,20 @@ QNAP/Linux 上若代理运行在 NAS 宿主机，通常填写 NAS 的局域网 I
 
 应用要求 Node.js 22.21+ 并已启用环境代理支持。OAuth 网络失败会返回可识别的 `openai_oauth_unavailable`（502），OpenAI 拒绝授权则返回 `openai_oauth_rejected`（502），不再统一显示为不可诊断的 500。
 
-该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。授权完成后会同步账号当前可见的模型目录；「上游连接」卡片可查看或手动刷新。模型目录会在新增价格记录时作为可搜索、可输入的下拉建议，而任一 Key 的全局「模型价格」表只展示已单独配置的记录。模型目录同步失败不会撤销已经完成的 OAuth 连接，管理台会保留错误原因供重试。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
+该能力复用 OpenAI Codex 的 ChatGPT 登录与 Codex backend，实际可用模型、额度和地区由连接账号的计划与 OpenAI 策略决定。授权完成后会同步账号当前可见的模型目录。模型目录会在新增价格记录时作为可搜索、可输入的下拉建议，而任一 Key 的全局「模型价格」表只展示已单独配置的记录。对于通用生产 API 工作负载，仍建议添加独立的 OpenAI API Key 连接。
+
+#### 模型目录自动同步
+
+OpenAI OAuth 的目录优先使用当前连接的访问令牌请求 `OPENAI_API_BASE/models`（默认 `https://api.openai.com/v1/models`），不附带 Codex 客户端版本。公共接口返回 401、403 或 404 时，回退到该连接原来的 Codex 目录，并在卡片上显示「兼容目录」及提示；网络错误、限流、服务故障和格式异常会保留上次成功的目录及时间，不伪装成同步成功。目录按上游顺序展示 `visibility: list` 的模型，不内置模型名称白名单。
+
+公共账号目录的授权要求见 [OpenAI Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)。现有设备登录与新的 Sign in with ChatGPT 动态注册流程不同；本次模型同步功能保留设备登录，不自动迁移授权或扩大权限。若公共接口不接受当前令牌，卡片会持续标明兼容目录。发现模型不代表增加账号权限，也不自动改变推理请求使用的上游地址。
+
+- 后端启动后自动同步活跃的 OpenAI OAuth、OpenAI API Key 和自定义连接，默认每 300 秒更新，关闭页面后继续运行。后台每 30 秒检查到期任务，每批最多 20 个连接；同步失败也会等待下一个周期再重试。
+- 打开「上游连接」或切回页面时触发同步；距最近尝试不足 60 秒的连接会合并或跳过请求。页面每 30 秒读取同步结果；卡片的「刷新」立即查询上游，同一连接的并发刷新会合并。
+- OpenAI API Key 和自定义连接从实际上游的标准 `/models`（`data[].id`）查询；其他预置 Provider 继续使用 Pi AI 的内置目录。
+- `MODEL_SYNC_INTERVAL_SECONDS=300` 可调整后台更新间隔（60–86400 秒）。`OPENAI_CODEX_CLIENT_VERSION=auto` 是默认值，仅在需要旧 Codex 目录时查询官方 `@openai/codex` npm 稳定版元数据，缓存 1 小时；不下载或执行包。查询失败沿用上次版本（首次为 `0.164.0`），5 分钟后重试并展示提示。也可设置具体版本以固定兼容行为；已有环境中的固定版本值会继续生效。
+
+管理卡片显示目录来源、模型数量、最后成功时间、最近失败及兼容提示。模型同步失败不会撤销已经完成的 OAuth 连接。
 
 ### API Key 上游
 
@@ -87,7 +100,7 @@ QNAP/Linux 上若代理运行在 NAS 宿主机，通常填写 NAS 的局域网 I
 - Responses API：请求发送到 Base URL 下的 `/responses`。
 - Chat Completions API：请求发送到 Base URL 下的 `/chat/completions`。
 
-Base URL 不需要包含上述接口路径。预置 Provider 会展示 Pi AI 自带的模型目录；自定义 Provider 可以通过上游 `/models` 刷新模型。升级时，旧版中以 OpenAI-compatible 形式保存的 OpenRouter 和其他自定义地址会自动迁移到对应 Provider。
+Base URL 不需要包含上述接口路径。OpenAI 和自定义 Provider 支持通过实际上游 `/models` 同步目录，其他预置 Provider 展示 Pi AI 自带的模型目录。升级时，旧版中以 OpenAI-compatible 形式保存的 OpenRouter 和其他自定义地址会自动迁移到对应 Provider。
 
 所有上游密钥都会加密保存。创建虚拟 API Key 时可以固定一个上游；客户端仍只需连接 xRouter 的 `/v1` 地址。
 

@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 校验运行配置及模型目录的自动同步选项。
+ * @author yunhungo
+ */
 import { z } from 'zod';
 
 const configSchema = z.object({
@@ -20,7 +25,12 @@ const configSchema = z.object({
   OPENAI_API_BASE: z.string().url().default('https://api.openai.com/v1'),
   CHATGPT_API_BASE: z.string().url().default('https://chatgpt.com/backend-api/codex'),
   CHATGPT_AUTH_BASE: z.string().url().default('https://auth.openai.com'),
-  OPENAI_CODEX_CLIENT_VERSION: z.string().trim().min(1).default('0.147.0'),
+  OPENAI_CODEX_CLIENT_VERSION: z
+    .string()
+    .trim()
+    .regex(/^(auto|\d+\.\d+\.\d+)$/)
+    .default('auto'),
+  MODEL_SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(300),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

@@ -3,7 +3,7 @@
  * @description 定义数据库结构及兼容迁移。
  * @author yunhungo
  */
-export const schemaVersion = 19;
+export const schemaVersion = 20;
 
 export const schemaMigrationsTableSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -452,5 +452,13 @@ UPDATE usage_logs u
 export const migrations = [
   { version: 17, sql: schemaSql },
   { version: 18, sql: costBreakdownSql },
-  { version: schemaVersion, sql: legacyCostBreakdownSql },
+  { version: 19, sql: legacyCostBreakdownSql },
+  {
+    version: schemaVersion,
+    sql: `ALTER TABLE provider_connections
+      ADD COLUMN IF NOT EXISTS models_checked_at timestamptz,
+      ADD COLUMN IF NOT EXISTS models_source text,
+      ADD COLUMN IF NOT EXISTS models_client_version text,
+      ADD COLUMN IF NOT EXISTS models_refresh_warning text;`,
+  },
 ] as const;

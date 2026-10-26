@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 验证 OAuth 元数据、公共账号目录及设备授权错误。
+ * @author yunhungo
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetConfigForTests } from '../config';
@@ -60,20 +65,23 @@ describe('OpenAI OAuth model discovery', () => {
 
     await expect(
       discoverOpenAiModels({
+        authType: 'oauth',
         baseUrl: 'https://chatgpt.com/backend-api/codex///',
         authorization: 'Bearer access-token',
         headers: { 'ChatGPT-Account-Id': 'account-1', version: '0.147.0' },
       }),
-    ).resolves.toEqual(['gpt-5.6-sol', 'gpt-5.6-terra']);
+    ).resolves.toEqual({
+      models: ['gpt-5.6-sol', 'gpt-5.6-terra'],
+      source: 'openai',
+      clientVersion: null,
+      warning: null,
+    });
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(String(url)).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.147.0');
-    expect(init?.headers).toMatchObject({
+    expect(String(url)).toBe('https://api.openai.com/v1/models');
+    expect(init?.headers).toEqual({
+      accept: 'application/json',
       authorization: 'Bearer access-token',
-      'ChatGPT-Account-Id': 'account-1',
-      originator: 'codex_cli_rs',
-      'user-agent': 'x-llm-router/0.147.0',
-      version: '0.147.0',
     });
   });
 
@@ -85,10 +93,11 @@ describe('OpenAI OAuth model discovery', () => {
 
     await expect(
       discoverOpenAiModels({
+        authType: 'oauth',
         baseUrl: 'https://chatgpt.com/backend-api/codex',
         authorization: 'Bearer access-token',
       }),
-    ).rejects.toMatchObject({ code: 'openai_oauth_invalid_response' });
+    ).rejects.toMatchObject({ code: 'model_catalog_invalid_response' });
   });
 });
 

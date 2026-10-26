@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-12
+ * @description 验证设备授权轮询及首次账号模型目录同步。
+ * @author yunhungo
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { clientQuery, query, release } = vi.hoisted(() => ({
@@ -143,13 +148,10 @@ describe('OpenAI OAuth polling error classification', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const modelRequest = fetchMock.mock.calls[2];
-    expect(String(modelRequest?.[0])).toBe(
-      'https://chatgpt.com/backend-api/codex/models?client_version=0.147.0',
-    );
-    expect(modelRequest?.[1]?.headers).toMatchObject({
-      'ChatGPT-Account-Id': accountId,
+    expect(String(modelRequest?.[0])).toBe('https://api.openai.com/v1/models');
+    expect(modelRequest?.[1]?.headers).toEqual({
+      accept: 'application/json',
       authorization: 'Bearer access-1',
-      version: '0.147.0',
     });
 
     const insert = clientQuery.mock.calls.find(([sql]) =>
@@ -157,6 +159,7 @@ describe('OpenAI OAuth polling error classification', () => {
     );
     expect(insert?.[1]?.[7]).toBe(JSON.stringify(['gpt-5.6-sol', 'gpt-5.6-terra']));
     expect(insert?.[1]?.[9]).toBeNull();
+    expect(insert?.[1]?.[10]).toBe('openai');
     expect(release).toHaveBeenCalledOnce();
   });
 });

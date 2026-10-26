@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 export * from './model-pricing';
+export * from './model-catalog';
 
 export const loginSchema = z.object({
   username: z.string().trim().min(1).max(80),
@@ -23,15 +24,24 @@ export const langfuseSettingsSchema = z.object({
   enabled: z.boolean(),
   publicKey: z.string().trim().max(255),
   secretKey: z.string().trim().max(512).optional(),
-  baseUrl: z.string().trim().url().refine((value) => {
-    try {
-      const url = new URL(value);
-      return ['http:', 'https:'].includes(url.protocol)
-        && !url.username && !url.password && !url.search && !url.hash;
-    } catch {
-      return false;
-    }
-  }, 'Base URL 只支持 HTTP 或 HTTPS 实例地址，不能包含凭据、查询参数或片段。'),
+  baseUrl: z
+    .string()
+    .trim()
+    .url()
+    .refine((value) => {
+      try {
+        const url = new URL(value);
+        return (
+          ['http:', 'https:'].includes(url.protocol) &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        );
+      } catch {
+        return false;
+      }
+    }, 'Base URL 只支持 HTTP 或 HTTPS 实例地址，不能包含凭据、查询参数或片段。'),
   environment: z
     .string()
     .trim()

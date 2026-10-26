@@ -16,6 +16,7 @@ const { query } = vi.hoisted(() => ({
 const { refreshProviderModels } = vi.hoisted(() => ({
   refreshProviderModels: vi.fn(),
 }));
+const { syncProviderModelCatalogs } = vi.hoisted(() => ({ syncProviderModelCatalogs: vi.fn() }));
 
 vi.mock('../db/client', () => ({
   getPool: () => ({ query }),
@@ -27,6 +28,7 @@ vi.mock('../lib/admin-auth', () => ({
 }));
 
 vi.mock('../services/providers', () => ({ refreshProviderModels }));
+vi.mock('../services/provider-model-sync', () => ({ syncProviderModelCatalogs }));
 
 import { setRuntimeSecretsForTests } from '../runtime-secrets';
 import { decryptJson } from '../lib/crypto';
@@ -43,6 +45,7 @@ describe('admin API keys', () => {
     query.mockReset();
     query.mockResolvedValue({ rows: [], rowCount: 0 });
     refreshProviderModels.mockReset();
+    syncProviderModelCatalogs.mockReset();
     setRuntimeSecretsForTests({
       ENCRYPTION_KEY: 'test-encryption-key-with-enough-length',
       JWT_SECRET: 'test-jwt-secret-with-enough-length',
@@ -176,6 +179,32 @@ describe('admin API keys', () => {
 
     expect(response.statusCode).toBe(400);
     expect(refreshProviderModels).not.toHaveBeenCalled();
+  });
+
+  it('triggers a bounded, rate-spaced catalog sync when the provider page opens', async () => {
+    syncProviderModelCatalogs.mockResolvedValueOnce({ refreshed: 1, failed: 0 });
+    const result = await app.inject({ method: 'POST', url: '/api/admin/providers/models/sync' });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toEqual({ refreshed: 1, failed: 0 });
+    expect(syncProviderModelCatalogs).toHaveBeenCalledWith({ maxAgeSeconds: 60 });
+  });
+
+  it('waits for a live account catalog instead of calling built-in OpenAI models synchronized', async () => {
+    const result = await app.inject({
+      method: 'POST',
+      url: '/api/admin/providers/api-key',
+      payload: {
+        name: 'OpenAI',
+        provider: 'openai',
+        apiMode: 'responses',
+        apiKey: 'sk-test-key-only',
+        baseUrl: 'https://api.openai.com/v1',
+      },
+    });
+    expect(result.statusCode).toBe(201);
+    expect(query.mock.calls[0]?.[1]?.[8]).toBe('[]');
+    expect(query.mock.calls[0]?.[1]?.[9]).toBeNull();
+    expect(query.mock.calls[0]?.[1]?.[11]).toBeNull();
   });
 
   it('updates API Key connection settings and encrypts a replacement credential', async () => {

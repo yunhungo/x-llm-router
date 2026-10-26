@@ -1,13 +1,23 @@
+/**
+ * @created 2026-08-10
+ * @description 管理 OpenAI 设备授权、令牌续期及首次模型目录同步。
+ * @author yunhungo
+ */
 import { randomUUID } from 'node:crypto';
 
 import { getConfig } from '../config';
 import { getPool } from '../db/client';
 import { decryptJson, encryptJson } from '../lib/crypto';
+import { codexClientHeaders } from './codex-client';
+import { discoverOpenAiModels } from './provider-model-catalog';
+import type { ModelCatalog } from '@x-router/contracts';
+
+export { codexClientHeaders } from './codex-client';
+export { discoverOpenAiModels } from './provider-model-catalog';
 
 export const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const DEFAULT_DEVICE_FLOW_SECONDS = 15 * 60;
 const AUTH_REQUEST_TIMEOUT_MS = 20_000;
-const MAX_DISCOVERED_MODELS = 500;
 
 type PublicOAuthErrorCode =
   'openai_oauth_unavailable' | 'openai_oauth_rejected' | 'openai_oauth_invalid_response';
@@ -33,21 +43,6 @@ export interface OAuthCredentials {
   accessToken: string;
   refreshToken: string;
   idToken: string;
-}
-
-export interface OpenAiModelDiscoveryInput {
-  baseUrl: string;
-  authorization: string;
-  headers?: Record<string, string>;
-}
-
-export function codexClientHeaders(): Record<string, string> {
-  const version = getConfig().OPENAI_CODEX_CLIENT_VERSION;
-  return {
-    originator: 'codex_cli_rs',
-    'user-agent': `x-llm-router/${version}`,
-    version,
-  };
 }
 
 interface DeviceFlowRow {
@@ -143,63 +138,6 @@ function apiError(prefix: string, response: Response, body: unknown): PublicOAut
     code,
     `${prefix} (${response.status}): ${responseErrorDetail(response, body)}`,
   );
-}
-
-function modelSlugs(body: unknown): string[] | undefined {
-  const models = bodyRecord(body)?.models;
-  if (!Array.isArray(models)) return undefined;
-
-  const seen = new Set<string>();
-  const slugs: string[] = [];
-  for (const item of models) {
-    const model = bodyRecord(item);
-    const slug = nonEmptyString(model, 'slug')?.trim();
-    const visibility = nonEmptyString(model, 'visibility');
-    if (!slug || slug.length > 120 || visibility !== 'list' || seen.has(slug)) {
-      continue;
-    }
-    seen.add(slug);
-    slugs.push(slug);
-    if (slugs.length >= MAX_DISCOVERED_MODELS) break;
-  }
-  return slugs;
-}
-
-export async function discoverOpenAiModels(input: OpenAiModelDiscoveryInput): Promise<string[]> {
-  const url = new URL(`${input.baseUrl.replace(/\/+$/, '')}/models`);
-  const clientVersion = getConfig().OPENAI_CODEX_CLIENT_VERSION;
-  url.searchParams.set('client_version', clientVersion);
-
-  let response: Response;
-  let body: unknown;
-  try {
-    response = await fetch(url, {
-      headers: {
-        accept: 'application/json',
-        ...input.headers,
-        ...codexClientHeaders(),
-        authorization: input.authorization,
-      },
-      signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
-    });
-    body = await readJsonOrText(response);
-  } catch (cause) {
-    throw publicOAuthError(
-      'openai_oauth_unavailable',
-      '无法获取 OpenAI OAuth 模型列表。请检查容器代理、DNS 和网络连接。',
-      cause,
-    );
-  }
-
-  if (!response.ok) throw apiError('OpenAI model discovery failed', response, body);
-  const models = modelSlugs(body);
-  if (!models) {
-    throw publicOAuthError(
-      'openai_oauth_invalid_response',
-      'OpenAI 模型列表响应缺少 models 字段。',
-    );
-  }
-  return models;
 }
 
 async function requestOpenAiAuth(
@@ -392,12 +330,15 @@ export async function pollDeviceFlow(input: { id: string; requestedBy: string })
   let availableModels: string[] = [];
   let modelsRefreshedAt: Date | null = null;
   let modelsRefreshError: string | null = null;
+  let catalog: ModelCatalog | undefined;
   try {
-    availableModels = await discoverOpenAiModels({
+    catalog = await discoverOpenAiModels({
+      authType: 'oauth',
       baseUrl: getConfig().CHATGPT_API_BASE,
       authorization: `Bearer ${tokens.access_token}`,
       headers: modelHeaders,
     });
+    availableModels = catalog.models;
     modelsRefreshedAt = new Date();
   } catch (error) {
     modelsRefreshError = (error instanceof Error ? error.message : String(error)).slice(0, 1_000);
@@ -409,8 +350,9 @@ export async function pollDeviceFlow(input: { id: string; requestedBy: string })
     await client.query(
       `INSERT INTO provider_connections(
         id, name, provider, auth_type, api_mode, credentials_ciphertext, account_id, base_url,
-        token_expires_at, created_by, available_models, models_refreshed_at, models_refresh_error
-      ) VALUES ($1,$2,'openai','oauth','responses',$3,$4,$5,$6,$7,$8::jsonb,$9,$10)`,
+        token_expires_at, created_by, available_models, models_refreshed_at, models_refresh_error,
+        models_checked_at, models_source, models_client_version, models_refresh_warning
+      ) VALUES ($1,$2,'openai','oauth','responses',$3,$4,$5,$6,$7,$8::jsonb,$9,$10,now(),$11,$12,$13)`,
       [
         providerConnectionId,
         flow.desired_name,
@@ -426,6 +368,9 @@ export async function pollDeviceFlow(input: { id: string; requestedBy: string })
         JSON.stringify(availableModels),
         modelsRefreshedAt,
         modelsRefreshError,
+        catalog?.source ?? null,
+        catalog?.clientVersion ?? null,
+        catalog?.warning ?? null,
       ],
     );
     await client.query(

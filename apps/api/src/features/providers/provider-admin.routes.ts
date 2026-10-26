@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-26
+ * @description 管理上游连接、授权及模型目录的手动和页面同步。
+ * @author yunhungo
+ */
 import { randomUUID } from 'node:crypto';
 
 import type { FastifyInstance } from 'fastify';
@@ -12,6 +17,7 @@ import { getPiProviderDefinition } from '../../providers/pi-ai';
 import { isProviderRegistered, providerCatalog } from '../../providers/registry';
 import { pollDeviceFlow, startDeviceFlow } from '../../services/openai-oauth';
 import { refreshProviderModels } from '../../services/providers';
+import { syncProviderModelCatalogs } from '../../services/provider-model-sync';
 
 const oauthStartSchema = z.object({ name: z.string().trim().min(1).max(120) });
 const providerParamsSchema = z.object({ id: z.string().uuid() });
@@ -24,6 +30,8 @@ export async function providerAdminRoutes(app: FastifyInstance): Promise<void> {
               token_expires_at AS "tokenExpiresAt", last_error AS "lastError",
               available_models AS models, models_refreshed_at AS "modelsRefreshedAt",
               models_refresh_error AS "modelsRefreshError",
+              models_checked_at AS "modelsCheckedAt", models_source AS "modelsSource",
+              models_client_version AS "modelsClientVersion", models_refresh_warning AS "modelsRefreshWarning",
               created_at AS "createdAt", updated_at AS "updatedAt"
          FROM provider_connections ORDER BY priority ASC, created_at ASC`,
     );
@@ -48,13 +56,13 @@ export async function providerAdminRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const definition = getPiProviderDefinition(parsed.data.provider);
-    const models = definition?.models ?? [];
+    const models = parsed.data.provider === 'openai' ? [] : (definition?.models ?? []);
     const id = randomUUID();
     await getPool().query(
       `INSERT INTO provider_connections(
         id, name, provider, auth_type, api_mode, credentials_ciphertext, base_url,
-        default_model, priority, available_models, models_refreshed_at, created_by
-      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8,$9::jsonb,$10,$11)`,
+        default_model, priority, available_models, models_refreshed_at, created_by, models_source
+      ) VALUES ($1,$2,$3,'api_key',$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12)`,
       [
         id,
         parsed.data.name,
@@ -67,6 +75,7 @@ export async function providerAdminRoutes(app: FastifyInstance): Promise<void> {
         JSON.stringify(models),
         models.length ? new Date() : null,
         adminId(request),
+        models.length ? 'builtin' : null,
       ],
     );
     return reply.code(201).send({ id });
@@ -98,6 +107,10 @@ export async function providerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
     return refreshProviderModels(parsed.data.id);
   });
+
+  app.post('/api/admin/providers/models/sync', async () =>
+    syncProviderModelCatalogs({ maxAgeSeconds: 60 }),
+  );
 
   app.patch('/api/admin/providers/:id', async (request, reply) => {
     const params = providerParamsSchema.safeParse(request.params);

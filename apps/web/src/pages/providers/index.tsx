@@ -1,9 +1,10 @@
 /**
  * @created 2026-08-10
- * @description 统一费用展示与平台货币设置。
+ * @description 管理上游连接、授权、自动模型同步与价格设置。
  * @author yunhungo
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { ModelCatalogRefresh } from '@x-router/contracts';
 import {
   Check,
   Copy,
@@ -33,7 +34,7 @@ import {
 import type { Provider, ProviderCatalogItem } from '../../types';
 import { ModelPricingSettings } from '@/features/model-pricing/ModelPricingSettings/ModelPricingSettings';
 import { ProviderEditMenu } from './ProviderEditMenu/ProviderEditMenu';
-import { ProviderModelList } from './ProviderModelList/ProviderModelList';
+import { ProviderModels } from './ProviderModels/ProviderModels';
 import './providers.scss';
 
 interface DeviceFlow {
@@ -65,32 +66,73 @@ export function ProvidersPage() {
   const [priority, setPriority] = useState('100');
   const [flow, setFlow] = useState<DeviceFlow>();
   const [loading, setLoading] = useState(false);
-  const [refreshingModels, setRefreshingModels] = useState('');
+  const [refreshingModels, setRefreshingModels] = useState<Set<string>>(() => new Set());
   const [oauthStatus, setOAuthStatus] = useState('');
   const [toast, setToast] = useState<{ id: number; message: string; tone: FeedbackTone }>();
   const toastId = useRef(0);
+  const loadId = useRef(0);
 
   const dismissToast = useCallback(() => setToast(undefined), []);
   const showToast = useCallback((message: string, tone: FeedbackTone) => {
     setToast({ id: ++toastId.current, message, tone });
   }, []);
 
-  const load = useCallback(async () => {
-    try {
-      const [connections, registered] = await Promise.all([
-        api<{ providers: Provider[] }>('/api/admin/providers'),
-        api<{ providers: ProviderCatalogItem[] }>('/api/admin/provider-catalog'),
-      ]);
-      setProviders(connections.providers);
-      setCatalog(registered.providers);
-    } catch (error) {
-      showToast(
-        `连接列表加载失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
-        'danger',
-      );
-    }
-  }, [showToast]);
-  useEffect(() => void load(), [load]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      const requestId = ++loadId.current;
+      try {
+        const [connections, registered] = await Promise.all([
+          api<{ providers: Provider[] }>('/api/admin/providers', signal ? { signal } : undefined),
+          api<{ providers: ProviderCatalogItem[] }>(
+            '/api/admin/provider-catalog',
+            signal ? { signal } : undefined,
+          ),
+        ]);
+        if (signal?.aborted || requestId !== loadId.current) return;
+        setProviders(connections.providers);
+        setCatalog(registered.providers);
+      } catch (error) {
+        if (signal?.aborted || requestId !== loadId.current) return;
+        showToast(
+          `连接列表加载失败：${error instanceof ApiError ? error.message : '请稍后重试。'}`,
+          'danger',
+        );
+      }
+    },
+    [showToast],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    let syncing = false;
+    const sync = async () => {
+      if (syncing || controller.signal.aborted) return;
+      syncing = true;
+      try {
+        await api('/api/admin/providers/models/sync', {
+          method: 'POST',
+          signal: controller.signal,
+        });
+      } catch {
+        // Connection-specific errors are shown on the cards; the background worker will retry.
+      } finally {
+        syncing = false;
+        if (!controller.signal.aborted) await load(controller.signal);
+      }
+    };
+    void load(controller.signal).then(sync);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(controller.signal);
+    }, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load]);
 
   useEffect(() => {
     if (!flow) return;
@@ -304,13 +346,16 @@ export function ProvidersPage() {
     }
   };
   const refreshModels = async (provider: Provider) => {
-    setRefreshingModels(provider.id);
+    setRefreshingModels((current) => new Set(current).add(provider.id));
     try {
-      const result = await api<{ models: string[]; refreshedAt: string }>(
+      const result = await api<ModelCatalogRefresh>(
         `/api/admin/providers/${provider.id}/models/refresh`,
         { method: 'POST' },
       );
-      showToast(`“${provider.name}”模型同步成功，共 ${result.models.length} 个。`, 'success');
+      showToast(
+        `“${provider.name}”已同步 ${result.models.length} 个模型${result.warning ? '，使用兼容目录。' : '。'}`,
+        result.warning ? 'warning' : 'success',
+      );
       await load();
     } catch (error) {
       showToast(
@@ -319,7 +364,11 @@ export function ProvidersPage() {
       );
       await load();
     } finally {
-      setRefreshingModels('');
+      setRefreshingModels((current) => {
+        const next = new Set(current);
+        next.delete(provider.id);
+        return next;
+      });
     }
   };
   const remove = async (provider: Provider) => {
@@ -337,7 +386,7 @@ export function ProvidersPage() {
   };
 
   return (
-    <div className='page-wrap'>
+    <div className="page-wrap">
       {toast ? (
         <Toast
           key={toast.id}
@@ -349,7 +398,7 @@ export function ProvidersPage() {
         </Toast>
       ) : null}
       <PageHeader
-        title='上游连接'
+        title="上游连接"
         action={
           <Button onClick={openAddProviderModal}>
             <Plus size={14} /> 添加上游
@@ -371,14 +420,14 @@ export function ProvidersPage() {
       {!providers ? (
         <Skeleton height={300} />
       ) : providers.length ? (
-        <div className='provider-grid'>
+        <div className="provider-grid">
           {providers.map((provider) => (
-            <article className='provider-card' key={provider.id}>
-              <div className='provider-card-top'>
-                <div className='provider-logo'>
+            <article className="provider-card" key={provider.id}>
+              <div className="provider-card-top">
+                <div className="provider-logo">
                   {provider.authType === 'oauth' ? <PlugZap size={19} /> : <KeyRound size={19} />}
                 </div>
-                <div className='provider-title'>
+                <div className="provider-title">
                   <div>
                     <h3>{provider.name}</h3>
                     <Badge tone={provider.authType === 'oauth' ? 'blue' : 'neutral'}>
@@ -397,7 +446,7 @@ export function ProvidersPage() {
                   onPrices={() => setPricingProvider(provider)}
                 />
               </div>
-              <div className='provider-meta'>
+              <div className="provider-meta">
                 <div>
                   <span>状态</span>
                   <Badge
@@ -445,38 +494,17 @@ export function ProvidersPage() {
                   </div>
                 ) : null}
               </div>
-              {provider.models.length || provider.authType === 'oauth' ? (
-                <section className='provider-models' aria-label={`${provider.name} 可用模型`}>
-                  <div className='provider-models-heading'>
-                    <div>
-                      <strong>可用模型</strong>
-                      <span>
-                        {provider.modelsRefreshedAt
-                          ? `同步于 ${new Date(provider.modelsRefreshedAt).toLocaleString('zh-CN')}`
-                          : '尚未同步'}
-                      </span>
-                    </div>
-                    <Button
-                      variant='ghost'
-                      loading={refreshingModels === provider.id}
-                      disabled={provider.status !== 'active'}
-                      onClick={() => void refreshModels(provider)}
-                    >
-                      <RefreshCcw size={13} /> 刷新
-                    </Button>
-                  </div>
-                  {provider.models?.length ? (
-                    <ProviderModelList provider={provider} revision={priceRevision} />
-                  ) : (
-                    <p>点击刷新以同步或恢复此 Provider 当前可用的模型。</p>
-                  )}
-                </section>
-              ) : null}
-              <div className='provider-actions'>
-                <Button variant='secondary' onClick={() => void toggle(provider)}>
+              <ProviderModels
+                provider={provider}
+                revision={priceRevision}
+                refreshing={refreshingModels.has(provider.id)}
+                onRefresh={() => void refreshModels(provider)}
+              />
+              <div className="provider-actions">
+                <Button variant="secondary" onClick={() => void toggle(provider)}>
                   {provider.status === 'active' ? '停用' : '启用'}
                 </Button>
-                <Button variant='ghost' onClick={() => void remove(provider)}>
+                <Button variant="ghost" onClick={() => void remove(provider)}>
                   <Trash2 size={14} /> 删除
                 </Button>
               </div>
@@ -485,8 +513,8 @@ export function ProvidersPage() {
         </div>
       ) : (
         <EmptyState
-          title='还没有上游连接'
-          description='从 Pi AI 的预置 Provider 中选择，或添加自定义 OpenAI-compatible 上游。'
+          title="还没有上游连接"
+          description="从 Pi AI 的预置 Provider 中选择，或添加自定义 OpenAI-compatible 上游。"
           action={
             <Button onClick={openAddProviderModal}>
               <Plus size={14} /> 添加上游
@@ -497,16 +525,16 @@ export function ProvidersPage() {
 
       {modal === 'add' ? (
         <Modal
-          title='添加上游连接'
+          title="添加上游连接"
           onClose={() => {
             setModal(null);
             setFlow(undefined);
           }}
         >
           {flow ? (
-            <div className='modal-body device-flow'>
-              <div className='device-status'>
-                <RefreshCcw size={17} className='spin' />
+            <div className="modal-body device-flow">
+              <div className="device-status">
+                <RefreshCcw size={17} className="spin" />
                 <div>
                   <strong>等待浏览器确认</strong>
                   <p>
@@ -516,51 +544,51 @@ export function ProvidersPage() {
                 </div>
               </div>
               {oauthStatus ? (
-                <div className='notice warning' role='status'>
+                <div className="notice warning" role="status">
                   {oauthStatus}
                 </div>
               ) : null}
               <button
-                type='button'
-                className='device-code'
+                type="button"
+                className="device-code"
                 onClick={() => void copyText(flow.userCode)}
               >
                 <code>{flow.userCode}</code>
                 <Copy size={16} />
               </button>
               <a
-                className='button button-primary'
+                className="button button-primary"
                 href={flow.verificationUrl}
-                target='_blank'
-                rel='noreferrer'
+                target="_blank"
+                rel="noreferrer"
               >
                 打开 OpenAI 授权页 <Link2 size={14} />
               </a>
-              <div className='security-note'>
+              <div className="security-note">
                 <Check size={13} /> 仅继续你本人从此页面发起的授权。
               </div>
             </div>
           ) : connectionMethod === 'oauth' ? (
-            <form className='modal-body' onSubmit={(event) => void startOAuth(event)}>
-              <Field label='Provider'>
-                <select className='input' value='openai' disabled>
-                  <option value='openai'>OpenAI</option>
+            <form className="modal-body" onSubmit={(event) => void startOAuth(event)}>
+              <Field label="Provider">
+                <select className="input" value="openai" disabled>
+                  <option value="openai">OpenAI</option>
                 </select>
               </Field>
-              <Field label='接入方式'>
+              <Field label="接入方式">
                 <select
-                  className='input'
+                  className="input"
                   value={connectionMethod}
                   onChange={(event) =>
                     selectConnectionMethod(event.target.value as ConnectionMethod)
                   }
                 >
-                  <option value='api-key'>API Key</option>
-                  <option value='oauth'>OAuth</option>
+                  <option value="api-key">API Key</option>
+                  <option value="oauth">OAuth</option>
                 </select>
               </Field>
-              <div className='oauth-intro'>
-                <div className='oauth-icon'>
+              <div className="oauth-intro">
+                <div className="oauth-icon">
                   <PlugZap size={22} />
                 </div>
                 <div>
@@ -568,23 +596,23 @@ export function ProvidersPage() {
                   <p>不会要求你在 xRouter 中输入 ChatGPT 密码。授权令牌会加密保存在 PostgreSQL。</p>
                 </div>
               </div>
-              <Field label='连接名称'>
+              <Field label="连接名称">
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
-              <div className='modal-actions'>
-                <Button type='button' variant='secondary' onClick={() => setModal(null)}>
+              <div className="modal-actions">
+                <Button type="button" variant="secondary" onClick={() => setModal(null)}>
                   取消
                 </Button>
-                <Button type='submit' loading={loading}>
+                <Button type="submit" loading={loading}>
                   开始授权 <Link2 size={14} />
                 </Button>
               </div>
             </form>
           ) : (
-            <form className='modal-body' onSubmit={(event) => void createApiKeyProvider(event)}>
-              <Field label='Provider'>
+            <form className="modal-body" onSubmit={(event) => void createApiKeyProvider(event)}>
+              <Field label="Provider">
                 <select
-                  className='input'
+                  className="input"
                   value={providerId}
                   onChange={(event) => selectProvider(event.target.value)}
                 >
@@ -595,79 +623,79 @@ export function ProvidersPage() {
                   ))}
                 </select>
               </Field>
-              <Field label='接入方式'>
+              <Field label="接入方式">
                 <select
-                  className='input'
+                  className="input"
                   value={connectionMethod}
                   onChange={(event) =>
                     selectConnectionMethod(event.target.value as ConnectionMethod)
                   }
                 >
-                  <option value='api-key'>API Key</option>
-                  <option value='oauth' disabled={providerId !== 'openai'}>
+                  <option value="api-key">API Key</option>
+                  <option value="oauth" disabled={providerId !== 'openai'}>
                     OAuth（仅 OpenAI）
                   </option>
                 </select>
               </Field>
-              <Field label='运行时' hint='请求构建、流解析和用量归一化由 Pi AI 完成。'>
-                <select className='input' value='pi-ai' disabled>
-                  <option value='pi-ai'>Pi AI</option>
+              <Field label="运行时" hint="请求构建、流解析和用量归一化由 Pi AI 完成。">
+                <select className="input" value="pi-ai" disabled>
+                  <option value="pi-ai">Pi AI</option>
                 </select>
               </Field>
               {providerId === 'custom' ? (
                 <Field
-                  label='自定义上游协议'
+                  label="自定义上游协议"
                   hint={`请求会发送到 ${
                     apiMode === 'responses' ? '/responses' : '/chat/completions'
                   }。`}
                 >
                   <select
-                    className='input'
+                    className="input"
                     value={apiMode}
                     onChange={(event) => setApiMode(event.target.value as ApiMode)}
                   >
-                    <option value='responses'>Responses API</option>
-                    <option value='chat.completions'>Chat Completions API</option>
+                    <option value="responses">Responses API</option>
+                    <option value="chat.completions">Chat Completions API</option>
                   </select>
                 </Field>
               ) : null}
-              <Field label='连接名称'>
+              <Field label="连接名称">
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
-              <Field label='API Key' hint='只会以加密形式存储。'>
+              <Field label="API Key" hint="只会以加密形式存储。">
                 <Input
-                  type='password'
+                  type="password"
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
-                  placeholder='输入上游 API Key'
+                  placeholder="输入上游 API Key"
                   required
                 />
               </Field>
               <Field
-                label='Base URL'
-                hint='可从常用地址中选择，也可以直接输入自定义域名；不包含接口路径。'
+                label="Base URL"
+                hint="可从常用地址中选择，也可以直接输入自定义域名；不包含接口路径。"
               >
                 <Input
-                  type='url'
+                  type="url"
                   value={baseUrl}
                   onChange={(event) => setBaseUrl(event.target.value)}
-                  placeholder='https://api.example.com/v1'
+                  placeholder="https://api.example.com/v1"
                   required
                 />
               </Field>
-              <Field label='默认模型（可选）'>
+              <Field label="默认模型（可选）">
                 <ComboboxInput
                   value={defaultModel}
                   options={catalog.find((provider) => provider.id === providerId)?.models ?? []}
                   onChange={(event) => setDefaultModel(event.target.value)}
-                  placeholder='例如 gpt-4.1'
+                  placeholder="例如 gpt-4.1"
                 />
               </Field>
-              <div className='modal-actions'>
-                <Button type='button' variant='secondary' onClick={() => setModal(null)}>
+              <div className="modal-actions">
+                <Button type="button" variant="secondary" onClick={() => setModal(null)}>
                   取消
                 </Button>
-                <Button type='submit' loading={loading}>
+                <Button type="submit" loading={loading}>
                   保存连接
                 </Button>
               </div>
@@ -678,22 +706,22 @@ export function ProvidersPage() {
 
       {modal === 'edit' && editingProvider ? (
         <Modal
-          title='编辑上游连接'
+          title="编辑上游连接"
           onClose={() => {
             setModal(null);
             setEditingProvider(undefined);
           }}
         >
-          <form className='modal-body' onSubmit={(event) => void saveProvider(event)}>
-            <div className='provider-edit-summary'>
-              <div className='provider-logo'>
+          <form className="modal-body" onSubmit={(event) => void saveProvider(event)}>
+            <div className="provider-edit-summary">
+              <div className="provider-logo">
                 {editingProvider.authType === 'oauth' ? (
                   <PlugZap size={18} />
                 ) : (
                   <KeyRound size={18} />
                 )}
               </div>
-              <div className='provider-edit-copy'>
+              <div className="provider-edit-copy">
                 <strong>{editingProvider.name}</strong>
                 <span>
                   {editingProvider.authType === 'oauth'
@@ -711,16 +739,16 @@ export function ProvidersPage() {
               </Badge>
             </div>
 
-            <div className='form-grid'>
-              <Field label='连接名称'>
+            <div className="form-grid">
+              <Field label="连接名称">
                 <Input value={name} onChange={(event) => setName(event.target.value)} required />
               </Field>
-              <Field label='优先级' hint='数字越小越优先。'>
+              <Field label="优先级" hint="数字越小越优先。">
                 <Input
-                  type='number'
-                  min='0'
-                  max='10000'
-                  step='1'
+                  type="number"
+                  min="0"
+                  max="10000"
+                  step="1"
                   value={priority}
                   onChange={(event) => setPriority(event.target.value)}
                   required
@@ -729,70 +757,70 @@ export function ProvidersPage() {
             </div>
 
             <Field
-              label='默认模型（可选）'
-              hint='请求未传 model 时使用；留空则要求调用方指定模型。'
+              label="默认模型（可选）"
+              hint="请求未传 model 时使用；留空则要求调用方指定模型。"
             >
               <ComboboxInput
                 value={defaultModel}
                 options={editingProvider.models}
                 onChange={(event) => setDefaultModel(event.target.value)}
-                placeholder='Request model'
+                placeholder="Request model"
               />
             </Field>
 
             {editingProvider.authType === 'api_key' ? (
               <>
-                <div className='modal-section-label'>上游 API</div>
+                <div className="modal-section-label">上游 API</div>
                 {editingProvider.provider === 'custom' ? (
                   <Field
-                    label='自定义上游协议'
+                    label="自定义上游协议"
                     hint={`请求会发送到 ${
                       apiMode === 'responses' ? '/responses' : '/chat/completions'
                     }。`}
                   >
                     <select
-                      className='input'
+                      className="input"
                       value={apiMode}
                       onChange={(event) => setApiMode(event.target.value as ApiMode)}
                     >
-                      <option value='responses'>Responses API</option>
-                      <option value='chat.completions'>Chat Completions API</option>
+                      <option value="responses">Responses API</option>
+                      <option value="chat.completions">Chat Completions API</option>
                     </select>
                   </Field>
                 ) : (
-                  <div className='security-note provider-credential-note'>
+                  <div className="security-note provider-credential-note">
                     <ShieldCheck size={14} /> Pi AI 会按所选模型自动选择并转换上游协议。
                   </div>
                 )}
-                <Field label='Base URL' hint='不包含 /responses 或 /chat/completions 路径。'>
+                <Field label="Base URL" hint="不包含 /responses 或 /chat/completions 路径。">
                   <Input
-                    type='url'
-                    list='openai-compatible-base-urls'
+                    type="url"
+                    list="openai-compatible-base-urls"
                     value={baseUrl}
                     onChange={(event) => setBaseUrl(event.target.value)}
                     required
                   />
                 </Field>
-                <Field label='替换 API Key（可选）' hint='留空会保留当前加密凭据。'>
+                <Field label="替换 API Key（可选）" hint="留空会保留当前加密凭据。">
                   <Input
-                    type='password'
+                    type="password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
-                    placeholder='输入新密钥以替换当前凭据'
+                    placeholder="输入新密钥以替换当前凭据"
                     minLength={12}
                   />
                 </Field>
               </>
             ) : (
-              <div className='security-note provider-credential-note'>
+              <div className="security-note provider-credential-note">
                 <ShieldCheck size={14} /> OAuth 凭据由系统自动续期；此处只编辑路由配置。
               </div>
             )}
 
-            <div className='modal-actions'>
+            <div className="modal-actions">
               <Button
-                type='button'
-                variant='secondary'
+                type="button"
+                variant="secondary"
                 onClick={() => {
                   setModal(null);
                   setEditingProvider(undefined);
@@ -800,7 +828,7 @@ export function ProvidersPage() {
               >
                 取消
               </Button>
-              <Button type='submit' loading={loading}>
+              <Button type="submit" loading={loading}>
                 保存更改
               </Button>
             </div>

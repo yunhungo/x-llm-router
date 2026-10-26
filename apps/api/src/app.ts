@@ -1,3 +1,8 @@
+/**
+ * @created 2026-08-10
+ * @description 组装网关、管理接口及随应用启停的后台维护任务。
+ * @author yunhungo
+ */
 import { randomUUID } from 'node:crypto';
 
 import cookie from '@fastify/cookie';
@@ -17,6 +22,7 @@ import { keyAnalyticsRoutes } from './routes/key-analytics';
 import { usageDetailRoutes } from './routes/usage-details';
 import { getRuntimeSecrets } from './runtime-secrets';
 import { registerUsageDetailRetention } from './services/usage-details';
+import { registerProviderModelSync } from './services/provider-model-sync';
 
 function normalizedOrigin(value: string): string | undefined {
   try {
@@ -116,6 +122,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(modelPricingRoutes);
   await app.register(gatewayRoutes);
   registerUsageDetailRetention(app);
+  registerProviderModelSync(app);
 
   app.setNotFoundHandler(async (request, reply) => {
     const acceptsHtml = request.headers.accept?.includes('text/html') ?? false;
