@@ -2,6 +2,14 @@
 
 xRouter 是一个可自托管的 OpenAI 兼容 LLM 网关。管理端可以配置 Pi AI 预置或自定义 Provider、完成 GPT OAuth 设备授权、签发虚拟 Key，并查看调用统计、成本和 Langfuse / X-Otel 追踪；客户端统一通过 `/v1/responses` 或 `/v1/chat/completions` 访问。
 
+## 界面预览
+
+管理后台概览：调用量、Token 用量、成本、调用趋势与模型分布。
+
+![xRouter 管理后台概览](docs/images/overview.png)
+
+> 截图使用本地演示数据，仅用于展示界面与功能，不代表实际业务流量或性能基准。
+
 ## 首版能力
 
 - ChatGPT OAuth：采用 Codex 官方设备码授权流程，访问令牌、刷新令牌和账号信息以 AES-256-GCM 加密保存。
