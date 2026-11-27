@@ -374,7 +374,8 @@ export function ProvidersPage() {
   const remove = async (provider: Provider) => {
     if (!window.confirm(`确定删除连接“${provider.name}”吗？关联 Key 将回退到默认连接。`)) return;
     try {
-      await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE' });
+      // 代理可能以分块方式转发 DELETE，显式发送 JSON 供 Fastify 解析。
+      await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE', ...jsonBody({}) });
       showToast(`连接“${provider.name}”已删除。`, 'success');
       await load();
     } catch (error) {
