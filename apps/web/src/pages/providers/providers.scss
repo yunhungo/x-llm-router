@@ -3,18 +3,23 @@
  * @description 定义上游连接卡片与价格配置区布局。
  * @author yunhungo
  */
-.provider-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 17px;
+.provider-list {
+  --provider-card-gap: 17px;
+  columns: 25rem 2;
+  column-gap: var(--provider-card-gap);
 }
 
 .provider-card {
+  break-inside: avoid;
   padding: 20px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--canvas);
   box-shadow: var(--shadow-1);
+}
+
+.provider-card + .provider-card {
+  margin-block-start: var(--provider-card-gap);
 }
 
 .provider-card-top {
@@ -214,10 +219,6 @@
 }
 
 @media (max-width: 760px) {
-  .provider-grid {
-    grid-template-columns: 1fr;
-  }
-
   .provider-meta {
     grid-template-columns: 1fr;
   }

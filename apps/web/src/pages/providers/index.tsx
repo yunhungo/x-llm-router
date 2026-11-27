@@ -421,7 +421,7 @@ export function ProvidersPage() {
       {!providers ? (
         <Skeleton height={300} />
       ) : providers.length ? (
-        <div className="provider-grid">
+        <div className='provider-list'>
           {providers.map((provider) => (
             <article className="provider-card" key={provider.id}>
               <div className="provider-card-top">
